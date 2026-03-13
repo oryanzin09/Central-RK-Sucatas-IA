@@ -1,0 +1,2177 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import path from "path";
+import dotenv from "dotenv";
+import fs from "fs";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import QRCode from 'qrcode';
+import axios from 'axios';
+
+dotenv.config();
+
+// Carrega configuração do config.json se existir
+let config: any = {};
+try {
+  if (fs.existsSync("./config.json")) {
+    config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+  }
+} catch (err) {
+  console.error("Erro ao ler config.json:", err);
+}
+
+const NOTION_TOKEN = process.env.NOTION_TOKEN || "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";
+const DATABASE_ID = process.env.NOTION_DATABASE_ID || "2f4dfa25a52880c1b315f7e8953f5889";
+const MOTOS_DATABASE_ID = "317dfa25a528805f9663ff0e6ebf0318";
+const NOTION_VERSION = '2022-06-28';
+const serverStartTime = new Date().toISOString();
+
+// Cache para estrutura do banco de dados
+const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
+const CACHE_TTL = 1000 * 60 * 10; // 10 minutos
+
+async function getCachedDbStructure(databaseId: string) {
+  const cached = dbStructureCache[databaseId];
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+    return cached.data;
+  }
+
+  const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+    headers: {
+      'Authorization': `Bearer ${NOTION_TOKEN}`,
+      'Notion-Version': NOTION_VERSION
+    }
+  });
+
+  if (!response.ok) throw new Error(`Não foi possível carregar a estrutura do banco: ${response.statusText}`);
+  const data = await response.json();
+  dbStructureCache[databaseId] = { data, timestamp: Date.now() };
+  return data;
+}
+
+async function notionQuery(databaseId: string) {
+  console.log(`🔍 Fazendo query no banco: ${databaseId}`);
+  
+  const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${NOTION_TOKEN}`,
+      'Content-Type': 'application/json',
+      'Notion-Version': NOTION_VERSION
+    },
+    body: JSON.stringify({ 
+      page_size: 100,
+      sorts: [
+        {
+          timestamp: "created_time",
+          direction: "descending"
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error(`❌ Erro Notion ${response.status}:`, error);
+    throw new Error(`Notion API error (${response.status}): ${error.substring(0, 200)}`);
+  }
+
+  const data = await response.json();
+  console.log(`✅ Encontradas ${data.results?.length || 0} páginas`);
+  return data;
+}
+
+async function fetchAllFromNotion(databaseId: string) {
+  let allResults: any[] = [];
+  let cursor = undefined;
+  let hasMore = true;
+  
+  console.log(`🔄 Buscando TODAS as páginas do banco ${databaseId}`);
+  
+  while (hasMore) {
+    const payload: any = { 
+      page_size: 100,
+      sorts: [
+        {
+          timestamp: "created_time",
+          direction: "descending"
+        }
+      ]
+    };
+    if (cursor) payload.start_cursor = cursor;
+    
+    const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_TOKEN}`,
+        'Content-Type': 'application/json',
+        'Notion-Version': NOTION_VERSION
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`❌ Erro Notion ${response.status}:`, error);
+      throw new Error(`Notion API error (${response.status}): ${error.substring(0, 200)}`);
+    }
+
+    const data = await response.json();
+    allResults = [...allResults, ...data.results];
+    
+    hasMore = data.has_more;
+    cursor = data.next_cursor;
+    
+    console.log(`   → +${data.results.length} itens. Total: ${allResults.length}`);
+  }
+  
+  return allResults;
+}
+
+import mlClient from './services/mlClient.js';
+
+async function startServer() {
+  const app = express();
+  const PORT = process.env.PORT || 3000;
+  const httpServer = createServer(app);
+  const io = new Server(httpServer, {
+    cors: { origin: "*" }
+  });
+
+  app.use(express.json());
+
+  function formatInventoryItem(page: any) {
+    const props = page.properties;
+    console.log("\n📄 Processando página. Propriedades disponíveis:", Object.keys(props));
+    
+    const result: any = {
+      id: page.id,
+      rk_id: '-',
+      nome: '-',
+      categoria: '-',
+      moto: '-',
+      ano: '-',
+      valor: 0,
+      estoque: 0,
+      imagem: '',
+      ml_link: '',
+      descricao: '',
+      criado_em: page.created_time
+    };
+
+    // Para cada propriedade, tenta extrair o valor
+    for (const [key, prop] of Object.entries(props)) {
+      const value = prop as any;
+      const lowerKey = key.toLowerCase();
+      
+      console.log(`  🔑 Propriedade: "${key}" (tipo: ${value.type})`);
+      
+      try {
+        // TÍTULO (nome da peça)
+        if (value.type === 'title' && value.title?.[0]?.plain_text) {
+          result.nome = value.title[0].plain_text;
+          console.log(`    → NOME encontrado: "${result.nome}"`);
+        }
+        
+        // RICH TEXT (descrição, ano)
+        else if (value.type === 'rich_text' && value.rich_text?.[0]?.plain_text) {
+          const text = value.rich_text[0].plain_text;
+          if (lowerKey.includes('desc') || lowerKey.includes('obs')) {
+            result.descricao = text;
+          } else if (lowerKey.includes('ano')) {
+            result.ano = text;
+          }
+        }
+        
+        // NÚMERO (valor, estoque, ano)
+        else if (value.type === 'number') {
+          if (lowerKey.includes('valor') || lowerKey.includes('preço') || lowerKey.includes('preco')) {
+            result.valor = value.number || 0;
+            console.log(`    → VALOR encontrado: ${result.valor}`);
+          } else if (lowerKey.includes('estoque') || lowerKey.includes('quant')) {
+            result.estoque = value.number || 0;
+            console.log(`    → ESTOQUE encontrado: ${result.estoque}`);
+          } else if (lowerKey.includes('ano')) {
+            result.ano = value.number;
+          }
+        }
+        
+        // SELECT (moto)
+        else if (value.type === 'select' && value.select?.name) {
+          if (lowerKey.includes('moto')) {
+            result.moto = value.select.name;
+            console.log(`    → MOTO encontrada: "${result.moto}"`);
+          }
+        }
+        
+        // MULTI-SELECT (categoria)
+        else if (value.type === 'multi_select' && value.multi_select?.length > 0) {
+          if (lowerKey.includes('categoria') || lowerKey.includes('cat')) {
+            result.categoria = value.multi_select.map((s: any) => s.name).join(', ');
+            console.log(`    → CATEGORIA encontrada: "${result.categoria}"`);
+          }
+        }
+        
+        // UNIQUE ID (código RK)
+        else if (value.type === 'unique_id' && value.unique_id) {
+          const prefix = value.unique_id.prefix ? `${value.unique_id.prefix}-` : '';
+          result.rk_id = `${prefix}${value.unique_id.number}`;
+          console.log(`    → RK_ID encontrado: "${result.rk_id}"`);
+        }
+        
+        // FILES (imagem)
+        else if (value.type === 'files' && value.files?.[0]) {
+          const file = value.files[0];
+          result.imagem = file.file?.url || file.external?.url || '';
+          console.log(`    → IMAGEM encontrada`);
+        }
+        
+        // URL (link do ML)
+        else if (value.type === 'url' && value.url) {
+          if (lowerKey.includes('ml') || lowerKey.includes('link') || lowerKey.includes('mercadolivre')) {
+            result.ml_link = value.url;
+            console.log(`    → ML_LINK encontrado`);
+          }
+        }
+        
+      } catch (e) {
+        console.error(`    ❌ Erro ao processar ${key}:`, e);
+      }
+    }
+    
+    // Se não encontrou nome em lugar nenhum, tenta qualquer propriedade title
+    if (result.nome === '-') {
+      for (const [key, prop] of Object.entries(props)) {
+        const value = prop as any;
+        if (value.type === 'title' && value.title?.[0]?.plain_text) {
+          result.nome = value.title[0].plain_text;
+          console.log(`    → NOME (fallback) encontrado em "${key}": "${result.nome}"`);
+          break;
+        }
+      }
+    }
+    
+    return result;
+  }
+  
+  function formatMotosItem(page: any) {
+    const props = page.properties;
+    const result: any = {
+      id: page.id,
+      nome: '-',
+      marca: '-',
+      modelo: '-',
+      ano: '-',
+      rk_id: '-', // Mapped from "ID" property
+      cilindrada: '-',
+      lote: '-',
+      nome_nf: '-',
+      pecas_retiradas: '-',
+      status: '-',
+      valor: 0,
+      cor: '-',
+      descricao: '',
+      imagem: '',
+      criado_em: page.created_time
+    };
+
+    // Tenta encontrar o título
+    const titlePropName = Object.keys(props).find(key => props[key].type === 'title');
+    if (titlePropName && props[titlePropName].title?.[0]?.plain_text) {
+      result.nome = props[titlePropName].title[0].plain_text;
+    }
+
+    for (const [key, prop] of Object.entries(props)) {
+      const value = prop as any;
+      const lowerKey = key.toLowerCase();
+      
+      if (value.type === 'rich_text' && value.rich_text?.[0]?.plain_text) {
+        const text = value.rich_text[0].plain_text;
+        if (lowerKey === 'marca') result.marca = text;
+        else if (lowerKey === 'modelo') result.modelo = text;
+        else if (lowerKey === 'ano') result.ano = text;
+        else if (lowerKey === 'cor') result.cor = text;
+        else if (lowerKey === 'observações' || lowerKey === 'desc') result.descricao = text;
+        else if (lowerKey === 'nome nf') result.nome_nf = text;
+        else if (lowerKey === 'peças retiradas') result.pecas_retiradas = text;
+        else if (lowerKey === 'id') result.rk_id = text;
+      }
+      else if (value.type === 'number') {
+        if (lowerKey === 'valor' || lowerKey === 'preço') result.valor = value.number || 0;
+        else if (lowerKey === 'cilindrada') result.cilindrada = value.number || 0;
+        else if (lowerKey === 'ano') result.ano = value.number?.toString() || '-';
+      }
+      else if (value.type === 'select' && value.select) {
+        if (lowerKey === 'marca') result.marca = value.select.name;
+        else if (lowerKey === 'cor') result.cor = value.select.name;
+        else if (lowerKey === 'status') result.status = value.select.name;
+        else if (lowerKey === 'lote') result.lote = value.select.name;
+      }
+      else if (value.type === 'files' && value.files?.[0]) {
+        const file = value.files[0];
+        result.imagem = file.file?.url || file.external?.url || '';
+      }
+      else if (value.type === 'unique_id' && value.unique_id) {
+        if (lowerKey === 'id') result.rk_id = `${value.unique_id.prefix ? value.unique_id.prefix + '-' : ''}${value.unique_id.number}`;
+      }
+    }
+    
+    return result;
+  }
+
+  function formatSalesItem(page: any) {
+    const props = page.properties;
+    const result: any = {
+      id: page.id,
+      nome: '-',
+      moto: '-',
+      valor: 0,
+      data: page.created_time,
+      numero_id: '-'
+    };
+
+    // Primeiro, tenta encontrar a propriedade de título (obrigatória no Notion)
+    const titlePropName = Object.keys(props).find(key => props[key].type === 'title');
+    if (titlePropName && props[titlePropName].title?.[0]?.plain_text) {
+      result.nome = props[titlePropName].title[0].plain_text;
+    }
+
+    for (const [key, prop] of Object.entries(props)) {
+      const value = prop as any;
+      const lowerKey = key.toLowerCase();
+      
+      // Se já temos um nome do título, só sobrescrevemos se encontrarmos uma propriedade chamada "Nome" ou "Peça" que seja rich_text
+      if (value.type === 'rich_text' && value.rich_text?.[0]?.plain_text) {
+        const text = value.rich_text[0].plain_text;
+        if (lowerKey.includes('moto')) {
+          result.moto = text;
+        } else if ((lowerKey.includes('nome') || lowerKey.includes('peça')) && !lowerKey.includes('obs')) {
+          result.nome = text;
+        }
+      }
+      
+      // Número (valor)
+      else if (value.type === 'number' && 
+              (lowerKey.includes('valor') || lowerKey.includes('preço'))) {
+        result.valor = value.number || 0;
+      }
+      
+      // Date
+      else if (value.type === 'date' && value.date?.start) {
+        result.data = value.date.start;
+      }
+      
+      // Unique ID (se houver)
+      else if (value.type === 'unique_id' && value.unique_id) {
+        const prefix = value.unique_id.prefix ? `${value.unique_id.prefix}-` : '';
+        result.numero_id = `${prefix}${value.unique_id.number}`;
+      }
+      
+      // Select (Tipo de Pagamento ou Moto)
+      else if (value.type === 'select' && value.select) {
+        if (lowerKey.includes('tipo') || lowerKey.includes('pagamento') || lowerKey.includes('forma')) {
+          result.tipo = value.select.name;
+        } else if (lowerKey.includes('moto')) {
+          result.moto = value.select.name;
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  // API Route for Notion Inventory
+  app.get("/api/inventory", async (req, res) => {
+    try {
+      const allItems = await fetchAllFromNotion(DATABASE_ID);
+      const formattedData = allItems.map(formatInventoryItem);
+      res.json({ success: true, data: formattedData, total: allItems.length });
+    } catch (error: any) {
+      console.error("Notion API Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/inventory", async (req, res) => {
+    try {
+      const { nome, categoria, moto, valor, estoque, ano, descricao, ml_link } = req.body;
+
+      // Busca a estrutura do banco (usando cache)
+      const dbData = await getCachedDbStructure(DATABASE_ID);
+      const dbProps = dbData.properties;
+
+      // Mapeia os campos para os nomes reais das propriedades
+      let nameProp = "Peça";
+      let catProp = "Categoria";
+      let motoProp = "Moto";
+      let valorProp = "Valor";
+      let estoqueProp = "Estoque";
+      let anoProp = "Ano";
+      let descProp = "Descrição";
+      let mlProp = "ML LINK";
+
+      for (const [key, prop] of Object.entries(dbProps)) {
+        const p = prop as any;
+        const lowerKey = key.toLowerCase();
+        
+        if (p.type === 'title') nameProp = key;
+        else if (lowerKey.includes('categoria') || lowerKey.includes('cat')) catProp = key;
+        else if (lowerKey.includes('moto')) motoProp = key;
+        else if (lowerKey.includes('valor') || lowerKey.includes('preço')) valorProp = key;
+        else if (lowerKey.includes('estoque') || lowerKey.includes('quant')) estoqueProp = key;
+        else if (lowerKey.includes('ano')) anoProp = key;
+        else if (lowerKey.includes('desc') || lowerKey.includes('obs')) descProp = key;
+        else if (lowerKey.includes('ml') || lowerKey.includes('link')) mlProp = key;
+      }
+
+      const properties: any = {
+        [nameProp]: {
+          title: [{ text: { content: nome } }]
+        }
+      };
+
+      if (catProp && dbProps[catProp] && dbProps[catProp].type === 'multi_select' && categoria) {
+        properties[catProp] = { multi_select: [{ name: categoria }] };
+      }
+
+      if (motoProp && dbProps[motoProp] && dbProps[motoProp].type === 'select' && moto) {
+        properties[motoProp] = { select: { name: moto } };
+      }
+
+      if (valorProp && dbProps[valorProp] && dbProps[valorProp].type === 'number') {
+        properties[valorProp] = { number: Number(valor) };
+      }
+
+      if (estoqueProp && dbProps[estoqueProp] && dbProps[estoqueProp].type === 'number') {
+        properties[estoqueProp] = { number: Number(estoque) };
+      }
+
+      if (anoProp && dbProps[anoProp]) {
+        if (dbProps[anoProp].type === 'rich_text') {
+          properties[anoProp] = { rich_text: [{ text: { content: ano || "" } }] };
+        } else if (dbProps[anoProp].type === 'number') {
+          properties[anoProp] = { number: Number(ano) };
+        }
+      }
+
+      if (descProp && dbProps[descProp] && dbProps[descProp].type === 'rich_text') {
+        properties[descProp] = { rich_text: [{ text: { content: descricao || "" } }] };
+      }
+
+      if (mlProp && dbProps[mlProp] && dbProps[mlProp].type === 'url') {
+        properties[mlProp] = { url: ml_link || null };
+      }
+
+      const response = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({
+          parent: { database_id: DATABASE_ID },
+          properties
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      const data = await response.json();
+      res.json(formatInventoryItem(data));
+    } catch (error: any) {
+      console.error("Create Item Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/inventory/bulk-delete", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids)) {
+        return res.status(400).json({ success: false, error: "IDs inválidos" });
+      }
+
+      console.log(`🗑️ Excluindo em massa ${ids.length} itens`);
+
+      // Notion doesn't have a bulk delete, we must do it in parallel
+      const deletePromises = ids.map(id => 
+        fetch(`https://api.notion.com/v1/pages/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({ archived: true })
+        })
+      );
+
+      const results = await Promise.all(deletePromises);
+      const failed = results.filter(r => !r.ok);
+
+      if (failed.length > 0) {
+        console.error(`❌ Falha ao excluir ${failed.length} itens`);
+      }
+
+      res.json({ success: true, deletedCount: ids.length - failed.length, failedCount: failed.length });
+    } catch (error: any) {
+      console.error("Bulk Delete Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.delete("/api/inventory/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ archived: true })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete Item Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/inventory/bulk-update-stock", async (req, res) => {
+    try {
+      const { ids, amount } = req.body;
+      console.log(`📦 Atualizando estoque em massa: ${amount} para ${ids.length} itens`);
+
+      // We need to get current stock first for each item if we want to increment/decrement
+      // But Notion doesn't support relative updates easily in bulk.
+      // For simplicity, let's fetch them first or assume the client sends the new value.
+      // Since the client sends "amount" (+1 or -1), we MUST fetch first.
+      
+      const updatePromises = ids.map(async (id: string) => {
+        // Fetch current
+        const getRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Notion-Version': NOTION_VERSION
+          }
+        });
+        if (!getRes.ok) return;
+        const page = await getRes.json();
+        
+        // Find stock property name
+        let stockPropName = "Estoque";
+        for (const key of Object.keys(page.properties)) {
+          if (key.toLowerCase().includes('estoque') || key.toLowerCase().includes('quant')) {
+            stockPropName = key;
+            break;
+          }
+        }
+
+        const currentStock = page.properties[stockPropName]?.number || 0;
+        const newStock = Math.max(0, currentStock + amount);
+
+        return fetch(`https://api.notion.com/v1/pages/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({
+            properties: {
+              [stockPropName]: { number: newStock }
+            }
+          })
+        });
+      });
+
+      await Promise.all(updatePromises);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Bulk Update Stock Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/inventory/bulk-update-category", async (req, res) => {
+    try {
+      const { ids, categoria } = req.body;
+      console.log(`🏷️ Atualizando categoria em massa: "${categoria}" para ${ids.length} itens`);
+
+      const updatePromises = ids.map(async (id: string) => {
+        // Find category property name
+        const getRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Notion-Version': NOTION_VERSION
+          }
+        });
+        if (!getRes.ok) return;
+        const page = await getRes.json();
+        
+        let catPropName = "Categoria";
+        for (const key of Object.keys(page.properties)) {
+          if (key.toLowerCase().includes('categoria') || key.toLowerCase().includes('cat')) {
+            catPropName = key;
+            break;
+          }
+        }
+
+        return fetch(`https://api.notion.com/v1/pages/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({
+            properties: {
+              [catPropName]: { 
+                multi_select: [{ name: categoria }] 
+              }
+            }
+          })
+        });
+      });
+
+      await Promise.all(updatePromises);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Bulk Update Category Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/sales", async (req, res) => {
+    try {
+      const { nome, moto, valor, tipo, data } = req.body;
+      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+
+      // Busca a estrutura do banco (usando cache)
+      const dbData = await getCachedDbStructure(salesDbId);
+      const dbProps = dbData.properties;
+
+      // Mapeia os campos para os nomes reais das propriedades
+      let nameProp = "";
+      let motoProp = "";
+      let valorProp = "";
+      let tipoProp = "";
+      let dataProp = "";
+      let fallbackNameProp = ""; // Para caso o título não seja "Nome" ou "Peça"
+
+      for (const [key, prop] of Object.entries(dbProps)) {
+        const p = prop as any;
+        const lowerKey = key.toLowerCase();
+        
+        if (p.type === 'title') {
+          nameProp = key;
+        } else if (lowerKey.includes('moto')) {
+          motoProp = key;
+        } else if (lowerKey.includes('valor') || lowerKey.includes('preço')) {
+          valorProp = key;
+        } else if (lowerKey.includes('tipo') || lowerKey.includes('pagamento') || lowerKey.includes('forma')) {
+          tipoProp = key;
+        } else if (lowerKey.includes('data')) {
+          dataProp = key;
+        } else if (p.type === 'rich_text' && (lowerKey.includes('nome') || lowerKey.includes('peça'))) {
+          fallbackNameProp = key;
+        }
+      }
+
+      // Se não encontrou o título pelo tipo (o que é impossível no Notion, mas por segurança)
+      if (!nameProp) {
+        nameProp = Object.keys(dbProps).find(k => dbProps[k].type === 'title') || "Peça";
+      }
+
+      const properties: any = {
+        [nameProp]: {
+          title: [{ text: { content: nome || "-" } }]
+        }
+      };
+
+      // Se existe uma propriedade de texto chamada "Nome" ou "Peça" que não é o título, preenche ela também
+      if (fallbackNameProp && fallbackNameProp !== nameProp) {
+        properties[fallbackNameProp] = { rich_text: [{ text: { content: nome || "-" } }] };
+      }
+
+      if (motoProp && dbProps[motoProp] && motoProp !== nameProp) {
+        if (dbProps[motoProp].type === 'rich_text') {
+          properties[motoProp] = { rich_text: [{ text: { content: moto || "" } }] };
+        } else if (dbProps[motoProp].type === 'select' && moto) {
+          properties[motoProp] = { select: { name: moto } };
+        }
+      }
+
+      if (valorProp && dbProps[valorProp] && dbProps[valorProp].type === 'number') {
+        properties[valorProp] = { number: Number(valor) };
+      }
+
+      if (tipoProp && dbProps[tipoProp] && dbProps[tipoProp].type === 'select') {
+        properties[tipoProp] = { select: { name: tipo } };
+      }
+
+      if (dataProp && dbProps[dataProp] && dbProps[dataProp].type === 'date') {
+        properties[dataProp] = { date: { start: data || new Date().toISOString() } };
+      }
+
+      const response = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({
+          parent: { database_id: salesDbId },
+          properties
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      const result = await response.json();
+      res.json({ success: true, data: formatSalesItem(result) });
+    } catch (error: any) {
+      console.error("Create Sale Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.patch("/api/sales/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome, moto, valor, tipo, data } = req.body;
+      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+
+      // Busca a estrutura do banco (usando cache)
+      const dbData = await getCachedDbStructure(salesDbId);
+      const dbProps = dbData.properties;
+
+      // Mapeia os campos para os nomes reais das propriedades
+      let nameProp = "";
+      let motoProp = "";
+      let valorProp = "";
+      let tipoProp = "";
+      let dataProp = "";
+      let fallbackNameProp = "";
+
+      for (const [key, prop] of Object.entries(dbProps)) {
+        const p = prop as any;
+        const lowerKey = key.toLowerCase();
+        
+        if (p.type === 'title') nameProp = key;
+        else if (lowerKey.includes('moto')) motoProp = key;
+        else if (lowerKey.includes('valor') || lowerKey.includes('preço')) valorProp = key;
+        else if (lowerKey.includes('tipo') || lowerKey.includes('pagamento') || lowerKey.includes('forma')) tipoProp = key;
+        else if (lowerKey.includes('data')) dataProp = key;
+        else if (p.type === 'rich_text' && (lowerKey.includes('nome') || lowerKey.includes('peça'))) fallbackNameProp = key;
+      }
+
+      const properties: any = {};
+
+      if (nameProp) {
+        properties[nameProp] = { title: [{ text: { content: nome || "-" } }] };
+      }
+
+      if (fallbackNameProp && fallbackNameProp !== nameProp) {
+        properties[fallbackNameProp] = { rich_text: [{ text: { content: nome || "-" } }] };
+      }
+
+      if (motoProp && dbProps[motoProp] && motoProp !== nameProp) {
+        if (dbProps[motoProp].type === 'rich_text') {
+          properties[motoProp] = { rich_text: [{ text: { content: moto || "" } }] };
+        } else if (dbProps[motoProp].type === 'select' && moto) {
+          properties[motoProp] = { select: { name: moto } };
+        }
+      }
+
+      if (valorProp && dbProps[valorProp] && dbProps[valorProp].type === 'number') {
+        properties[valorProp] = { number: Number(valor) };
+      }
+
+      if (tipoProp && dbProps[tipoProp] && dbProps[tipoProp].type === 'select') {
+        properties[tipoProp] = { select: { name: tipo } };
+      }
+
+      if (dataProp && dbProps[dataProp] && dbProps[dataProp].type === 'date') {
+        properties[dataProp] = { date: { start: data || new Date().toISOString() } };
+      }
+
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ properties })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      const result = await response.json();
+      res.json({ success: true, data: formatSalesItem(result) });
+    } catch (error: any) {
+      console.error("Update Sale Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.delete("/api/sales/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ archived: true })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete Sale Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/sales/bulk-delete", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids)) {
+        return res.status(400).json({ success: false, error: "IDs inválidos" });
+      }
+
+      const deletePromises = ids.map(id => 
+        fetch(`https://api.notion.com/v1/pages/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({ archived: true })
+        })
+      );
+
+      await Promise.all(deletePromises);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Bulk Delete Sales Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.get("/api/sales", async (req, res) => {
+    try {
+      // Use o ID correto do banco de vendas
+      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+      
+      console.log(`📊 Consultando banco de vendas: ${salesDbId}`);
+      
+      const allItems = await fetchAllFromNotion(salesDbId);
+      const formattedData = allItems.map(formatSalesItem);
+      
+      console.log(`✅ Encontradas ${allItems.length} vendas`);
+      
+      res.json({ success: true, data: formattedData, total: allItems.length });
+    } catch (error: any) {
+      console.error("Sales API Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ==================== IA ASSISTANTE ====================
+  app.post("/api/ai/ask", async (req, res) => {
+    try {
+      const { pergunta } = req.body;
+      console.log(`\n🤖 IA Assistant: "${pergunta}"`);
+      
+      const PORT = process.env.PORT || 3000;
+      
+      // Carrega dados do sistema
+      const [inventoryRes, salesRes] = await Promise.all([
+        fetch(`http://127.0.0.1:${PORT}/api/inventory`),
+        fetch(`http://127.0.0.1:${PORT}/api/sales`)
+      ]);
+      
+      const inventory = await inventoryRes.json();
+      const sales = await salesRes.json();
+      
+      // Prepara contexto
+      const contexto = {
+        estoque: inventory.data || [],
+        vendas: sales.data || [],
+        totalItens: inventory.total || 0,
+        totalVendas: sales.total || 0
+      };
+      
+      // Chama Gemini para interpretar a intenção
+      console.log('🔑 Verificando chave Gemini...');
+      
+      // Tenta pegar do config.json primeiro, depois do ambiente
+      const apiKey = config.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+      
+      console.log('🔑 Chave presente:', !!apiKey);
+      console.log('🔑 Primeiros caracteres:', apiKey?.substring(0, 4));
+
+      let iaResponse: any = null;
+      let useFallback = false;
+      let fallbackReason = "";
+
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+        console.error('❌ GEMINI_API_KEY não configurada');
+        useFallback = true;
+        fallbackReason = "A chave da API do Gemini não está configurada no servidor.";
+      } else {
+        try {
+          const { GoogleGenAI, Type } = await import("@google/genai");
+          const ai = new GoogleGenAI({ apiKey });
+          
+          const prompt = `
+            Você é o assistente do RK Sucatas. Responda em português de forma amigável.
+            
+            Contexto atual:
+            - Estoque: ${contexto.totalItens} itens
+            - Vendas: ${contexto.totalVendas} registros
+            
+            Pergunta: "${pergunta}"
+            
+            Identifique a intenção e retorne APENAS UM JSON com:
+            {
+              "intencao": "busca" | "relatorio" | "venda" | "outro",
+              "termo": "termo de busca (se for busca)",
+              "periodo": "hoje" | "ontem" | "semana" | "mes" | "personalizado" (se for relatorio),
+              "dataInicio": "YYYY-MM-DD" (se periodo personalizado),
+              "dataFim": "YYYY-MM-DD",
+              "resposta": "mensagem amigável para o usuário"
+            }
+          `;
+          
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  intencao: { type: Type.STRING },
+                  termo: { type: Type.STRING },
+                  periodo: { type: Type.STRING },
+                  dataInicio: { type: Type.STRING },
+                  dataFim: { type: Type.STRING },
+                  resposta: { type: Type.STRING }
+                },
+                required: ["intencao", "resposta"]
+              }
+            }
+          });
+          
+          const text = response.text;
+          try {
+            iaResponse = JSON.parse(text || '{}');
+          } catch {
+            iaResponse = { intencao: "outro", resposta: text };
+          }
+        } catch (error: any) {
+          console.error("❌ Erro detalhado do Gemini:", error);
+          useFallback = true;
+          if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID") || error.status === 403) {
+            fallbackReason = "A chave da API Gemini é inválida ou foi bloqueada. Acesse Google AI Studio, gere uma nova chave e atualize a variável de ambiente.";
+          } else {
+            fallbackReason = "Erro de conexão com a IA. Tente novamente mais tarde.";
+          }
+        }
+      }
+
+      if (useFallback || !iaResponse) {
+        console.log("⚠️ Usando busca de fallback. Motivo:", fallbackReason);
+        const termo = pergunta.toLowerCase().replace('tem ', '').replace('busca ', '').replace('procura ', '');
+        iaResponse = {
+          intencao: 'busca',
+          termo: termo,
+          resposta: `⚠️ **Aviso: ${fallbackReason}**\n\nUsando busca simplificada por palavras-chave:`
+        };
+      }
+      
+      // Executa ações baseado na intenção
+      let dados: any = {};
+      let respostaFormatada = iaResponse.resposta || "";
+      
+      if (iaResponse.intencao === 'busca' && iaResponse.termo) {
+        const termo = iaResponse.termo.toLowerCase();
+        const itensEncontrados = contexto.estoque.filter((item: any) => 
+          item.nome?.toLowerCase().includes(termo) ||
+          item.moto?.toLowerCase().includes(termo) ||
+          item.rk_id?.toLowerCase().includes(termo)
+        ).slice(0, 5);
+        
+        dados = { itens: itensEncontrados };
+        
+        // Se não encontrou, prepara sugestões
+        if (itensEncontrados.length === 0) {
+          const sugestoes = contexto.estoque
+            .filter((item: any) => 
+              item.categoria?.toLowerCase().includes(termo) ||
+              item.nome?.toLowerCase().split(' ').some((p: string) => termo.includes(p))
+            )
+            .slice(0, 3)
+            .map((item: any) => `${item.nome} (${item.rk_id}) - R$ ${item.valor}`);
+          
+          dados.sugestoes = sugestoes;
+        }
+      }
+      
+      else if (iaResponse.intencao === 'relatorio') {
+        const hoje = new Date();
+        let dataInicio: Date;
+        let dataFim: Date = new Date(hoje);
+        
+        switch (iaResponse.periodo) {
+          case 'hoje':
+            dataInicio = new Date(hoje.setHours(0,0,0,0));
+            dataFim = new Date(hoje.setHours(23,59,59,999));
+            break;
+          case 'ontem':
+            const ontem = new Date(hoje);
+            ontem.setDate(ontem.getDate() - 1);
+            dataInicio = new Date(ontem.setHours(0,0,0,0));
+            dataFim = new Date(ontem.setHours(23,59,59,999));
+            break;
+          case 'semana':
+            dataInicio = new Date(hoje);
+            dataInicio.setDate(hoje.getDate() - 7);
+            dataInicio.setHours(0,0,0,0);
+            dataFim = new Date(hoje.setHours(23,59,59,999));
+            break;
+          case 'mes':
+            dataInicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+            dataFim = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23,59,59,999);
+            break;
+          default:
+            dataInicio = new Date(hoje.setHours(0,0,0,0));
+            dataFim = new Date(hoje.setHours(23,59,59,999));
+        }
+        
+        const parseDate = (dateStr: string) => {
+          if (!dateStr) return new Date(0);
+          if (dateStr.includes('T')) {
+            return new Date(dateStr); // ISO string with time, parse normally
+          } else {
+            // Date-only string (YYYY-MM-DD), parse as local time at noon
+            const [year, month, day] = dateStr.split('-').map(Number);
+            return new Date(year, month - 1, day, 12, 0, 0);
+          }
+        };
+
+        const vendasPeriodo = contexto.vendas.filter((v: any) => {
+          const dataVenda = parseDate(v.data);
+          return dataVenda >= dataInicio && dataVenda <= dataFim && v.tipo !== 'SAÍDA';
+        });
+        
+        const saidasPeriodo = contexto.vendas.filter((v: any) => {
+          const dataVenda = parseDate(v.data);
+          return dataVenda >= dataInicio && dataVenda <= dataFim && v.tipo === 'SAÍDA';
+        });
+        
+        dados = {
+          periodo: iaResponse.periodo || 'hoje',
+          totalVendas: vendasPeriodo.reduce((sum: number, v: any) => sum + (v.valor || 0), 0),
+          quantidadeVendas: vendasPeriodo.length,
+          totalSaidas: saidasPeriodo.reduce((sum: number, v: any) => sum + (v.valor || 0), 0),
+          quantidadeSaidas: saidasPeriodo.length
+        };
+      }
+      
+      res.json({
+        success: true,
+        intencao: iaResponse.intencao,
+        dados: dados,
+        resposta: respostaFormatada
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Erro no assistente:', error);
+      res.status(500).json({ 
+        success: false, 
+        resposta: "Desculpe, tive um problema ao processar sua pergunta."
+      });
+    }
+  });
+
+  app.get("/api/motos", async (req, res) => {
+    try {
+      console.log(`🏍️ Consultando banco de motos: ${MOTOS_DATABASE_ID}`);
+      const allItems = await fetchAllFromNotion(MOTOS_DATABASE_ID);
+      const formattedData = allItems.map(formatMotosItem);
+      res.json({ success: true, data: formattedData, total: allItems.length });
+    } catch (error: any) {
+      console.error("Motos API Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/motos", async (req, res) => {
+    try {
+      const { nome, marca, modelo, ano, valor, cor, cilindrada, lote, nome_nf, pecas_retiradas, status, descricao } = req.body;
+      const dbData = await getCachedDbStructure(MOTOS_DATABASE_ID);
+      const dbProps = dbData.properties;
+
+      const properties: any = {};
+      
+      // Mapeamento dinâmico de propriedades
+      for (const [key, prop] of Object.entries(dbProps)) {
+        const p = prop as any;
+        const lowerKey = key.toLowerCase();
+        
+        if (p.type === 'title') {
+          properties[key] = { title: [{ text: { content: nome || "-" } }] };
+        } else if (lowerKey === 'marca') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: marca || "" } }] };
+          else if (p.type === 'select') properties[key] = { select: { name: marca } };
+        } else if (lowerKey === 'modelo') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: modelo || "" } }] };
+        } else if (lowerKey === 'ano') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: ano || "" } }] };
+          else if (p.type === 'number') properties[key] = { number: Number(ano) };
+        } else if (lowerKey === 'valor' || lowerKey === 'preço') {
+          if (p.type === 'number') properties[key] = { number: Number(valor) };
+        } else if (lowerKey === 'cor') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: cor || "" } }] };
+          else if (p.type === 'select') properties[key] = { select: { name: cor } };
+        } else if (lowerKey === 'cilindrada') {
+          if (p.type === 'number') properties[key] = { number: Number(cilindrada) };
+        } else if (lowerKey === 'lote') {
+          if (p.type === 'select') properties[key] = { select: { name: lote } };
+          else if (p.type === 'number') properties[key] = { number: Number(lote) };
+        } else if (lowerKey === 'nome nf') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: nome_nf || "" } }] };
+        } else if (lowerKey === 'peças retiradas') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: pecas_retiradas || "" } }] };
+        } else if (lowerKey === 'status') {
+          if (p.type === 'select') properties[key] = { select: { name: status } };
+        } else if (lowerKey === 'observações' || lowerKey === 'desc') {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: descricao || "" } }] };
+        }
+      }
+
+      const response = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({
+          parent: { database_id: MOTOS_DATABASE_ID },
+          properties
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      const result = await response.json();
+      res.json({ success: true, data: formatMotosItem(result) });
+    } catch (error: any) {
+      console.error("Create Moto Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.patch("/api/motos/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const body = req.body;
+      const dbData = await getCachedDbStructure(MOTOS_DATABASE_ID);
+      const dbProps = dbData.properties;
+
+      const properties: any = {};
+      
+      for (const [key, prop] of Object.entries(dbProps)) {
+        const p = prop as any;
+        const lowerKey = key.toLowerCase();
+        
+        if (p.type === 'title' && body.nome !== undefined) {
+          properties[key] = { title: [{ text: { content: body.nome || "-" } }] };
+        } else if (lowerKey === 'marca' && body.marca !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.marca || "" } }] };
+          else if (p.type === 'select') properties[key] = { select: { name: body.marca } };
+        } else if (lowerKey === 'modelo' && body.modelo !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.modelo || "" } }] };
+        } else if (lowerKey === 'ano' && body.ano !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.ano || "" } }] };
+          else if (p.type === 'number') properties[key] = { number: Number(body.ano) };
+        } else if ((lowerKey === 'valor' || lowerKey === 'preço') && body.valor !== undefined) {
+          if (p.type === 'number') properties[key] = { number: Number(body.valor) };
+        } else if (lowerKey === 'cor' && body.cor !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.cor || "" } }] };
+          else if (p.type === 'select') properties[key] = { select: { name: body.cor } };
+        } else if (lowerKey === 'cilindrada' && body.cilindrada !== undefined) {
+          if (p.type === 'number') properties[key] = { number: Number(body.cilindrada) };
+        } else if (lowerKey === 'lote' && body.lote !== undefined) {
+          if (p.type === 'select') properties[key] = { select: { name: body.lote } };
+          else if (p.type === 'number') properties[key] = { number: Number(body.lote) };
+        } else if (lowerKey === 'nome nf' && body.nome_nf !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.nome_nf || "" } }] };
+        } else if (lowerKey === 'peças retiradas' && body.pecas_retiradas !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.pecas_retiradas || "" } }] };
+        } else if (lowerKey === 'status' && body.status !== undefined) {
+          if (p.type === 'select') properties[key] = { select: { name: body.status } };
+        } else if ((lowerKey === 'observações' || lowerKey === 'desc') && body.descricao !== undefined) {
+          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.descricao || "" } }] };
+        }
+      }
+
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ properties })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      const result = await response.json();
+      res.json({ success: true, data: formatMotosItem(result) });
+    } catch (error: any) {
+      console.error("Update Moto Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.delete("/api/motos/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ archived: true })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete Moto Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/motos/bulk-delete", async (req, res) => {
+    try {
+      const { ids } = req.body;
+      if (!ids || !Array.isArray(ids)) {
+        return res.status(400).json({ success: false, error: "IDs inválidos" });
+      }
+
+      const deletePromises = ids.map(id => 
+        fetch(`https://api.notion.com/v1/pages/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({ archived: true })
+        })
+      );
+
+      await Promise.all(deletePromises);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Bulk Delete Motos Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ==================== WHATSAPP INTEGRATION (VERSÃO ULTRA ESTÁVEL 2026) ====================
+  /*
+  const BAILEY_CONFIG = {
+    connectTimeoutMs: 120000,           // mais tolerante
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 30000,         // Baileys gerencia sozinho
+    retryRequestDelayMs: 1000,
+    markOnlineOnConnect: true,
+    shouldSyncHistoryMessage: () => false,
+    syncFullHistory: false,
+    fireInitQueries: false,
+    emitOwnEvents: false,
+  };
+
+  let whatsappMessages: any[] = [];
+  let conversations: Map<string, any> = new Map();
+  let contacts: Map<string, any> = new Map();
+  let qrCodeData: string | null = null;
+  let isWhatsAppConnected = false;
+  let whatsappLogs: string[] = [];
+  let isReconnecting = false;
+  let reconnectAttempts = 0;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+  let currentSocket: any = null;
+  let messageQueue: any[] = [];
+  let isProcessingQueue = false;
+  const profilePicCache = new Map<string, string>();
+
+  function addLog(msg: string) {
+    const log = `${new Date().toISOString()} [PID:${process.pid}] - ${msg}`;
+    console.log(log);
+    whatsappLogs.push(log);
+    if (whatsappLogs.length > 100) whatsappLogs.shift();
+  }
+
+  function emitStatus() {
+    io.emit('whatsapp-status', {
+      connected: isWhatsAppConnected,
+      isConnecting: isReconnecting,
+      reconnectAttempts,
+      qr: !!qrCodeData
+    });
+  }
+
+  async function processMessageQueue() {
+    if (isProcessingQueue || messageQueue.length === 0) return;
+    isProcessingQueue = true;
+
+    addLog(`📥 Processando fila (${messageQueue.length} pendentes)`);
+
+    while (messageQueue.length > 0) {
+      const msg = messageQueue[0];
+      try {
+        if (msg.type === 'send') {
+          if (!currentSocket || !isWhatsAppConnected || currentSocket.ws.readyState !== 1) {
+            addLog(`⚠️ Socket desconectado. Pausando envio.`);
+            break;
+          }
+
+          addLog(`📤 Enviando mensagem enfileirada para ${msg.number}`);
+          const sendPromise = currentSocket.sendMessage(msg.jid, msg.message);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout 30s')), 30000)
+          );
+
+          await Promise.race([sendPromise, timeoutPromise]);
+          addLog(`✅ Mensagem enviada`);
+
+          // atualiza status na conversa
+          if (conversations.has(msg.number)) {
+            const conv = conversations.get(msg.number);
+            const idx = conv.messages.findIndex((m: any) => m.id === msg.sentMessageId);
+            if (idx !== -1) conv.messages[idx].status = 'sent';
+            conversations.set(msg.number, conv);
+            io.emit('whatsapp-conversations', Array.from(conversations.values()));
+          }
+        } else {
+          await Promise.race([detectIntent(msg), new Promise((_, r) => setTimeout(() => r(new Error('Timeout intent')), 30000))]);
+        }
+        messageQueue.shift();
+      } catch (error: any) {
+        addLog(`❌ Erro na fila: ${error.message}`);
+        const failed = messageQueue.shift();
+        if (failed) {
+          failed.retryCount = (failed.retryCount || 0) + 1;
+          if (failed.retryCount < 3) messageQueue.push(failed);
+          else addLog(`⚠️ Mensagem descartada após 3 tentativas`);
+        }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    isProcessingQueue = false;
+  }
+
+  function scheduleReconnect(delayMs: number) {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    addLog(`⏳ Agendando reconexão em ${delayMs}ms (tentativa ${reconnectAttempts})`);
+    reconnectTimer = setTimeout(() => {
+      isReconnecting = false;
+      connectToWhatsApp();
+    }, delayMs);
+  }
+
+  async function connectToWhatsApp() {
+    if (isReconnecting) return;
+    isReconnecting = true;
+
+    // === LIMPEZA TOTAL DO SOCKET ANTERIOR ===
+    if (currentSocket) {
+      try {
+        currentSocket.ev.removeAllListeners();
+        currentSocket.end(undefined);
+      } catch {}
+      currentSocket = null;
+    }
+    await new Promise(r => setTimeout(r, 800)); // dá tempo real de fechar
+
+    try {
+      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = await import("@whiskeysockets/baileys");
+      const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+      const { version } = await fetchLatestBaileysVersion();
+
+      const pino = (await import('pino')).default;
+      const logger = pino({ level: 'warn' }, {
+        write: (data: string) => {
+          try {
+            const log = JSON.parse(data);
+            if (log.level >= 40) addLog(`[Baileys] ${log.msg}`);
+          } catch {
+            addLog(`[Baileys] ${data.trim()}`);
+          }
+        }
+      });
+
+      const sock = makeWASocket({
+        ...BAILEY_CONFIG,
+        version,
+        auth: state,
+        logger,
+        printQRInTerminal: false,
+        // === UA REALISTA (principal causa de estabilidade) ===
+        browser: ['Ubuntu', 'Chrome', '130.0.0'],
+      });
+
+      currentSocket = sock;
+      (app as any).whatsappSock = sock;
+
+      sock.ev.on('creds.update', saveCreds);
+
+      sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr && !state.creds?.registered) {
+          qrCodeData = await QRCode.toDataURL(qr);
+          io.emit('whatsapp-qr', qrCodeData);
+          emitStatus();
+        }
+
+        if (connection === 'open') {
+          isWhatsAppConnected = true;
+          reconnectAttempts = 0;
+          isReconnecting = false;
+          qrCodeData = null;
+          addLog('✅ WhatsApp CONECTADO e ESTÁVEL!');
+          processMessageQueue();
+          emitStatus();
+        }
+
+        if (connection === 'close') {
+          const statusCode = (lastDisconnect?.error as any)?.output?.statusCode ??
+                             (lastDisconnect?.error as any)?.statusCode;
+
+          if (statusCode === DisconnectReason.loggedOut) {
+            isWhatsAppConnected = false;
+            addLog('🚪 Logout detectado. Limpando sessão...');
+            const authPath = path.join(process.cwd(), 'baileys_auth_info');
+            if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+            qrCodeData = null;
+            emitStatus();
+          } else {
+            isWhatsAppConnected = false;
+            reconnectAttempts++;
+            
+            let delay = Math.min(3000 * reconnectAttempts, 60000); // backoff inteligente
+            if (statusCode === 440) delay = 45000;
+            if (statusCode === 515) delay = 15000;
+            if (statusCode === 409) delay = 8000;
+
+            addLog(`🔄 Conexão fechada (${statusCode}). Reconectando em ${delay}ms...`);
+            scheduleReconnect(delay);
+          }
+        }
+      });
+
+      // === MENSAGENS (mantido exatamente como você gostava) ===
+      sock.ev.on('messages.upsert', async (m) => {
+        if (m.type === 'notify') {
+          for (const msg of m.messages) {
+            // Apenas mensagens recebidas (não enviadas por mim) e que tenham conteúdo de texto
+            if (!msg.key.fromMe && msg.message) {
+              const remoteJid = msg.key.remoteJid || '';
+              const from = remoteJid.split('@')[0] || '';
+              
+              // BLACKLIST: Não exibir mensagens desse número
+              if (from === '558382039490') {
+                continue;
+              }
+
+              const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+              
+              // Buscar informações do contato
+              let contactName = msg.pushName || from;
+              const cachedContact = contacts.get(remoteJid);
+              if (cachedContact) {
+                contactName = cachedContact.name || cachedContact.verifiedName || cachedContact.notify || contactName;
+              }
+
+              let profilePic = profilePicCache.get(remoteJid) || null;
+              
+              // Buscar foto de perfil em background se não estiver no cache
+              if (!profilePic && isWhatsAppConnected) {
+                try {
+                  profilePic = await sock.profilePictureUrl(remoteJid, 'image').catch(() => null);
+                  if (profilePic) profilePicCache.set(remoteJid, profilePic);
+                } catch (e) {}
+              }
+
+              // Evitar duplicatas (Baileys às vezes re-envia mensagens recentes)
+              if (whatsappMessages.some(m => m.id === msg.key.id)) continue;
+
+              const newMessage = {
+                id: msg.key.id,
+                key: msg.key, // Guardar a chave para deletar depois
+                remoteJid,
+                from,
+                number: from, // Adicionar o número explicitamente
+                name: contactName,
+                body,
+                profilePic: profilePic || '',
+                timestamp: new Date(),
+                status: 'unread',
+                processed: false
+              };
+
+              whatsappMessages.push(newMessage);
+
+              // ATUALIZAR OU CRIAR CONVERSA NO MAPA
+              if (!conversations.has(from)) {
+                conversations.set(from, {
+                  number: from,
+                  remoteJid: remoteJid, // Guardar o JID real para envio
+                  name: contactName,
+                  profilePic: profilePic || '',
+                  lastMessage: body,
+                  lastTimestamp: new Date(),
+                  unreadCount: 1,
+                  messages: [newMessage],
+                  status: 'online'
+                });
+              } else {
+                const conv = conversations.get(from);
+                conv.remoteJid = remoteJid; // Atualizar JID por segurança
+                conv.name = contactName; // Atualizar nome se mudou
+                conv.profilePic = profilePic || conv.profilePic;
+                conv.lastMessage = body;
+                conv.lastTimestamp = new Date();
+                conv.unreadCount = (conv.unreadCount || 0) + 1;
+                conv.messages.push(newMessage);
+                conversations.set(from, conv);
+              }
+
+              io.emit('whatsapp-conversations', Array.from(conversations.values()).filter(c => c.number !== '558382039490'));
+              io.emit('whatsapp-notification', { count: whatsappMessages.filter(m => m.status === 'unread' && m.from !== '558382039490').length });
+
+              // Adicionar à fila de processamento da IA
+              messageQueue.push(newMessage);
+              processMessageQueue();
+            }
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Erro na conexão WhatsApp:', error);
+      isReconnecting = false;
+      setTimeout(connectToWhatsApp, 10000);
+    }
+  }
+
+  async function detectIntent(message: any) {
+    const apiKey = config.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === "MY_GEMINI_API_KEY") return;
+
+    try {
+      const { GoogleGenAI, Type, ThinkingLevel } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const prompt = `
+        Você é o assistente de atendimento do RK Sucatas.
+        Mensagem do cliente: "${message.body}"
+        Identifique a intenção e retorne APENAS UM JSON com:
+        {
+          "intencao": "busca" | "orcamento" | "compra" | "duvida" | "outro",
+          "termo": "termo de busca (se for busca)",
+          "resumo": "resumo do que o cliente quer em 1 frase"
+        }
+      `;
+      
+      const result = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              intencao: { type: Type.STRING },
+              termo: { type: Type.STRING },
+              resumo: { type: Type.STRING }
+            },
+            required: ["intencao", "resumo"]
+          }
+        }
+      });
+      
+      const intent = JSON.parse(result.text || '{}');
+      const index = whatsappMessages.findIndex(m => m.id === message.id);
+      if (index !== -1) {
+        whatsappMessages[index].intent = intent;
+        whatsappMessages[index].processed = true;
+        io.emit('whatsapp-message-updated', whatsappMessages[index]);
+      }
+    } catch (error) {
+      console.error('Erro ao detectar intenção:', error);
+    }
+  }
+
+  // ==================== MERCADO LIVRE ROUTES ====================
+
+  // Dashboard - Métricas principais
+  app.get('/api/ml/dashboard', async (req, res) => {
+    try {
+      const { period = '30d' } = req.query;
+      
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(period as string));
+      
+      const formatDate = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}T00:00:00.000-03:00`;
+      };
+      
+      console.log(`📊 Buscando dados ML de ${formatDate(startDate)} até ${formatDate(endDate)}`);
+      
+      // Buscar dados em paralelo com tratamento de erros individual
+      const questionsPromise = mlClient.getQuestions('UNANSWERED', 1).catch(err => {
+        console.error('Erro ao buscar perguntas:', err);
+        return { total: 0 };
+      });
+      
+      const listingsPromise = mlClient.getListings('active', 100).catch(err => {
+        console.error('Erro ao buscar anúncios:', err);
+        return [];
+      });
+      
+      const salesPromise = mlClient.getSalesMetrics(formatDate(startDate), formatDate(endDate)).catch(err => {
+        console.error('Erro ao buscar métricas de vendas:', err);
+        return { total: 0, average: 0 };
+      });
+      
+      const [questions, listings, salesMetrics] = await Promise.all([
+        questionsPromise,
+        listingsPromise,
+        salesPromise
+      ]);
+      
+      console.log('📊 Dados obtidos:', {
+        questions: questions.total,
+        listings: listings.length,
+        sales: salesMetrics.total,
+        avgTicket: salesMetrics.average
+      });
+      
+      res.json({
+        success: true,
+        data: {
+          pendingQuestions: questions.total || 0,
+          activeListings: listings.length || 0,
+          monthlySales: salesMetrics.total || 0,
+          avgTicket: salesMetrics.average || 0,
+          period
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ Erro no dashboard ML:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Perguntas - Listar
+  app.get('/api/ml/questions', async (req, res) => {
+    try {
+      const { status = 'UNANSWERED', limit = 50 } = req.query;
+      
+      const result = await mlClient.getQuestions(status as string, Number(limit));
+      
+      // Enriquecer com dados dos itens
+      const enrichedQuestions = await Promise.all(
+        (result.questions || []).map(async (q: any) => {
+          try {
+            const item = await mlClient.request(`/items/${q.item_id}`);
+            return { 
+              ...q, 
+              item_title: item.title, 
+              item_thumbnail: item.thumbnail 
+            };
+          } catch {
+            return q;
+          }
+        })
+      );
+      
+      res.json({
+        success: true,
+        data: enrichedQuestions,
+        total: result.total
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Responder pergunta
+  app.post('/api/ml/questions/:id/answer', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { answer } = req.body;
+      
+      const result = await mlClient.answerQuestion(id, answer);
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Listar anúncios
+  app.get('/api/ml/listings', async (req, res) => {
+    try {
+      const { status = 'active', limit = 50 } = req.query;
+      
+      const listings = await mlClient.getListings(status as string, Number(limit));
+      res.json({ success: true, data: listings });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.get("/api/whatsapp/status", (req, res) => {
+    res.json({ 
+      connected: isWhatsAppConnected, 
+      qr: qrCodeData,
+      queue: messageQueue.length,
+      isConnecting: isReconnecting,
+      reconnectAttempts,
+      serverStartTime
+    });
+  });
+
+  app.get("/api/whatsapp/messages", (req, res) => {
+    res.json({ success: true, data: whatsappMessages });
+  });
+
+  app.get("/api/whatsapp/conversations", (req, res) => {
+    const conversationsList = Array.from(conversations.values())
+      .sort((a, b) => new Date(b.lastTimestamp).getTime() - new Date(a.lastTimestamp).getTime());
+    res.json({ success: true, data: conversationsList });
+  });
+
+  app.get("/api/whatsapp/conversations/:number/messages", (req, res) => {
+    const { number } = req.params;
+    const conv = conversations.get(number);
+    res.json({ success: true, data: conv?.messages || [] });
+  });
+
+  app.post("/api/whatsapp/messages/:id/read", (req, res) => {
+    const { id } = req.params;
+    const index = whatsappMessages.findIndex(m => m.id === id);
+    if (index !== -1) {
+      whatsappMessages[index].status = 'read';
+      const from = whatsappMessages[index].from;
+      if (conversations.has(from)) {
+        const conv = conversations.get(from);
+        const mIdx = conv.messages.findIndex((m: any) => m.id === id);
+        if (mIdx !== -1) conv.messages[mIdx].status = 'read';
+        conv.unreadCount = Math.max(0, conv.unreadCount - 1);
+        conversations.set(from, conv);
+        io.emit('whatsapp-conversations', Array.from(conversations.values()));
+      }
+      io.emit('whatsapp-notification', { count: whatsappMessages.filter(m => m.status === 'unread').length });
+    }
+    res.json({ success: true });
+  });
+
+  app.delete("/api/whatsapp/conversations/:number", async (req, res) => {
+    try {
+      const { number } = req.params;
+      if (!conversations.has(number)) throw new Error("Conversa não encontrada");
+
+      // Remover todas as mensagens associadas a este número
+      whatsappMessages = whatsappMessages.filter(m => m.from !== number);
+      
+      // Remover a conversa do mapa
+      conversations.delete(number);
+
+      io.emit('whatsapp-conversations', Array.from(conversations.values()).filter(c => c.number !== '558382039490'));
+      io.emit('whatsapp-notification', { count: whatsappMessages.filter(m => m.status === 'unread' && m.from !== '558382039490').length });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Erro ao deletar conversa:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.delete("/api/whatsapp/messages/:id", (req, res) => {
+    const { id } = req.params;
+    const msg = whatsappMessages.find(m => m.id === id);
+    if (msg) {
+      const from = msg.from;
+      whatsappMessages = whatsappMessages.filter(m => m.id !== id);
+      if (conversations.has(from)) {
+        const conv = conversations.get(from);
+        conv.messages = conv.messages.filter((m: any) => m.id !== id);
+        if (conv.messages.length === 0) {
+          conversations.delete(from);
+        } else {
+          conv.lastMessage = conv.messages[conv.messages.length - 1].body;
+          conv.lastTimestamp = conv.messages[conv.messages.length - 1].timestamp;
+          conversations.set(from, conv);
+        }
+        io.emit('whatsapp-conversations', Array.from(conversations.values()));
+      }
+      io.emit('whatsapp-notification', { count: whatsappMessages.filter(m => m.status === 'unread').length });
+    }
+    res.json({ success: true });
+  });
+
+  app.delete("/api/whatsapp/messages/:id/remote", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const msg = whatsappMessages.find(m => m.id === id);
+      if (!msg) throw new Error("Mensagem não encontrada");
+
+      const sock = (app as any).whatsappSock;
+      if (!sock) throw new Error("WhatsApp não conectado");
+
+      // Deletar para todos (revoke)
+      await sock.sendMessage(msg.remoteJid, { delete: msg.key });
+      
+      // Remover do sistema também
+      const from = msg.from;
+      whatsappMessages = whatsappMessages.filter(m => m.id !== id);
+      if (conversations.has(from)) {
+        const conv = conversations.get(from);
+        conv.messages = conv.messages.filter((m: any) => m.id !== id);
+        if (conv.messages.length === 0) {
+          conversations.delete(from);
+        } else {
+          conv.lastMessage = conv.messages[conv.messages.length - 1].body;
+          conv.lastTimestamp = conv.messages[conv.messages.length - 1].timestamp;
+          conversations.set(from, conv);
+        }
+        io.emit('whatsapp-conversations', Array.from(conversations.values()));
+      }
+      io.emit('whatsapp-notification', { count: whatsappMessages.filter(m => m.status === 'unread').length });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Erro ao deletar mensagem remota:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/whatsapp/send", async (req, res) => {
+    try {
+      const { number, message, replyToId } = req.body;
+      addLog(`📤 Solicitando envio de mensagem para ${number}...`);
+      
+      const sock = currentSocket;
+      
+      // Determinar JID correto
+      let jid = `${number}@s.whatsapp.net`;
+      if (conversations.has(number)) {
+        jid = conversations.get(number).remoteJid;
+      } else if (number.includes('-')) {
+        jid = `${number}@g.us`; // Provável grupo
+      }
+
+      const sentMessage = {
+        id: `send_${Date.now()}`,
+        from: 'me',
+        body: message,
+        timestamp: new Date(),
+        status: 'sending'
+      };
+
+      // Adicionar a mensagem à conversa imediatamente (otimista)
+      if (conversations.has(number)) {
+        const conv = conversations.get(number);
+        conv.messages.push(sentMessage);
+        conv.lastMessage = message;
+        conv.lastTimestamp = new Date();
+        conversations.set(number, conv);
+      } else {
+        conversations.set(number, {
+          number: number,
+          remoteJid: jid,
+          name: number,
+          lastMessage: message,
+          lastTimestamp: new Date(),
+          unreadCount: 0,
+          messages: [sentMessage],
+          status: 'online'
+        });
+      }
+      io.emit('whatsapp-conversations', Array.from(conversations.values()));
+
+      // Função para atualizar o status da mensagem
+      const updateMessageStatus = (status: string) => {
+        if (conversations.has(number)) {
+          const conv = conversations.get(number);
+          const msgIndex = conv.messages.findIndex((m: any) => m.id === sentMessage.id);
+          if (msgIndex !== -1) {
+            conv.messages[msgIndex].status = status;
+            conversations.set(number, conv);
+            io.emit('whatsapp-conversations', Array.from(conversations.values()));
+          }
+        }
+      };
+
+      if (!sock || !isWhatsAppConnected || sock.ws.readyState !== 1) {
+        addLog(`⚠️ WhatsApp não conectado no momento. Enfileirando mensagem para ${number}...`);
+        
+        // Adicionar à fila de mensagens enviadas
+        messageQueue.push({
+          type: 'send',
+          jid,
+          message: { text: message },
+          sentMessageId: sentMessage.id,
+          number
+        });
+        
+        updateMessageStatus('queued');
+
+        return res.status(202).json({ 
+          success: true, 
+          message: "Mensagem enfileirada. Será enviada quando a conexão for restabelecida.",
+          status: 'queued'
+        });
+      }
+
+      // Tentar enviar diretamente
+      try {
+        const sendPromise = sock.sendMessage(jid, { text: message });
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout ao enviar mensagem')), 30000)
+        );
+        
+        await Promise.race([sendPromise, timeoutPromise]);
+        addLog(`✅ Mensagem enviada para ${number}`);
+        updateMessageStatus('sent');
+
+      } catch (sendError: any) {
+        addLog(`⚠️ Falha ao enviar diretamente para ${number}, enfileirando. Erro: ${sendError.message}`);
+        messageQueue.push({
+          type: 'send',
+          jid,
+          message: { text: message },
+          sentMessageId: sentMessage.id,
+          number
+        });
+        updateMessageStatus('queued');
+        
+        return res.status(202).json({ 
+          success: true, 
+          message: "Mensagem enfileirada após falha inicial.",
+          status: 'queued'
+        });
+      }
+
+      if (replyToId) {
+        const index = whatsappMessages.findIndex(m => m.id === replyToId);
+        if (index !== -1) {
+          whatsappMessages[index].replied = true;
+          whatsappMessages[index].repliedAt = new Date();
+          // Atualizar na conversa também
+          const from = whatsappMessages[index].from;
+          if (conversations.has(from)) {
+            const conv = conversations.get(from);
+            const mIdx = conv.messages.findIndex((m: any) => m.id === replyToId);
+            if (mIdx !== -1) {
+              conv.messages[mIdx].replied = true;
+              conv.messages[mIdx].repliedAt = new Date();
+            }
+            conversations.set(from, conv);
+            io.emit('whatsapp-conversations', Array.from(conversations.values()).filter(c => c.number !== '558382039490'));
+          }
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        message: 'Mensagem enviada',
+        status: 'connected'
+      });
+      
+    } catch (error: any) {
+      addLog(`❌ Erro crítico ao processar envio de mensagem: ${error.message}`);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        status: isWhatsAppConnected ? 'connected' : 'disconnected'
+      });
+    }
+  });
+
+  app.get("/api/whatsapp/logs", (req, res) => {
+    res.json({ success: true, logs: whatsappLogs });
+  });
+
+  app.post("/api/whatsapp/logout", async (req, res) => {
+    try {
+      addLog('🚪 Solicitando logout do WhatsApp...');
+      const sock = (app as any).whatsappSock;
+      if (sock) {
+        await sock.logout();
+      }
+      
+      // Limpar pasta de autenticação
+      const authPath = path.join(process.cwd(), 'baileys_auth_info');
+      if (fs.existsSync(authPath)) {
+        fs.rmSync(authPath, { recursive: true, force: true });
+      }
+      
+      isWhatsAppConnected = false;
+      qrCodeData = null;
+      emitStatus();
+      
+      // Reiniciar conexão para gerar novo QR
+      isReconnecting = false;
+      connectToWhatsApp();
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Erro ao deslogar WhatsApp:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/whatsapp/force-qr", async (req, res) => {
+    try {
+      addLog('🔄 Forçando novo QR Code...');
+      const sock = (app as any).whatsappSock;
+      if (sock) {
+        try {
+          sock.ev.removeAllListeners('connection.update');
+          sock.ev.removeAllListeners('creds.update');
+          sock.ev.removeAllListeners('messages.upsert');
+          sock.end(new Error('Forçando novo QR'));
+        } catch (e) {}
+      }
+      
+      // Limpar pasta de autenticação para garantir novo QR
+      const authPath = path.join(process.cwd(), 'baileys_auth_info');
+      if (fs.existsSync(authPath)) {
+        fs.rmSync(authPath, { recursive: true, force: true });
+      }
+      
+      isWhatsAppConnected = false;
+      qrCodeData = null;
+      isReconnecting = false;
+      
+      // Pequeno delay antes de reconectar
+      setTimeout(() => {
+        connectToWhatsApp();
+      }, 1000);
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Erro ao forçar QR:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+  */
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on http://localhost:${PORT} [PID:${process.pid}]`);
+    
+    /*
+    console.log("📱 Inicializando WhatsApp (Baileys)...");
+    // Pequeno delay para evitar conflitos se o servidor estiver reiniciando rápido
+    setTimeout(() => {
+      connectToWhatsApp().catch(err => {
+        console.error("❌ Erro ao inicializar WhatsApp:", err);
+      });
+    }, 10000);
+    */
+  });
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log('🛑 Encerrando servidor...');
+    /*
+    const sock = (app as any).whatsappSock;
+    if (sock) {
+      try {
+        sock.ev.removeAllListeners('connection.update');
+        sock.end(undefined);
+        console.log('✅ Socket WhatsApp encerrado.');
+      } catch (e) {}
+    }
+    */
+    process.exit(0);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+
+startServer();

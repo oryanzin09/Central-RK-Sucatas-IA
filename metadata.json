@@ -1,0 +1,5 @@
+{
+  "name": "Sales & Inventory Dashboard",
+  "description": "A modern sales dashboard with real-time inventory tracking from Notion.",
+  "requestFramePermissions": []
+}

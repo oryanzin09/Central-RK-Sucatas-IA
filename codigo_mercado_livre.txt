@@ -1,0 +1,438 @@
+======================================================================
+1. services/mlClient.ts
+======================================================================
+import axios from 'axios';
+
+class MLClient {
+  baseURL: string;
+  clientId: string;
+  clientSecret: string;
+  accessToken: string;
+  refreshToken: string;
+  userId: string;
+
+  constructor() {
+    this.baseURL = 'https://api.mercadolibre.com';
+    this.clientId = process.env.ML_CLIENT_ID || '458087912144789';
+    this.clientSecret = process.env.ML_CLIENT_SECRET || 'FpzTCzJmEG7FdcaMWk81H9nnNpxUTAQc';
+    this.accessToken = process.env.ML_ACCESS_TOKEN || 'APP_USR-458087912144789-031314-82c06a646fbda963d7fc2568a1e8f89b-2908181527';
+    this.refreshToken = process.env.ML_REFRESH_TOKEN || 'TG-69b456d706333000017bd997-2908181527';
+    this.userId = process.env.ML_USER_ID || '2908181527';
+  }
+
+  async request(endpoint: string, options: any = {}) {
+    try {
+      const response = await axios({
+        url: `${this.baseURL}${endpoint}`,
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        ...options
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        console.log('🔄 Token expirado, renovando...');
+        await this.refreshAccessToken();
+        return this.request(endpoint, options);
+      }
+      throw error;
+    }
+  }
+
+  async refreshAccessToken() {
+    try {
+      const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
+        grant_type: 'refresh_token',
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: this.refreshToken
+      });
+      
+      this.accessToken = response.data.access_token;
+      this.refreshToken = response.data.refresh_token;
+      
+      console.log('✅ Token renovado com sucesso');
+      return this.accessToken;
+    } catch (error: any) {
+      console.error('❌ Erro ao renovar token:', error.message);
+      throw error;
+    }
+  }
+
+  // ========== MÉTRICAS ==========
+  async getUserInfo() {
+    return this.request('/users/me');
+  }
+
+  async getSalesMetrics(dateFrom: string, dateTo: string) {
+    return this.request(`/users/${this.userId}/sales/metrics`, {
+      params: { date_from: dateFrom, date_to: dateTo }
+    });
+  }
+
+  // ========== ANÚNCIOS ==========
+  async getListings(status = 'active', limit = 50) {
+    const search = await this.request(`/users/${this.userId}/items/search`, {
+      params: { status, limit }
+    });
+    
+    if (search.results?.length) {
+      const items = await this.request('/items', {
+        params: { ids: search.results.join(','), attributes: 'id,title,price,available_quantity,status,permalink,thumbnail,condition' }
+      });
+      return items.map((item: any) => item.body);
+    }
+    return [];
+  }
+
+  // ========== PERGUNTAS ==========
+  async getQuestions(status = 'UNANSWERED', limit = 50) {
+    return this.request('/marketplace/questions/search', {
+      params: {
+        seller_id: this.userId,
+        status,
+        limit,
+        api_version: 4
+      }
+    });
+  }
+
+  async answerQuestion(questionId: string, answer: string) {
+    return this.request('/answers', {
+      method: 'POST',
+      data: {
+        question_id: questionId,
+        text: answer
+      }
+    });
+  }
+}
+
+export default new MLClient();
+
+
+======================================================================
+2. src/pages/MercadoLivre.tsx
+======================================================================
+import React, { useState } from 'react';
+import { TrendingUp, MessageSquare, Package, LayoutDashboard } from 'lucide-react';
+import { MLDashboard } from '../components/ml/MLDashboard';
+import { MLQuestions } from '../components/ml/MLQuestions';
+import { MLCatalog } from '../components/ml/MLCatalog';
+
+export const MercadoLivre = ({ theme }: { theme: string }) => {
+  const [activeTab, setActiveTab] = useState('dashboard');
+
+  const tabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'questions', label: 'Perguntas', icon: MessageSquare },
+    { id: 'catalog', label: 'Catálogo', icon: Package }
+  ];
+
+  const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
+
+  return (
+    <div className="space-y-6">
+      {/* Header com título e tabs */}
+      <div className="flex items-center justify-between">
+        <h2 className={cn("text-2xl font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+          Mercado Livre
+        </h2>
+        <div className={cn("flex items-center gap-2 p-1 rounded-xl", theme === 'dark' ? "bg-zinc-800/50" : "bg-zinc-200/50")}>
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all",
+                activeTab === tab.id
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                  : theme === 'dark' ? "text-zinc-400 hover:text-white" : "text-zinc-600 hover:text-zinc-900"
+              )}
+            >
+              <tab.icon size={16} />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Conteúdo das abas */}
+      <div>
+        {activeTab === 'dashboard' && <MLDashboard theme={theme} />}
+        {activeTab === 'questions' && <MLQuestions theme={theme} />}
+        {activeTab === 'catalog' && <MLCatalog theme={theme} />}
+      </div>
+    </div>
+  );
+};
+
+
+======================================================================
+3. src/components/ml/MLDashboard.tsx
+======================================================================
+import React, { useState, useEffect } from 'react';
+import { Package, MessageSquare, TrendingUp, ShoppingCart, DollarSign, RefreshCw } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+
+export const MLDashboard = ({ theme }: { theme: string }) => {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('30d');
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/ml/dashboard?period=${period}`);
+      const result = await response.json();
+      if (result.success) {
+        setData(result.data);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados ML:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [period]);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value || 0);
+  };
+
+  const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
+        <RefreshCw className="animate-spin text-violet-500" size={40} />
+        <p>Carregando dados do Mercado Livre...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Seletor de período */}
+      <div className="flex justify-end gap-2">
+        {['7d', '30d', '90d'].map(p => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={cn(
+              "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+              period === p
+                ? "bg-violet-600 text-white"
+                : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-200 text-zinc-600 hover:text-zinc-900"
+            )}
+          >
+            {p === '7d' ? '7 dias' : p === '30d' ? '30 dias' : '90 dias'}
+          </button>
+        ))}
+      </div>
+
+      {/* Cards de métricas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          icon={Package}
+          label="Anúncios Ativos"
+          value={data?.activeListings || 0}
+          subValue="itens publicados"
+          color="bg-blue-500"
+          theme={theme}
+        />
+        <MetricCard
+          icon={MessageSquare}
+          label="Perguntas Pendentes"
+          value={data?.pendingQuestions || 0}
+          subValue="aguardando resposta"
+          color="bg-amber-500"
+          theme={theme}
+        />
+        <MetricCard
+          icon={TrendingUp}
+          label="Vendas (Mês)"
+          value={formatCurrency(data?.monthlySales)}
+          subValue="faturamento ML"
+          color="bg-emerald-500"
+          theme={theme}
+        />
+        <MetricCard
+          icon={ShoppingCart}
+          label="Ticket Médio ML"
+          value={formatCurrency(data?.avgTicket)}
+          subValue="por venda"
+          color="bg-violet-500"
+          theme={theme}
+        />
+      </div>
+
+      {/* Gráficos placeholder - você pode adicionar dados reais depois */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={cn(
+          "border p-6 rounded-2xl h-[300px] flex items-center justify-center",
+          theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
+        )}>
+          <p className="text-zinc-500">Gráfico de vendas em breve</p>
+        </div>
+        <div className={cn(
+          "border p-6 rounded-2xl h-[300px] flex items-center justify-center",
+          theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
+        )}>
+          <p className="text-zinc-500">Distribuição por status</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const MetricCard = ({ icon: Icon, label, value, subValue, color, theme }: any) => {
+  const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
+  return (
+    <div className={cn(
+      "border rounded-2xl p-6",
+      theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
+    )}>
+      <div className={cn("p-3 rounded-xl w-fit mb-4", color)}>
+        <Icon className="text-white" size={24} />
+      </div>
+      <p className={cn("text-xs uppercase font-medium", theme === 'dark' ? "text-zinc-500" : "text-zinc-500")}>{label}</p>
+      <p className={cn("text-2xl font-bold mt-1", theme === 'dark' ? "text-white" : "text-zinc-900")}>{value}</p>
+      <p className={cn("text-xs mt-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>{subValue}</p>
+    </div>
+  );
+};
+
+
+======================================================================
+4. src/components/ml/MLQuestions.tsx
+======================================================================
+import React from 'react';
+
+export const MLQuestions = ({ theme }: { theme: string }) => {
+  return (
+    <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'}`}>
+      <h3 className="text-lg font-bold mb-4">Perguntas</h3>
+      <p className="text-zinc-500">Módulo de perguntas em desenvolvimento...</p>
+    </div>
+  );
+};
+
+
+======================================================================
+5. src/components/ml/MLCatalog.tsx
+======================================================================
+import React from 'react';
+
+export const MLCatalog = ({ theme }: { theme: string }) => {
+  return (
+    <div className={`p-6 rounded-2xl border ${theme === 'dark' ? 'bg-zinc-900/40 border-zinc-800 text-white' : 'bg-white border-zinc-200 text-zinc-900'}`}>
+      <h3 className="text-lg font-bold mb-4">Catálogo de Anúncios</h3>
+      <p className="text-zinc-500">Módulo de catálogo em desenvolvimento...</p>
+    </div>
+  );
+};
+
+
+======================================================================
+6. Rotas da API (server.ts)
+======================================================================
+  // ==================== MERCADO LIVRE ROUTES ====================
+
+  // Dashboard - Métricas principais
+  app.get('/api/ml/dashboard', async (req, res) => {
+    try {
+      const { period = '30d' } = req.query;
+      
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(period as string));
+      
+      const formatDate = (date: Date) => date.toISOString().replace('T', 'T').split('.')[0] + '-03:00';
+      
+      const [questions, listings, metrics] = await Promise.allSettled([
+        mlClient.getQuestions('UNANSWERED', 1).catch(() => ({ total: 0 })),
+        mlClient.getListings('active', 1).catch(() => []),
+        mlClient.getSalesMetrics(formatDate(startDate), formatDate(endDate)).catch(() => ({}))
+      ]);
+      
+      res.json({
+        success: true,
+        data: {
+          pendingQuestions: questions.status === 'fulfilled' ? questions.value?.total || 0 : 0,
+          activeListings: listings.status === 'fulfilled' ? listings.value?.length || 0 : 0,
+          monthlySales: metrics.status === 'fulfilled' ? (metrics.value as any)?.total || 0 : 0,
+          avgTicket: metrics.status === 'fulfilled' ? (metrics.value as any)?.average || 0 : 0,
+          period
+        }
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Perguntas - Listar
+  app.get('/api/ml/questions', async (req, res) => {
+    try {
+      const { status = 'UNANSWERED', limit = 50 } = req.query;
+      
+      const result = await mlClient.getQuestions(status as string, Number(limit));
+      
+      // Enriquecer com dados dos itens
+      const enrichedQuestions = await Promise.all(
+        (result.questions || []).map(async (q: any) => {
+          try {
+            const item = await mlClient.request(`/items/${q.item_id}`);
+            return { 
+              ...q, 
+              item_title: item.title, 
+              item_thumbnail: item.thumbnail 
+            };
+          } catch {
+            return q;
+          }
+        })
+      );
+      
+      res.json({
+        success: true,
+        data: enrichedQuestions,
+        total: result.total
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Responder pergunta
+  app.post('/api/ml/questions/:id/answer', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { answer } = req.body;
+      
+      const result = await mlClient.answerQuestion(id, answer);
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Listar anúncios
+  app.get('/api/ml/listings', async (req, res) => {
+    try {
+      const { status = 'active', limit = 50 } = req.query;
+      
+      const listings = await mlClient.getListings(status as string, Number(limit));
+      res.json({ success: true, data: listings });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });

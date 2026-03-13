@@ -1,0 +1,507 @@
+// ============================================================================
+// ARQUIVO: server.ts (Módulo WhatsApp)
+// ============================================================================
+
+  // ==================== WHATSAPP INTEGRATION (ESTÁVEL) ====================
+  const BAILEY_CONFIG = {
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 30000,      // ← mudou de 15s para 30s (mais estável)
+    retryRequestDelayMs: 1000,
+    markOnlineOnConnect: true,
+    shouldSyncHistoryMessage: () => false,
+    syncFullHistory: false,
+    fireInitQueries: false,
+    emitOwnEvents: false,
+  };
+
+  let whatsappMessages: any[] = [];
+  let conversations: Map<string, any> = new Map(); // Mapa de conversas por número
+  let contacts: Map<string, any> = new Map(); // Mapa de contatos
+  let qrCodeData: string | null = null;
+  let isWhatsAppConnected = false;
+  let whatsappLogs: string[] = [];
+  let isReconnecting = false;
+  let reconnectAttempts = 0;
+  let heartbeatInterval: NodeJS.Timeout | null = null;
+  let reconnectTimer: NodeJS.Timeout | null = null;
+  let heartbeatFailures = 0;
+  let currentSocket: any = null;
+  let messageQueue: any[] = [];
+  let isProcessingQueue = false;
+  const profilePicCache = new Map<string, string>();
+
+  function addLog(msg: string) {
+    const log = `${new Date().toISOString()} [PID:${process.pid}] - ${msg}`;
+    console.log(log);
+    whatsappLogs.push(log);
+    if (whatsappLogs.length > 100) whatsappLogs.shift();
+  }
+
+  function emitStatus() {
+    io.emit('whatsapp-status', { 
+      connected: isWhatsAppConnected,
+      isConnecting: isReconnecting,
+      reconnectAttempts: reconnectAttempts,
+      qr: !!qrCodeData
+    });
+  }
+
+  async function processMessageQueue() {
+    if (isProcessingQueue || messageQueue.length === 0) return;
+    isProcessingQueue = true;
+    
+    addLog(`📥 Processando fila de mensagens (${messageQueue.length} pendentes)`);
+    
+    while (messageQueue.length > 0) {
+      const msg = messageQueue[0];
+      try {
+        if (msg.type === 'send') {
+          // Mensagem de saída (enfileirada)
+          if (!currentSocket || !isWhatsAppConnected || currentSocket.ws.readyState !== 1) {
+            addLog(`⚠️ WhatsApp desconectado. Pausando fila de envio.`);
+            break; // Para de processar se não estiver conectado
+          }
+          
+          addLog(`📤 Tentando enviar mensagem enfileirada para ${msg.number}...`);
+          const sendPromise = currentSocket.sendMessage(msg.jid, msg.message);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout ao enviar mensagem')), 30000)
+          );
+          
+          await Promise.race([sendPromise, timeoutPromise]);
+          addLog(`✅ Mensagem enfileirada enviada para ${msg.number}`);
+          
+          // Atualizar status para 'sent'
+          if (conversations.has(msg.number)) {
+            const conv = conversations.get(msg.number);
+            const msgIndex = conv.messages.findIndex((m: any) => m.id === msg.sentMessageId);
+            if (msgIndex !== -1) {
+              conv.messages[msgIndex].status = 'sent';
+              conversations.set(msg.number, conv);
+              io.emit('whatsapp-conversations', Array.from(conversations.values()));
+            }
+          }
+          messageQueue.shift();
+        } else {
+          // Mensagem de entrada (detectIntent)
+          await Promise.race([
+            detectIntent(msg),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout na detecção de intenção')), 30000))
+          ]);
+          messageQueue.shift();
+        }
+      } catch (error: any) {
+        addLog(`❌ Erro ao processar mensagem da fila: ${error.message}`);
+        const failedMsg = messageQueue.shift();
+        if (failedMsg) {
+          failedMsg.retryCount = (failedMsg.retryCount || 0) + 1;
+          if (failedMsg.retryCount < 3) {
+            messageQueue.push(failedMsg);
+          } else {
+            addLog(`⚠️ Mensagem descartada após 3 tentativas.`);
+            if (failedMsg.type === 'send') {
+               // Atualizar status para 'error'
+               if (conversations.has(failedMsg.number)) {
+                 const conv = conversations.get(failedMsg.number);
+                 const msgIndex = conv.messages.findIndex((m: any) => m.id === failedMsg.sentMessageId);
+                 if (msgIndex !== -1) {
+                   conv.messages[msgIndex].status = 'error';
+                   conversations.set(failedMsg.number, conv);
+                   io.emit('whatsapp-conversations', Array.from(conversations.values()));
+                 }
+               }
+            }
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        break; 
+      }
+    }
+    isProcessingQueue = false;
+  }
+
+  function scheduleReconnect(delayMs: number) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    addLog(`⏳ Agendando reconexão em ${delayMs}ms...`);
+    reconnectTimer = setTimeout(() => {
+      isReconnecting = false;
+      connectToWhatsApp();
+    }, delayMs);
+  }
+
+  function startStableHeartbeat(sock: any) {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    heartbeatFailures = 0;
+    heartbeatInterval = setInterval(async () => {
+      if (!sock?.ws || sock.ws.readyState !== 1 || sock !== currentSocket) return;
+      try {
+        await sock.sendPresenceUpdate('available');
+        await sock.ws.ping(); // ← ping extra do WebSocket
+        heartbeatFailures = 0; // Reset on success
+      } catch (error: any) {
+        heartbeatFailures++;
+        addLog(`⚠️ Falha no heartbeat (${heartbeatFailures}/3): ${error.message}`);
+        if (heartbeatFailures >= 3) {
+          addLog(`❌ Conexão perdida (heartbeat falhou 3 vezes). Forçando reconexão...`);
+          if (heartbeatInterval) clearInterval(heartbeatInterval);
+          scheduleReconnect(2000);
+        }
+      }
+    }, 25000); // 25s
+  }
+
+  async function connectToWhatsApp() {
+    if (isReconnecting) return;
+    isReconnecting = true;
+
+    try {
+      // Fechar socket anterior se existir
+      if (currentSocket) {
+        try {
+          currentSocket.ev.removeAllListeners('connection.update');
+          currentSocket.ev.removeAllListeners('creds.update');
+          currentSocket.ev.removeAllListeners('messages.upsert');
+          currentSocket.end(undefined);
+        } catch (e) {}
+      }
+      
+      // Wait a bit to ensure socket is closed
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = await import("@whiskeysockets/baileys");
+      const { state, saveCreds } = await useMultiFileAuthState('baileys_auth_info');
+      const { version } = await fetchLatestBaileysVersion();
+      const pino = (await import('pino')).default;
+
+      const logger = pino({ level: 'warn' }, {
+        write: (data: string) => {
+          try {
+            const log = JSON.parse(data);
+            if (log.level >= 40) {
+              addLog(`[Baileys] ${log.msg} ${log.err ? log.err.message : ''}`);
+            }
+          } catch (e) {
+            addLog(`[Baileys] ${data.trim()}`);
+          }
+        }
+      });
+
+      const sock = makeWASocket({
+        ...BAILEY_CONFIG,
+        version,
+        auth: state,
+        logger,
+        printQRInTerminal: false,
+        browser: ['RK Sucatas', 'Stable', '1.0.0'],
+      });
+
+      currentSocket = sock;
+      (app as any).whatsappSock = sock;
+      sock.ev.on('creds.update', saveCreds);
+
+      // Add ws.close listener
+      sock.ws.on('close', () => {
+        if (sock !== currentSocket) return;
+        addLog(`⚠️ WebSocket fechado inesperadamente. Agendando reconexão...`);
+        scheduleReconnect(2000);
+      });
+
+      sock.ev.on('connection.update', async (update) => {
+        if (sock !== currentSocket) return;
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+          // QR code gerado – enviar para o frontend apenas se não houver sessão registrada
+          if (!state.creds?.registered) {
+            qrCodeData = await QRCode.toDataURL(qr);
+            io.emit('whatsapp-qr', qrCodeData);
+            emitStatus();
+          }
+        }
+
+        if (connection === 'open') {
+          isWhatsAppConnected = true;
+          reconnectAttempts = 0;
+          isReconnecting = false;
+          qrCodeData = null;
+          addLog('✅ WhatsApp conectado com sucesso!');
+          processMessageQueue();
+          startStableHeartbeat(sock);
+          emitStatus(); 
+        }
+
+        if (connection === 'close') {
+          const statusCode = (lastDisconnect?.error as any)?.output?.statusCode || 
+                             (lastDisconnect?.error as any)?.statusCode;
+
+          if (statusCode === DisconnectReason.loggedOut) {
+            // só aqui limpa sessão
+            isWhatsAppConnected = false;
+            if (heartbeatInterval) {
+              clearInterval(heartbeatInterval);
+              heartbeatInterval = null;
+            }
+            addLog('🚪 Logout detectado. Limpando sessão...');
+            isReconnecting = false;
+            const authPath = path.join(process.cwd(), 'baileys_auth_info');
+            if (fs.existsSync(authPath)) fs.rmSync(authPath, { recursive: true, force: true });
+            qrCodeData = null;
+            emitStatus();
+          } else {
+            // ← NUNCA marque como desconectado em falhas temporárias
+            reconnectAttempts++;
+            let delay = 2000;
+            if (statusCode === 440) {
+              delay = 30000; // Conflito, aguardar mais tempo
+            } else if (statusCode === 515) {
+              delay = 10000; // Reiniciando
+            } else if (statusCode === 409) {
+              delay = 5000;
+            }
+            addLog(`🔄 WhatsApp fechou (${statusCode}). Reconectando em ${delay}ms...`);
+            isWhatsAppConnected = true; // mantém "ativo" internamente
+            scheduleReconnect(delay);
+          }
+        }
+      });
+
+      sock.ev.on('messages.upsert', async (m) => {
+        if (m.type === 'notify') {
+          for (const msg of m.messages) {
+            // Apenas mensagens recebidas (não enviadas por mim) e que tenham conteúdo de texto
+            if (!msg.key.fromMe && msg.message) {
+              const remoteJid = msg.key.remoteJid || '';
+              const from = remoteJid.split('@')[0] || '';
+              
+              // BLACKLIST: Não exibir mensagens desse número
+              if (from === '558382039490') {
+                continue;
+              }
+
+              const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+              
+              // Buscar informações do contato
+              let contactName = msg.pushName || from;
+              const cachedContact = contacts.get(remoteJid);
+              if (cachedContact) {
+                contactName = cachedContact.name || cachedContact.verifiedName || cachedContact.notify || contactName;
+              }
+
+              let profilePic = profilePicCache.get(remoteJid) || null;
+              
+              // Buscar foto de perfil em background se não estiver no cache
+              if (!profilePic && isWhatsAppConnected) {
+                try {
+                  profilePic = await sock.profilePictureUrl(remoteJid, 'image').catch(() => null);
+                  if (profilePic) profilePicCache.set(remoteJid, profilePic);
+                } catch (e) {}
+              }
+
+              // Evitar duplicatas (Baileys às vezes re-envia mensagens recentes)
+              if (whatsappMessages.some(m => m.id === msg.key.id)) continue;
+
+              const newMessage = {
+                id: msg.key.id,
+                key: msg.key, // Guardar a chave para deletar depois
+                remoteJid,
+                from,
+                number: from, // Adicionar o número explicitamente
+                name: contactName,
+                body,
+                profilePic: profilePic || '',
+                timestamp: new Date(),
+                status: 'unread',
+                processed: false
+              };
+
+              whatsappMessages.push(newMessage);
+
+              // ATUALIZAR OU CRIAR CONVERSA NO MAPA
+              if (!conversations.has(from)) {
+                conversations.set(from, {
+                  number: from,
+                  remoteJid: remoteJid, // Guardar o JID real para envio
+                  name: contactName,
+                  profilePic: profilePic || '',
+                  lastMessage: body,
+                  lastTimestamp: new Date(),
+                  unreadCount: 1,
+                  messages: [newMessage],
+                  status: 'online'
+                });
+              } else {
+                const conv = conversations.get(from);
+                conv.remoteJid = remoteJid; // Atualizar JID por segurança
+                conv.name = contactName; // Atualizar nome se mudou
+                conv.profilePic = profilePic || conv.profilePic;
+                conv.lastMessage = body;
+                conv.lastTimestamp = new Date();
+                conv.unreadCount = (conv.unreadCount || 0) + 1;
+                conv.messages.push(newMessage);
+                conversations.set(from, conv);
+              }
+
+              io.emit('whatsapp-conversations', Array.from(conversations.values()).filter(c => c.number !== '558382039490'));
+              io.emit('whatsapp-notification', { count: whatsappMessages.filter(m => m.status === 'unread' && m.from !== '558382039490').length });
+
+              // Adicionar à fila de processamento da IA
+              messageQueue.push(newMessage);
+              processMessageQueue();
+            }
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Erro na conexão WhatsApp:', error);
+      isReconnecting = false;
+      setTimeout(connectToWhatsApp, 10000);
+    }
+  }
+
+  app.post("/api/whatsapp/send", async (req, res) => {
+    try {
+      const { number, message, replyToId } = req.body;
+      addLog(`📤 Solicitando envio de mensagem para ${number}...`);
+      
+      const sock = currentSocket;
+      
+      // Determinar JID correto
+      let jid = `${number}@s.whatsapp.net`;
+      if (conversations.has(number)) {
+        jid = conversations.get(number).remoteJid;
+      } else if (number.includes('-')) {
+        jid = `${number}@g.us`; // Provável grupo
+      }
+
+      const sentMessage = {
+        id: `send_${Date.now()}`,
+        from: 'me',
+        body: message,
+        timestamp: new Date(),
+        status: 'sending'
+      };
+
+      // Adicionar a mensagem à conversa imediatamente (otimista)
+      if (conversations.has(number)) {
+        const conv = conversations.get(number);
+        conv.messages.push(sentMessage);
+        conv.lastMessage = message;
+        conv.lastTimestamp = new Date();
+        conversations.set(number, conv);
+      } else {
+        conversations.set(number, {
+          number: number,
+          remoteJid: jid,
+          name: number,
+          lastMessage: message,
+          lastTimestamp: new Date(),
+          unreadCount: 0,
+          messages: [sentMessage],
+          status: 'online'
+        });
+      }
+      io.emit('whatsapp-conversations', Array.from(conversations.values()));
+
+      // Função para atualizar o status da mensagem
+      const updateMessageStatus = (status: string) => {
+        if (conversations.has(number)) {
+          const conv = conversations.get(number);
+          const msgIndex = conv.messages.findIndex((m: any) => m.id === sentMessage.id);
+          if (msgIndex !== -1) {
+            conv.messages[msgIndex].status = status;
+            conversations.set(number, conv);
+            io.emit('whatsapp-conversations', Array.from(conversations.values()));
+          }
+        }
+      };
+
+      if (!sock || !isWhatsAppConnected || sock.ws.readyState !== 1) {
+        addLog(`⚠️ WhatsApp não conectado no momento. Enfileirando mensagem para ${number}...`);
+        
+        // Adicionar à fila de mensagens enviadas
+        messageQueue.push({
+          type: 'send',
+          jid,
+          message: { text: message },
+          sentMessageId: sentMessage.id,
+          number
+        });
+        
+        updateMessageStatus('queued');
+
+        return res.status(202).json({ 
+          success: true, 
+          message: "Mensagem enfileirada. Será enviada quando a conexão for restabelecida.",
+          status: 'queued'
+        });
+      }
+
+      // Tentar enviar diretamente
+      try {
+        const sendPromise = sock.sendMessage(jid, { text: message });
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout ao enviar mensagem')), 30000)
+        );
+        
+        await Promise.race([sendPromise, timeoutPromise]);
+        addLog(`✅ Mensagem enviada para ${number}`);
+        updateMessageStatus('sent');
+
+      } catch (sendError: any) {
+        addLog(`⚠️ Falha ao enviar diretamente para ${number}, enfileirando. Erro: ${sendError.message}`);
+        messageQueue.push({
+          type: 'send',
+          jid,
+          message: { text: message },
+          sentMessageId: sentMessage.id,
+          number
+        });
+        updateMessageStatus('queued');
+        
+        return res.status(202).json({ 
+          success: true, 
+          message: "Mensagem enfileirada após falha inicial.",
+          status: 'queued'
+        });
+      }
+
+      if (replyToId) {
+        const index = whatsappMessages.findIndex(m => m.id === replyToId);
+        if (index !== -1) {
+          whatsappMessages[index].replied = true;
+          whatsappMessages[index].repliedAt = new Date();
+          // Atualizar na conversa também
+          const from = whatsappMessages[index].from;
+          if (conversations.has(from)) {
+            const conv = conversations.get(from);
+            const mIdx = conv.messages.findIndex((m: any) => m.id === replyToId);
+            if (mIdx !== -1) {
+              conv.messages[mIdx].replied = true;
+              conv.messages[mIdx].repliedAt = new Date();
+            }
+            conversations.set(from, conv);
+            io.emit('whatsapp-conversations', Array.from(conversations.values()).filter(c => c.number !== '558382039490'));
+          }
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        message: 'Mensagem enviada',
+        status: 'connected'
+      });
+      
+    } catch (error: any) {
+      addLog(`❌ Erro crítico ao processar envio de mensagem: ${error.message}`);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        status: isWhatsAppConnected ? 'connected' : 'disconnected'
+      });
+    }
+  });
