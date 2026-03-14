@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import QRCode from 'qrcode';
 import axios from 'axios';
+import multer from "multer";
 
 dotenv.config();
 
@@ -25,6 +26,42 @@ const DATABASE_ID = process.env.NOTION_DATABASE_ID || "2f4dfa25a52880c1b315f7e89
 const MOTOS_DATABASE_ID = "317dfa25a528805f9663ff0e6ebf0318";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
+
+// Uploads configuration
+const uploadsRootDir = path.resolve("uploads");
+const motosUploadsDir = path.join(uploadsRootDir, "motos");
+
+if (!fs.existsSync(uploadsRootDir)) {
+  fs.mkdirSync(uploadsRootDir, { recursive: true });
+}
+if (!fs.existsSync(motosUploadsDir)) {
+  fs.mkdirSync(motosUploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, motosUploadsDir);
+  },
+  filename: function (req, file, cb) {
+    const safeOriginal = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + "-" + safeOriginal);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    files: 12,
+    fileSize: 10 * 1024 * 1024 // 10MB por arquivo
+  },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Apenas arquivos de imagem são permitidos"));
+    }
+    cb(null, true);
+  }
+});
 
 // Cache para estrutura do banco de dados
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
@@ -139,6 +176,7 @@ async function startServer() {
   });
 
   app.use(express.json());
+  app.use("/uploads", express.static(uploadsRootDir));
 
   function formatInventoryItem(page: any) {
     const props = page.properties;
@@ -272,6 +310,7 @@ async function startServer() {
       cor: '-',
       descricao: '',
       imagem: '',
+      imagens: [],
       criado_em: page.created_time
     };
 
@@ -307,9 +346,14 @@ async function startServer() {
         else if (lowerKey === 'status') result.status = value.select.name;
         else if (lowerKey === 'lote') result.lote = value.select.name;
       }
-      else if (value.type === 'files' && value.files?.[0]) {
-        const file = value.files[0];
-        result.imagem = file.file?.url || file.external?.url || '';
+      else if (value.type === 'files' && value.files?.length) {
+        const urls = value.files
+          .map((file: any) => file.file?.url || file.external?.url || '')
+          .filter((url: string) => !!url);
+        if (urls.length) {
+          result.imagens = urls;
+          result.imagem = urls[0];
+        }
       }
       else if (value.type === 'unique_id' && value.unique_id) {
         if (lowerKey === 'id') result.rk_id = `${value.unique_id.prefix ? value.unique_id.prefix + '-' : ''}${value.unique_id.number}`;
@@ -1137,9 +1181,34 @@ async function startServer() {
     }
   });
 
+  // Upload de imagens de motos (retorna apenas URLs locais; o cliente depois salva no Notion via PATCH /api/motos)
+  app.post("/api/upload/motos", upload.array("files", 12), async (req, res) => {
+    try {
+      const files = (req.files as Express.Multer.File[]) || [];
+      if (!files.length) {
+        return res.status(400).json({ success: false, error: "Nenhum arquivo enviado" });
+      }
+
+      const baseUrl =
+        (req.protocol || "http") +
+        "://" +
+        (req.get("host") || "localhost:3000");
+
+      const urls = files.map((file) => {
+        const relativePath = path.relative(uploadsRootDir, file.path).replace(/\\/g, "/");
+        return `${baseUrl}/uploads/${relativePath}`;
+      });
+
+      res.json({ success: true, urls });
+    } catch (error: any) {
+      console.error("Upload Motos Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.post("/api/motos", async (req, res) => {
     try {
-      const { nome, marca, modelo, ano, valor, cor, cilindrada, lote, nome_nf, pecas_retiradas, status, descricao } = req.body;
+      const { nome, marca, modelo, ano, valor, cor, cilindrada, lote, nome_nf, pecas_retiradas, status, descricao, imagens } = req.body;
       const dbData = await getCachedDbStructure(MOTOS_DATABASE_ID);
       const dbProps = dbData.properties;
 
@@ -1178,6 +1247,20 @@ async function startServer() {
           if (p.type === 'select') properties[key] = { select: { name: status } };
         } else if (lowerKey === 'observações' || lowerKey === 'desc') {
           if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: descricao || "" } }] };
+        } else if ((lowerKey.includes('imagem') || lowerKey.includes('foto')) && p.type === 'files' && imagens !== undefined) {
+          const imageUrls: string[] = Array.isArray(imagens)
+            ? imagens
+            : typeof imagens === 'string' && imagens
+              ? [imagens]
+              : [];
+          const limitedUrls = imageUrls.filter(Boolean).slice(0, 12);
+          properties[key] = {
+            files: limitedUrls.map((url, index) => ({
+              name: `Foto ${index + 1}`,
+              type: 'external',
+              external: { url }
+            }))
+          };
         }
       }
 
@@ -1248,6 +1331,20 @@ async function startServer() {
           if (p.type === 'select') properties[key] = { select: { name: body.status } };
         } else if ((lowerKey === 'observações' || lowerKey === 'desc') && body.descricao !== undefined) {
           if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.descricao || "" } }] };
+        } else if ((lowerKey.includes('imagem') || lowerKey.includes('foto')) && p.type === 'files' && body.imagens !== undefined) {
+          const imageUrls: string[] = Array.isArray(body.imagens)
+            ? body.imagens
+            : typeof body.imagens === 'string' && body.imagens
+              ? [body.imagens]
+              : [];
+          const limitedUrls = imageUrls.filter(Boolean).slice(0, 12);
+          properties[key] = {
+            files: limitedUrls.map((url, index) => ({
+              name: `Foto ${index + 1}`,
+              type: 'external',
+              external: { url }
+            }))
+          };
         }
       }
 

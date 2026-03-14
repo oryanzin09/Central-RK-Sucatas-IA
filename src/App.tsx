@@ -3317,6 +3317,10 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     descricao: ''
   });
 
+  const [formImagesText, setFormImagesText] = useState('');
+  const [editImagesText, setEditImagesText] = useState('');
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null);
   const [brandFilter, setBrandFilter] = useState('Todas');
   const [statusFilter, setStatusFilter] = useState('Todos');
@@ -3325,6 +3329,52 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   const [valorMinFilter, setValorMinFilter] = useState('');
   const [valorMaxFilter, setValorMaxFilter] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
+
+  const getMotoImages = (item: any): string[] => {
+    if (Array.isArray(item.imagens) && item.imagens.length > 0) return item.imagens;
+    return item.imagem ? [item.imagem] : [];
+  };
+
+  const handleImageWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    if (container.scrollWidth <= container.clientWidth) return;
+    e.preventDefault();
+    const direction = e.deltaY > 0 ? 1 : -1;
+    const scrollAmount = container.clientWidth * 0.8;
+    container.scrollBy({ left: direction * scrollAmount, behavior: 'smooth' });
+  };
+
+  const handleUploadImages = async (files: FileList | null, mode: 'create' | 'edit') => {
+    if (!files || files.length === 0) return;
+    setIsUploadingImages(true);
+    try {
+      const formData = new FormData();
+      Array.from(files)
+        .slice(0, 12)
+        .forEach((file) => formData.append("files", file));
+
+      const response = await fetch("/api/upload/motos", {
+        method: "POST",
+        body: formData
+      });
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || "Falha ao enviar imagens");
+      }
+
+      const newLines = (result.urls as string[]).join("\n");
+      if (mode === "create") {
+        setFormImagesText((prev) => (prev ? prev + "\n" + newLines : newLines));
+      } else {
+        setEditImagesText((prev) => (prev ? prev + "\n" + newLines : newLines));
+      }
+    } catch (err: any) {
+      alert(err.message || "Erro ao enviar imagens");
+    } finally {
+      setIsUploadingImages(false);
+    }
+  };
 
   const getStatusColor = (status: string, isBadge: boolean = false) => {
     switch (status) {
@@ -3436,6 +3486,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
       status: moto.status || '',
       descricao: moto.descricao || ''
     });
+    setEditImagesText(Array.isArray(moto.imagens) ? moto.imagens.join('\n') : (moto.imagem ? moto.imagem : ''));
     setIsEditModalOpen(true);
   };
 
@@ -3443,11 +3494,17 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     e.preventDefault();
     if (!editingMoto) return;
     const motoId = editingMoto.id;
+    const imagens = editImagesText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 12);
     const updatedData = { 
       ...editFormData, 
       id: motoId, 
       valor: Number(editFormData.valor), 
-      cilindrada: Number(editFormData.cilindrada) 
+      cilindrada: Number(editFormData.cilindrada),
+      imagens
     };
     
     setMotos(prev => prev.map(item => item.id === motoId ? { ...item, ...updatedData } : item));
@@ -3458,7 +3515,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
       const response = await fetch(`/api/motos/${motoId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editFormData)
+        body: JSON.stringify(updatedData)
       });
       
       const result = await response.json();
@@ -3516,11 +3573,16 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   const handleSaveMoto = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    const imagens = formImagesText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 12);
     try {
       const response = await fetch('/api/motos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({ ...formData, imagens })
       });
       
       const result = await response.json();
@@ -3541,6 +3603,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
           status: '',
           descricao: ''
         });
+        setFormImagesText('');
       } else {
         throw new Error(result.error || 'Falha ao salvar moto');
       }
@@ -3941,9 +4004,9 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        {item.imagem && (
+                        {getMotoImages(item)[0] && (
                           <div className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-800/50">
-                            <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={getMotoImages(item)[0]} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           </div>
                         )}
                         {editingRowId === item.id ? (
@@ -4097,88 +4160,100 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {paginatedItems.map((item) => (
-            <div 
-              key={item.id}
-              onClick={() => onSelectItem(item)}
-              className={cn(
-                "group relative border rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer",
-                theme === 'dark' 
-                  ? "bg-zinc-900/40 border-zinc-800/50 hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgba(139,92,246,0.1)]" 
-                  : "bg-white border-zinc-200 hover:border-violet-500/50 hover:shadow-lg"
-              )}
-            >
-              {/* Image Container */}
-              <div className="aspect-[4/3] relative overflow-hidden bg-zinc-100 dark:bg-zinc-950">
-                {item.imagem ? (
-                  <img 
-                    src={item.imagem} 
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-                    referrerPolicy="no-referrer" 
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-zinc-400">
-                    <Bike size={48} strokeWidth={1} />
-                  </div>
+          {paginatedItems.map((item) => {
+            const images = getMotoImages(item);
+            return (
+              <div 
+                key={item.id}
+                onClick={() => onSelectItem(item)}
+                className={cn(
+                  "group relative border rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer",
+                  theme === 'dark' 
+                    ? "bg-zinc-900/40 border-zinc-800/50 hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgba(139,92,246,0.1)]" 
+                    : "bg-white border-zinc-200 hover:border-violet-500/50 hover:shadow-lg"
                 )}
-                
-                {/* Status Badge */}
-                <div className="absolute top-3 left-3">
-                  <span className={cn(
-                    "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md",
-                    getStatusColor(item.status, true)
-                  )}>
-                    {item.status}
-                  </span>
+              >
+                {/* Image Container */}
+                <div className="aspect-[4/3] relative overflow-hidden bg-zinc-100 dark:bg-zinc-950">
+                  {images.length > 0 ? (
+                    <div
+                      className="w-full h-full overflow-x-auto flex snap-x snap-mandatory no-scrollbar"
+                      onWheel={handleImageWheel}
+                    >
+                      {images.map((src, index) => (
+                        <div key={index} className="w-full h-full flex-shrink-0 snap-center">
+                          <img 
+                            src={src} 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                            referrerPolicy="no-referrer" 
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-zinc-400">
+                      <Bike size={48} strokeWidth={1} />
+                    </div>
+                  )}
+                  
+                  {/* Status Badge */}
+                  <div className="absolute top-3 left-3">
+                    <span className={cn(
+                      "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md",
+                      getStatusColor(item.status, true)
+                    )}>
+                      {item.status}
+                    </span>
+                  </div>
+
+                  {/* Quick Actions Overlay */}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleEditMoto(item); }}
+                      className="p-2.5 rounded-xl bg-white text-zinc-900 hover:bg-violet-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300"
+                    >
+                      <Edit size={18} />
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); setIsDeleteConfirmOpen(true); }}
+                      className="p-2.5 rounded-xl bg-white text-zinc-900 hover:bg-rose-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300 delay-75"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* Quick Actions Overlay */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleEditMoto(item); }}
-                    className="p-2.5 rounded-xl bg-white text-zinc-900 hover:bg-violet-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300"
-                  >
-                    <Edit size={18} />
-                  </button>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); setIsDeleteConfirmOpen(true); }}
-                    className="p-2.5 rounded-xl bg-white text-zinc-900 hover:bg-rose-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300 delay-75"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                {/* Content */}
+                <div className="p-5 space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{item.marca}</span>
+                      <span className="text-[10px] font-mono text-zinc-500">{item.rk_id}</span>
+                    </div>
+                    <h3 className={cn(
+                      "font-bold text-lg tracking-tight line-clamp-1",
+                      theme === 'dark' ? "text-white" : "text-zinc-900"
+                    )}>
+                      {item.nome}
+                    </h3>
+                    <p className="text-xs text-zinc-500 font-medium">{item.modelo} • {item.ano}</p>
+                  </div>
+
+                  <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Valor</p>
+                      <p className="text-lg font-bold text-violet-500 tracking-tight">
+                        {formatCurrency(item.valor)}
+                      </p>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500">
+                      <ChevronRight size={20} />
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {/* Content */}
-              <div className="p-5 space-y-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{item.marca}</span>
-                    <span className="text-[10px] font-mono text-zinc-500">{item.rk_id}</span>
-                  </div>
-                  <h3 className={cn(
-                    "font-bold text-lg tracking-tight line-clamp-1",
-                    theme === 'dark' ? "text-white" : "text-zinc-900"
-                  )}>
-                    {item.nome}
-                  </h3>
-                  <p className="text-xs text-zinc-500 font-medium">{item.modelo} • {item.ano}</p>
-                </div>
-
-                <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Valor</p>
-                    <p className="text-lg font-bold text-violet-500 tracking-tight">
-                      {formatCurrency(item.valor)}
-                    </p>
-                  </div>
-                  <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500">
-                    <ChevronRight size={20} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -4299,6 +4374,30 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   <input type="text" value={formData.pecas_retiradas} onChange={(e) => setFormData({...formData, pecas_retiradas: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
                 </div>
                 <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Fotos (URLs ou upload, até 12)</label>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => handleUploadImages(e.target.files, 'create')}
+                      className="block w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-violet-600 file:text-white hover:file:bg-violet-500 cursor-pointer"
+                    />
+                    {isUploadingImages && (
+                      <p className="text-[11px] text-violet-400 flex items-center gap-1">
+                        <Loader2 className="animate-spin" size={12} /> Enviando imagens...
+                      </p>
+                    )}
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={formImagesText}
+                    onChange={(e) => setFormImagesText(e.target.value)}
+                    className={cn("w-full border rounded-xl py-2 px-4 text-sm resize-none", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")}
+                    placeholder="https://exemplo.com/foto1.jpg&#10;https://exemplo.com/foto2.jpg"
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição</label>
                   <textarea rows={3} value={formData.descricao} onChange={(e) => setFormData({...formData, descricao: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
                 </div>
@@ -4401,6 +4500,30 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Peças Retiradas</label>
                   <input type="text" value={editFormData.pecas_retiradas} onChange={(e) => setEditFormData({...editFormData, pecas_retiradas: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Fotos (URLs ou upload, até 12)</label>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => handleUploadImages(e.target.files, 'edit')}
+                      className="block w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-violet-600 file:text-white hover:file:bg-violet-500 cursor-pointer"
+                    />
+                    {isUploadingImages && (
+                      <p className="text-[11px] text-violet-400 flex items-center gap-1">
+                        <Loader2 className="animate-spin" size={12} /> Enviando imagens...
+                      </p>
+                    )}
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={editImagesText}
+                    onChange={(e) => setEditImagesText(e.target.value)}
+                    className={cn("w-full border rounded-xl py-2 px-4 text-sm resize-none", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")}
+                    placeholder="https://exemplo.com/foto1.jpg&#10;https://exemplo.com/foto2.jpg"
+                  />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição</label>
