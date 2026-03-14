@@ -39,7 +39,8 @@ import {
   Edit2,
   LayoutGrid,
   Table as TableIcon,
-  MessageSquare
+  MessageSquare,
+  Upload
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -55,7 +56,7 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { FloatingAIChat } from './components/FloatingAIChat';
@@ -1541,10 +1542,23 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                           </a>
                         ) : col.key === 'imagem' && item[col.key] ? (
                           <div className={cn(
-                            "w-10 h-10 rounded-lg overflow-hidden border transition-colors",
+                            "w-10 h-10 rounded-lg overflow-hidden border transition-colors relative",
                             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
                           )}>
-                            <img src={item[col.key]} alt={item.nome} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <>
+                              <img 
+                                src={item[col.key]} 
+                                alt={item.nome} 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer" 
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display = 'none';
+                                }}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+                                <Package size={16} className="text-zinc-400 opacity-50" />
+                              </div>
+                            </>
                           </div>
                         ) : col.key === 'categoria' ? (
                           <span className={cn(
@@ -1644,12 +1658,21 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                   theme === 'dark' ? "border-zinc-800/50 bg-zinc-950" : "border-zinc-100 bg-zinc-50"
                 )}>
                   {item.imagem ? (
-                    <img 
-                      src={item.imagem} 
-                      alt={item.nome} 
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      referrerPolicy="no-referrer"
-                    />
+                    <>
+                      <img 
+                        src={item.imagem} 
+                        alt={item.nome} 
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+                        <Package size={32} className="text-zinc-400 opacity-20" />
+                        <span className="text-[8px] uppercase font-bold tracking-widest mt-2 text-zinc-500 opacity-40">Sem Imagem</span>
+                      </div>
+                    </>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center opacity-20">
                       <Package size={48} />
@@ -3272,6 +3295,106 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   const [inlineEditData, setInlineEditData] = useState<any>(null);
   const editRowRef = useRef<HTMLTableRowElement>(null);
 
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Função para lidar com seleção de arquivos
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      // Limitar a 15 arquivos
+      if (files.length + selectedFiles.length > 15) {
+        alert('Máximo de 15 fotos permitido');
+        return;
+      }
+      setSelectedFiles(prev => [...prev, ...files]);
+    }
+  };
+
+  // Função para remover arquivo selecionado
+  const removeFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Função para fazer upload dos arquivos
+  const uploadFiles = async (isEdit: boolean = false) => {
+    if (selectedFiles.length === 0) return;
+    
+    const uploadedUrls = await performUpload();
+    if (uploadedUrls.length > 0) {
+      if (isEdit) {
+        setEditFormData(prev => {
+          const newImagens = [...prev.imagens, ...uploadedUrls];
+          return {
+            ...prev, 
+            imagens: newImagens,
+            imagem: prev.imagem || newImagens[0] || ''
+          };
+        });
+      } else {
+        setFormData(prev => {
+          const newImagens = [...prev.imagens, ...uploadedUrls];
+          return {
+            ...prev, 
+            imagens: newImagens,
+            imagem: prev.imagem || newImagens[0] || ''
+          };
+        });
+      }
+    }
+  };
+
+  const performUpload = async () => {
+    if (selectedFiles.length === 0) return [];
+    
+    setUploading(true);
+    const uploadedUrls: string[] = [];
+
+    try {
+      // Para cada arquivo, fazer o processo de upload assinado
+      for (const file of selectedFiles) {
+        // 1. Solicitar URL assinada para upload
+        const requestRes = await fetch('/api/storage/request-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            fileType: file.type
+          })
+        });
+        
+        const requestData = await requestRes.json();
+        if (!requestData.success) throw new Error('Falha ao solicitar upload');
+        
+        const { uploadUrl, publicUrl } = requestData.data;
+        
+        // 2. Fazer upload DIRETO para o Google Cloud Storage usando a URL assinada
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: {
+            'Content-Type': file.type,
+          }
+        });
+        
+        if (!uploadRes.ok) throw new Error('Falha no upload da imagem');
+        
+        // 3. Guardar a URL pública permanente
+        uploadedUrls.push(publicUrl);
+      }
+      
+      setSelectedFiles([]);
+      return uploadedUrls;
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      alert('❌ Erro ao enviar fotos: ' + (error as Error).message);
+      return [];
+    } finally {
+      setUploading(false);
+    }
+  };
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (editRowRef.current && !editRowRef.current.contains(event.target as Node)) {
@@ -3299,7 +3422,9 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     nome_nf: '',
     pecas_retiradas: '',
     status: '',
-    descricao: ''
+    descricao: '',
+    imagem: '',
+    imagens: [] as string[]
   });
 
   const [editFormData, setEditFormData] = useState({
@@ -3314,80 +3439,39 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     nome_nf: '',
     pecas_retiradas: '',
     status: '',
-    descricao: ''
+    descricao: '',
+    imagem: '',
+    imagens: [] as string[]
   });
-
-  const [formImagesText, setFormImagesText] = useState('');
-  const [editImagesText, setEditImagesText] = useState('');
-  const [isUploadingImages, setIsUploadingImages] = useState(false);
 
   const [clickTimer, setClickTimer] = useState<NodeJS.Timeout | null>(null);
   const [brandFilter, setBrandFilter] = useState('Todas');
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [cilindradaFilter, setCilindradaFilter] = useState('Todas');
+  const [sortOrder, setSortOrder] = useState('Data de Criação');
   const [anoMinFilter, setAnoMinFilter] = useState('');
   const [valorMinFilter, setValorMinFilter] = useState('');
   const [valorMaxFilter, setValorMaxFilter] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
 
-  const getMotoImages = (item: any): string[] => {
-    if (Array.isArray(item.imagens) && item.imagens.length > 0) return item.imagens;
-    return item.imagem ? [item.imagem] : [];
-  };
-
-  const handleImageWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    if (container.scrollWidth <= container.clientWidth) return;
-    e.preventDefault();
-    const direction = e.deltaY > 0 ? 1 : -1;
-    const scrollAmount = container.clientWidth * 0.8;
-    container.scrollBy({ left: direction * scrollAmount, behavior: 'smooth' });
-  };
-
-  const handleUploadImages = async (files: FileList | null, mode: 'create' | 'edit') => {
-    if (!files || files.length === 0) return;
-    setIsUploadingImages(true);
-    try {
-      const formData = new FormData();
-      Array.from(files)
-        .slice(0, 12)
-        .forEach((file) => formData.append("files", file));
-
-      const response = await fetch("/api/upload/motos", {
-        method: "POST",
-        body: formData
-      });
-
-      const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || "Falha ao enviar imagens");
-      }
-
-      const newLines = (result.urls as string[]).join("\n");
-      if (mode === "create") {
-        setFormImagesText((prev) => (prev ? prev + "\n" + newLines : newLines));
-      } else {
-        setEditImagesText((prev) => (prev ? prev + "\n" + newLines : newLines));
-      }
-    } catch (err: any) {
-      alert(err.message || "Erro ao enviar imagens");
-    } finally {
-      setIsUploadingImages(false);
-    }
+  const closeModals = () => {
+    setIsModalOpen(false);
+    setIsEditModalOpen(false);
+    setSelectedFiles([]);
   };
 
   const getStatusColor = (status: string, isBadge: boolean = false) => {
     switch (status) {
       case 'Disponível':
-        return isBadge ? "bg-amber-500/80 text-white" : "bg-amber-500/10 text-amber-500";
-      case 'Vendida':
-        return isBadge ? "bg-orange-600/80 text-white" : "bg-orange-500/10 text-orange-500";
-      case 'Em estoque':
-        return isBadge ? "bg-zinc-600/80 text-white" : "bg-zinc-500/10 text-zinc-400";
+        return isBadge ? "bg-emerald-500 text-white" : "bg-emerald-500/10 text-emerald-500";
       case 'Desmontada':
-        return isBadge ? "bg-rose-500/80 text-white" : "bg-rose-500/10 text-rose-500";
+        return isBadge ? "bg-amber-500 text-white" : "bg-amber-500/10 text-amber-500";
+      case 'Vendida':
+        return isBadge ? "bg-rose-500 text-white" : "bg-rose-500/10 text-rose-500";
+      case 'Em estoque':
+        return isBadge ? "bg-zinc-600 text-white" : "bg-zinc-500/10 text-zinc-400";
       default:
-        return isBadge ? "bg-emerald-500/80 text-white" : "bg-emerald-500/10 text-emerald-500";
+        return isBadge ? "bg-violet-500 text-white" : "bg-violet-500/10 text-violet-500";
     }
   };
 
@@ -3484,48 +3568,74 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
       nome_nf: moto.nome_nf || '',
       pecas_retiradas: moto.pecas_retiradas || '',
       status: moto.status || '',
-      descricao: moto.descricao || ''
+      descricao: moto.descricao || '',
+      imagem: moto.imagem || '',
+      imagens: moto.imagens || []
     });
-    setEditImagesText(Array.isArray(moto.imagens) ? moto.imagens.join('\n') : (moto.imagem ? moto.imagem : ''));
     setIsEditModalOpen(true);
   };
 
   const handleUpdateMoto = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMoto) return;
-    const motoId = editingMoto.id;
-    const imagens = editImagesText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 12);
-    const updatedData = { 
-      ...editFormData, 
-      id: motoId, 
-      valor: Number(editFormData.valor), 
-      cilindrada: Number(editFormData.cilindrada),
-      imagens
-    };
-    
-    setMotos(prev => prev.map(item => item.id === motoId ? { ...item, ...updatedData } : item));
-    setIsEditModalOpen(false);
-    setEditingMoto(null);
+    setIsSaving(true);
 
     try {
+      // Upload automático se houver arquivos pendentes
+      let currentImagens = [...editFormData.imagens];
+      let currentImagem = editFormData.imagem;
+
+      if (selectedFiles.length > 0) {
+        const uploadedUrls = await performUpload();
+        if (uploadedUrls.length > 0) {
+          currentImagens = [...currentImagens, ...uploadedUrls];
+          if (!currentImagem) currentImagem = uploadedUrls[0];
+        }
+      }
+
+      const motoId = editingMoto.id;
+      
+      // Garantir que os campos obrigatórios estejam presentes e formatados
+      const payload = {
+        nome: editFormData.nome || editingMoto.nome,
+        marca: editFormData.marca || editingMoto.marca,
+        modelo: editFormData.modelo || editingMoto.modelo,
+        ano: editFormData.ano || editingMoto.ano,
+        valor: Number(editFormData.valor) || editingMoto.valor,
+        cor: editFormData.cor || editingMoto.cor,
+        cilindrada: Number(editFormData.cilindrada) || editingMoto.cilindrada,
+        lote: editFormData.lote || editingMoto.lote,
+        nome_nf: editFormData.nome_nf || editingMoto.nome_nf,
+        pecas_retiradas: editFormData.pecas_retiradas || editingMoto.pecas_retiradas,
+        status: editFormData.status || editingMoto.status,
+        descricao: editFormData.descricao || editingMoto.descricao,
+        imagens: currentImagens
+      };
+      
+      console.log('📤 Enviando atualização:', payload);
+      
       const response = await fetch(`/api/motos/${motoId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedData)
+        body: JSON.stringify(payload)
       });
       
       const result = await response.json();
-      if (!result.success) {
-        throw new Error(result.error || 'Falha ao atualizar moto');
+      console.log('📥 Resposta do servidor:', result);
+      
+      if (result.success) {
+        // Atualizar o estado local com os dados retornados do servidor
+        setMotos(prev => prev.map(m => m.id === motoId ? result.data : m));
+        setIsEditModalOpen(false);
+        setEditingMoto(null);
+      } else {
+        throw new Error(result.error || 'Erro ao atualizar');
       }
-      setMotos(prev => prev.map(item => item.id === motoId ? result.data : item));
     } catch (err: any) {
-      alert(err.message);
+      alert('Erro ao salvar: ' + err.message);
       refreshData();
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -3573,16 +3683,29 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   const handleSaveMoto = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    const imagens = formImagesText
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 12);
     try {
+      // Upload automático se houver arquivos pendentes
+      let currentImagens = [...formData.imagens];
+      let currentImagem = formData.imagem;
+
+      if (selectedFiles.length > 0) {
+        const uploadedUrls = await performUpload();
+        if (uploadedUrls.length > 0) {
+          currentImagens = [...currentImagens, ...uploadedUrls];
+          if (!currentImagem) currentImagem = uploadedUrls[0];
+        }
+      }
+
+      const finalData = {
+        ...formData,
+        imagens: currentImagens,
+        imagem: currentImagens[0] || ''
+      };
+
       const response = await fetch('/api/motos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData, imagens })
+        body: JSON.stringify(finalData)
       });
       
       const result = await response.json();
@@ -3601,9 +3724,10 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
           nome_nf: '',
           pecas_retiradas: '',
           status: '',
-          descricao: ''
+          descricao: '',
+          imagem: '',
+          imagens: []
         });
-        setFormImagesText('');
       } else {
         throw new Error(result.error || 'Falha ao salvar moto');
       }
@@ -3672,8 +3796,52 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
       result = result.filter(item => item.valor <= Number(valorMaxFilter));
     }
 
+    // Ordenar
+    result.sort((a, b) => {
+      // 1. Prioridade Máxima: Vendidas sempre para o final
+      const aIsSold = a.status === 'Vendida';
+      const bIsSold = b.status === 'Vendida';
+      if (aIsSold && !bIsSold) return 1;
+      if (!aIsSold && bIsSold) return -1;
+
+      // 2. Prioridade Secundária: Com fotos no topo (se não for vendida)
+      const aHasPhotos = (a.imagens && a.imagens.length > 0) || (a.imagem && a.imagem !== '');
+      const bHasPhotos = (b.imagens && b.imagens.length > 0) || (b.imagem && b.imagem !== '');
+      
+      if (aHasPhotos && !bHasPhotos) return -1;
+      if (!aHasPhotos && bHasPhotos) return 1;
+
+      // 3. Ordenação selecionada
+      let comparison = 0;
+      switch (sortOrder) {
+        case 'Cilindrada':
+          comparison = (Number(a.cilindrada) || 0) - (Number(b.cilindrada) || 0);
+          break;
+        case 'Nome':
+          comparison = (a.nome || '').localeCompare(b.nome || '');
+          break;
+        case 'Data de Criação':
+          comparison = new Date(b.criado_em || 0).getTime() - new Date(a.criado_em || 0).getTime();
+          break;
+        case 'Ano':
+          comparison = (Number(a.ano) || 0) - (Number(b.ano) || 0);
+          break;
+        case 'Valor':
+          comparison = (a.valor || 0) - (b.valor || 0);
+          break;
+        case 'Lote':
+          comparison = (a.lote || '').localeCompare(b.lote || '');
+          break;
+        default:
+          // Default: Recentemente adicionadas (Data de Criação desc)
+          comparison = new Date(b.criado_em || 0).getTime() - new Date(a.criado_em || 0).getTime();
+      }
+      
+      return comparison;
+    });
+
     return result;
-  }, [items, searchTerm, brandFilter, statusFilter, cilindradaFilter, anoMinFilter, valorMinFilter, valorMaxFilter]);
+  }, [items, searchTerm, brandFilter, statusFilter, cilindradaFilter, anoMinFilter, valorMinFilter, valorMaxFilter, sortOrder]);
 
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -3745,6 +3913,27 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 {brands.map(brand => (
                   <option key={brand} value={brand}>{brand}</option>
                 ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-zinc-500 uppercase">Ordenar por:</span>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                className={cn(
+                  "border rounded-xl py-2 px-3 text-xs outline-none transition-all cursor-pointer",
+                  theme === 'dark' 
+                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
+                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                )}
+              >
+                <option value="Data de Criação">Data de Criação</option>
+                <option value="Nome">Nome</option>
+                <option value="Cilindrada">Cilindrada</option>
+                <option value="Ano">Ano</option>
+                <option value="Valor">Valor</option>
+                <option value="Lote">Lote</option>
               </select>
             </div>
 
@@ -4004,9 +4193,9 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        {getMotoImages(item)[0] && (
+                        {item.imagem && (
                           <div className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-800/50">
-                            <img src={getMotoImages(item)[0]} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           </div>
                         )}
                         {editingRowId === item.id ? (
@@ -4160,100 +4349,18 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {paginatedItems.map((item) => {
-            const images = getMotoImages(item);
-            return (
-              <div 
-                key={item.id}
-                onClick={() => onSelectItem(item)}
-                className={cn(
-                  "group relative border rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer",
-                  theme === 'dark' 
-                    ? "bg-zinc-900/40 border-zinc-800/50 hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgba(139,92,246,0.1)]" 
-                    : "bg-white border-zinc-200 hover:border-violet-500/50 hover:shadow-lg"
-                )}
-              >
-                {/* Image Container */}
-                <div className="aspect-[4/3] relative overflow-hidden bg-zinc-100 dark:bg-zinc-950">
-                  {images.length > 0 ? (
-                    <div
-                      className="w-full h-full overflow-x-auto flex snap-x snap-mandatory no-scrollbar"
-                      onWheel={handleImageWheel}
-                    >
-                      {images.map((src, index) => (
-                        <div key={index} className="w-full h-full flex-shrink-0 snap-center">
-                          <img 
-                            src={src} 
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-                            referrerPolicy="no-referrer" 
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-zinc-400">
-                      <Bike size={48} strokeWidth={1} />
-                    </div>
-                  )}
-                  
-                  {/* Status Badge */}
-                  <div className="absolute top-3 left-3">
-                    <span className={cn(
-                      "px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md",
-                      getStatusColor(item.status, true)
-                    )}>
-                      {item.status}
-                    </span>
-                  </div>
-
-                  {/* Quick Actions Overlay */}
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleEditMoto(item); }}
-                      className="p-2.5 rounded-xl bg-white text-zinc-900 hover:bg-violet-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300"
-                    >
-                      <Edit size={18} />
-                    </button>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); setIsDeleteConfirmOpen(true); }}
-                      className="p-2.5 rounded-xl bg-white text-zinc-900 hover:bg-rose-500 hover:text-white transition-all transform translate-y-4 group-hover:translate-y-0 duration-300 delay-75"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="p-5 space-y-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{item.marca}</span>
-                      <span className="text-[10px] font-mono text-zinc-500">{item.rk_id}</span>
-                    </div>
-                    <h3 className={cn(
-                      "font-bold text-lg tracking-tight line-clamp-1",
-                      theme === 'dark' ? "text-white" : "text-zinc-900"
-                    )}>
-                      {item.nome}
-                    </h3>
-                    <p className="text-xs text-zinc-500 font-medium">{item.modelo} • {item.ano}</p>
-                  </div>
-
-                  <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Valor</p>
-                      <p className="text-lg font-bold text-violet-500 tracking-tight">
-                        {formatCurrency(item.valor)}
-                      </p>
-                    </div>
-                    <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500">
-                      <ChevronRight size={20} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {paginatedItems.map((item) => (
+            <MotoCard 
+              key={item.id}
+              item={item}
+              theme={theme}
+              onSelectItem={onSelectItem}
+              handleEditMoto={handleEditMoto}
+              setItemToDelete={setItemToDelete}
+              setIsDeleteConfirmOpen={setIsDeleteConfirmOpen}
+              getStatusColor={getStatusColor}
+            />
+          ))}
         </div>
       )}
 
@@ -4296,26 +4403,27 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               className={cn(
-                "w-full max-w-2xl p-8 rounded-3xl border shadow-2xl relative",
+                "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-hidden",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 text-white" : "bg-white border-zinc-200 text-zinc-900"
               )}
             >
-              <button onClick={() => setIsModalOpen(false)} className="absolute top-6 right-6 p-2 hover:bg-zinc-800 rounded-full transition-colors">
-                <X size={20} className="text-zinc-500" />
-              </button>
+              <form onSubmit={handleSaveMoto} className="flex flex-col max-h-[90vh]">
+                <button type="button" onClick={closeModals} className="absolute top-6 right-6 p-2 hover:bg-zinc-800 rounded-full transition-colors z-10">
+                  <X size={20} className="text-zinc-500" />
+                </button>
 
-              <div className="flex items-center gap-4 mb-8">
-                <div className="p-3 bg-violet-600/10 rounded-2xl">
-                  <Plus className="text-violet-500" size={28} />
+                <div className="p-8 pb-4 flex items-center gap-4 border-b border-zinc-800/50">
+                  <div className="p-3 bg-violet-600/10 rounded-2xl">
+                    <Plus className="text-violet-500" size={28} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">Nova Moto</h2>
+                    <p className="text-sm text-zinc-500">Adicione uma nova moto ao catálogo</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold">Nova Moto</h2>
-                  <p className="text-sm text-zinc-500">Adicione uma nova moto ao catálogo</p>
-                </div>
-              </div>
 
-              <form onSubmit={handleSaveMoto} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                  <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome/Título</label>
                     <input required type="text" value={formData.nome} onChange={(e) => setFormData({...formData, nome: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
@@ -4373,38 +4481,133 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Peças Retiradas</label>
                   <input type="text" value={formData.pecas_retiradas} onChange={(e) => setFormData({...formData, pecas_retiradas: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Fotos (URLs ou upload, até 12)</label>
-                  <div className="flex flex-col gap-2">
+
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">Fotos (Máx 15)</label>
+                  
+                  {/* Imagens já salvas */}
+                  {formData.imagens.length > 0 && (
+                    <Reorder.Group 
+                      axis="x" 
+                      values={formData.imagens} 
+                      onReorder={(newOrder) => setFormData({...formData, imagens: newOrder})}
+                      className="flex gap-2 mb-3 overflow-x-auto pb-2 custom-scrollbar"
+                    >
+                      {formData.imagens.map((img) => (
+                        <Reorder.Item 
+                          key={img} 
+                          value={img}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="relative flex-shrink-0 w-24 aspect-square rounded-lg overflow-hidden border border-zinc-800 group cursor-grab active:cursor-grabbing"
+                        >
+                          <img src={img} className="w-full h-full object-cover pointer-events-none" referrerPolicy="no-referrer" />
+                          <button 
+                            type="button"
+                            onClick={() => setFormData({...formData, imagens: formData.imagens.filter((i) => i !== img)})}
+                            className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <X size={10} />
+                          </button>
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            <Layers size={16} className="text-white/70" />
+                          </div>
+                        </Reorder.Item>
+                      ))}
+                    </Reorder.Group>
+                  )}
+
+                  {/* Pré-visualização das imagens selecionadas */}
+                  {selectedFiles.length > 0 && (
+                    <Reorder.Group 
+                      axis="x" 
+                      values={selectedFiles} 
+                      onReorder={setSelectedFiles}
+                      className="flex gap-2 mb-3 overflow-x-auto pb-2 custom-scrollbar"
+                    >
+                      {selectedFiles.map((file) => (
+                        <Reorder.Item 
+                          key={file.name + file.size + file.lastModified} 
+                          value={file}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="relative flex-shrink-0 w-24 group aspect-square cursor-grab active:cursor-grabbing"
+                        >
+                          <img 
+                            src={URL.createObjectURL(file)} 
+                            alt={file.name}
+                            className="w-full h-full object-cover rounded-lg border border-zinc-700 pointer-events-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFiles(prev => prev.filter(f => f !== file))}
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <X size={14} />
+                          </button>
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-lg">
+                            <Layers size={16} className="text-white/70" />
+                          </div>
+                        </Reorder.Item>
+                      ))}
+                    </Reorder.Group>
+                  )}
+                  
+                  {/* Botão de adicionar fotos */}
+                  <div className="flex items-center gap-3">
                     <input
+                      ref={fileInputRef}
                       type="file"
                       accept="image/*"
                       multiple
-                      onChange={(e) => handleUploadImages(e.target.files, 'create')}
-                      className="block w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-violet-600 file:text-white hover:file:bg-violet-500 cursor-pointer"
+                      onChange={handleFileSelect}
+                      className="hidden"
                     />
-                    {isUploadingImages && (
-                      <p className="text-[11px] text-violet-400 flex items-center gap-1">
-                        <Loader2 className="animate-spin" size={12} /> Enviando imagens...
-                      </p>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={selectedFiles.length + formData.imagens.length >= 15}
+                      className="flex items-center gap-2 px-4 py-2 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      <Plus size={18} />
+                      Selecionar Fotos ({selectedFiles.length + formData.imagens.length}/15)
+                    </button>
+                    
+                    {selectedFiles.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => uploadFiles(false)}
+                        disabled={uploading}
+                        className="px-4 py-2 bg-violet-600 rounded-xl hover:bg-violet-500 transition-colors flex items-center gap-2 text-sm font-bold"
+                      >
+                        {uploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                        {uploading ? 'Enviando...' : 'Fazer Upload'}
+                      </button>
                     )}
                   </div>
-                  <textarea
-                    rows={3}
-                    value={formImagesText}
-                    onChange={(e) => setFormImagesText(e.target.value)}
-                    className={cn("w-full border rounded-xl py-2 px-4 text-sm resize-none", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")}
-                    placeholder="https://exemplo.com/foto1.jpg&#10;https://exemplo.com/foto2.jpg"
-                  />
+                  
+                  <p className="text-[10px] text-zinc-500 mt-1 uppercase font-bold tracking-widest">
+                    Selecione imagens do seu computador (máx 15)
+                  </p>
                 </div>
+
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição</label>
                   <textarea rows={3} value={formData.descricao} onChange={(e) => setFormData({...formData, descricao: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
                 </div>
+              </div>
 
-                <div className="pt-4 flex items-center justify-end gap-3">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 text-sm font-medium">Cancelar</button>
-                  <button type="submit" disabled={isSaving} className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 flex items-center gap-2">
+              <div className="p-6 border-t border-zinc-800/50 bg-zinc-900/20 flex items-center justify-end gap-3">
+                  <button type="button" onClick={closeModals} className="px-6 py-2.5 text-sm font-medium">Cancelar</button>
+                  <button 
+                    type="submit"
+                    disabled={isSaving} 
+                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 flex items-center gap-2"
+                  >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar Moto
                   </button>
@@ -4424,26 +4627,27 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               className={cn(
-                "w-full max-w-2xl p-8 rounded-3xl border shadow-2xl relative",
+                "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-hidden",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 text-white" : "bg-white border-zinc-200 text-zinc-900"
               )}
             >
-              <button onClick={() => setIsEditModalOpen(false)} className="absolute top-6 right-6 p-2 hover:bg-zinc-800 rounded-full transition-colors">
-                <X size={20} className="text-zinc-500" />
-              </button>
+              <form onSubmit={handleUpdateMoto} className="flex flex-col max-h-[90vh]">
+                <button type="button" onClick={closeModals} className="absolute top-6 right-6 p-2 hover:bg-zinc-800 rounded-full transition-colors z-10">
+                  <X size={20} className="text-zinc-500" />
+                </button>
 
-              <div className="flex items-center gap-4 mb-8">
-                <div className="p-3 bg-violet-600/10 rounded-2xl">
-                  <Edit className="text-violet-500" size={28} />
+                <div className="p-8 pb-4 flex items-center gap-4 border-b border-zinc-800/50">
+                  <div className="p-3 bg-violet-600/10 rounded-2xl">
+                    <Edit className="text-violet-500" size={28} />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold">Editar Moto</h2>
+                    <p className="text-sm text-zinc-500">Atualize as informações da moto</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold">Editar Moto</h2>
-                  <p className="text-sm text-zinc-500">Atualize as informações da moto</p>
-                </div>
-              </div>
 
-              <form onSubmit={handleUpdateMoto} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
+                  <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome/Título</label>
                     <input required type="text" value={editFormData.nome} onChange={(e) => setEditFormData({...editFormData, nome: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
@@ -4501,38 +4705,133 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Peças Retiradas</label>
                   <input type="text" value={editFormData.pecas_retiradas} onChange={(e) => setEditFormData({...editFormData, pecas_retiradas: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Fotos (URLs ou upload, até 12)</label>
-                  <div className="flex flex-col gap-2">
+
+                <div className="space-y-3">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider ml-1">Fotos (Máx 15)</label>
+                  
+                  {/* Imagens já salvas */}
+                  {editFormData.imagens.length > 0 && (
+                    <Reorder.Group 
+                      axis="x" 
+                      values={editFormData.imagens} 
+                      onReorder={(newOrder) => setEditFormData({...editFormData, imagens: newOrder})}
+                      className="flex gap-2 mb-3 overflow-x-auto pb-2 custom-scrollbar"
+                    >
+                      {editFormData.imagens.map((img) => (
+                        <Reorder.Item 
+                          key={img} 
+                          value={img}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="relative flex-shrink-0 w-24 aspect-square rounded-lg overflow-hidden border border-zinc-800 group cursor-grab active:cursor-grabbing"
+                        >
+                          <img src={img} className="w-full h-full object-cover pointer-events-none" referrerPolicy="no-referrer" />
+                          <button 
+                            type="button"
+                            onClick={() => setEditFormData({...editFormData, imagens: editFormData.imagens.filter((i) => i !== img)})}
+                            className="absolute top-1 right-1 p-1 bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <X size={10} />
+                          </button>
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                            <Layers size={16} className="text-white/70" />
+                          </div>
+                        </Reorder.Item>
+                      ))}
+                    </Reorder.Group>
+                  )}
+
+                  {/* Pré-visualização das imagens selecionadas */}
+                  {selectedFiles.length > 0 && (
+                    <Reorder.Group 
+                      axis="x" 
+                      values={selectedFiles} 
+                      onReorder={setSelectedFiles}
+                      className="flex gap-2 mb-3 overflow-x-auto pb-2 custom-scrollbar"
+                    >
+                      {selectedFiles.map((file) => (
+                        <Reorder.Item 
+                          key={file.name + file.size + file.lastModified} 
+                          value={file}
+                          layout
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="relative flex-shrink-0 w-24 group aspect-square cursor-grab active:cursor-grabbing"
+                        >
+                          <img 
+                            src={URL.createObjectURL(file)} 
+                            alt={file.name}
+                            className="w-full h-full object-cover rounded-lg border border-zinc-700 pointer-events-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFiles(prev => prev.filter(f => f !== file))}
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-rose-500 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                          >
+                            <X size={14} />
+                          </button>
+                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none rounded-lg">
+                            <Layers size={16} className="text-white/70" />
+                          </div>
+                        </Reorder.Item>
+                      ))}
+                    </Reorder.Group>
+                  )}
+                  
+                  {/* Botão de adicionar fotos */}
+                  <div className="flex items-center gap-3">
                     <input
+                      ref={fileInputRef}
                       type="file"
                       accept="image/*"
                       multiple
-                      onChange={(e) => handleUploadImages(e.target.files, 'edit')}
-                      className="block w-full text-xs text-zinc-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-violet-600 file:text-white hover:file:bg-violet-500 cursor-pointer"
+                      onChange={handleFileSelect}
+                      className="hidden"
                     />
-                    {isUploadingImages && (
-                      <p className="text-[11px] text-violet-400 flex items-center gap-1">
-                        <Loader2 className="animate-spin" size={12} /> Enviando imagens...
-                      </p>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={selectedFiles.length + editFormData.imagens.length >= 15}
+                      className="flex items-center gap-2 px-4 py-2 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      <Plus size={18} />
+                      Selecionar Fotos ({selectedFiles.length + editFormData.imagens.length}/15)
+                    </button>
+                    
+                    {selectedFiles.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => uploadFiles(true)}
+                        disabled={uploading}
+                        className="px-4 py-2 bg-violet-600 rounded-xl hover:bg-violet-500 transition-colors flex items-center gap-2 text-sm font-bold"
+                      >
+                        {uploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
+                        {uploading ? 'Enviando...' : 'Fazer Upload'}
+                      </button>
                     )}
                   </div>
-                  <textarea
-                    rows={3}
-                    value={editImagesText}
-                    onChange={(e) => setEditImagesText(e.target.value)}
-                    className={cn("w-full border rounded-xl py-2 px-4 text-sm resize-none", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")}
-                    placeholder="https://exemplo.com/foto1.jpg&#10;https://exemplo.com/foto2.jpg"
-                  />
+                  
+                  <p className="text-[10px] text-zinc-500 mt-1 uppercase font-bold tracking-widest">
+                    Selecione imagens do seu computador (máx 15)
+                  </p>
                 </div>
+
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição</label>
                   <textarea rows={3} value={editFormData.descricao} onChange={(e) => setEditFormData({...editFormData, descricao: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")} />
                 </div>
+              </div>
 
-                <div className="pt-4 flex items-center justify-end gap-3">
-                  <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-6 py-2.5 text-sm font-medium">Cancelar</button>
-                  <button type="submit" disabled={isSaving} className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 flex items-center gap-2">
+              <div className="p-6 border-t border-zinc-800/50 bg-zinc-900/20 flex items-center justify-end gap-3">
+                  <button type="button" onClick={closeModals} className="px-6 py-2.5 text-sm font-medium">Cancelar</button>
+                  <button 
+                    type="submit"
+                    disabled={isSaving} 
+                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 flex items-center gap-2"
+                  >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar Alterações
                   </button>
@@ -4672,7 +4971,28 @@ const DetailModal = ({ item, onClose, theme }: { item: any, onClose: () => void,
         {/* Content */}
         <div className="flex-1 overflow-auto p-6 space-y-6">
           {/* Image Section */}
-          {item.imagem && (
+          {(item.imagens && item.imagens.length > 0) ? (
+            <div className="space-y-3">
+              <div className={cn(
+                "w-full aspect-video rounded-2xl overflow-hidden border bg-zinc-950/50",
+                theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
+              )}>
+                <img src={item.imagens[0]} alt={item.nome} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+              </div>
+              {item.imagens.length > 1 && (
+                <div className="grid grid-cols-5 gap-2">
+                  {item.imagens.slice(1).map((img: string, idx: number) => (
+                    <div key={idx} className={cn(
+                      "aspect-square rounded-lg overflow-hidden border bg-zinc-950/50",
+                      theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
+                    )}>
+                      <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : item.imagem && (
             <div className={cn(
               "w-full aspect-video rounded-2xl overflow-hidden border bg-zinc-950/50",
               theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
@@ -4770,6 +5090,271 @@ const DetailItem = ({ label, value, theme, highlight }: { label: string, value: 
     )}>{value}</p>
   </div>
 );
+
+// =============================================================================
+// MOTO CARD COMPONENT
+// =============================================================================
+
+const MOTO_COLORS: Record<string, string> = {
+  'Preta': '#000000',
+  'Branca': '#FFFFFF',
+  'Vermelha': '#EF4444',
+  'Azul': '#3B82F6',
+  'Amarela': '#FBBF24',
+  'Verde': '#10B981',
+  'Cinza': '#6B7280',
+  'Prata': '#D1D5DB',
+  'Dourada': '#F59E0B',
+  'Laranja': '#F97316',
+  'Roxa': '#8B5CF6',
+  'Rosa': '#EC4899',
+  'Marrom': '#78350F',
+  'Bege': '#F5F5DC',
+  'Vinho': '#7F1D1D',
+  'Grafite': '#374151',
+  'Cobre': '#B45309',
+  'Titanium': '#4B5563',
+  'Azul Marinho': '#1E3A8A',
+  'Verde Militar': '#365314'
+};
+
+const getMotoColor = (colorName: string) => {
+  if (!colorName) return 'transparent';
+  const normalized = colorName.trim().charAt(0).toUpperCase() + colorName.trim().slice(1).toLowerCase();
+  return MOTO_COLORS[normalized] || 'transparent';
+};
+
+const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, setIsDeleteConfirmOpen, getStatusColor }: any) => {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [imgError, setImgError] = useState(false);
+  const [imgLoading, setImgLoading] = useState(true);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const resetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const images = useMemo(() => {
+    const imgs = item.imagens && item.imagens.length > 0 ? item.imagens : (item.imagem ? [item.imagem] : []);
+    return imgs.filter(Boolean);
+  }, [item.imagens, item.imagem]);
+
+  // Preload images for smoother experience
+  useEffect(() => {
+    if (images.length > 0) {
+      images.forEach(src => {
+        const img = new Image();
+        img.src = src;
+      });
+    }
+  }, [images]);
+
+  const handleMouseLeave = () => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    // Volta instantaneamente a disparar o reset, mas a transição suave é mantida pelo CSS
+    setCurrentImageIndex(0);
+  };
+
+  const handleMouseEnter = () => {
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (images.length <= 1) return;
+      
+      // Prevent page scroll when hovering and scrolling on the card
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (e.deltaY > 0) {
+          setCurrentImageIndex((prev) => (prev + 1) % images.length);
+        } else {
+          setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+        }
+      }
+    };
+
+    // Add listener with passive: false to allow preventDefault
+    card.addEventListener('wheel', handleWheel, { passive: false });
+    return () => card.removeEventListener('wheel', handleWheel);
+  }, [images.length]);
+
+  return (
+    <div 
+      ref={cardRef}
+      onClick={() => onSelectItem(item)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      className={cn(
+        "group relative border rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer flex flex-col h-full",
+        theme === 'dark' 
+          ? "bg-zinc-900/40 border-zinc-800/50 hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgba(139,92,246,0.1)]" 
+          : "bg-white border-zinc-200 hover:border-violet-500/50 hover:shadow-lg",
+        item.status === 'Vendida' && "opacity-60 grayscale-[0.5] brightness-75"
+      )}
+    >
+      {/* Image Container */}
+      <div className="aspect-[4/3] relative overflow-hidden bg-zinc-100 dark:bg-zinc-950">
+        {images.length > 0 ? (
+          <div className="w-full h-full relative">
+            {imgLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900">
+                <Loader2 size={24} className="animate-spin text-violet-500/50" />
+              </div>
+            )}
+            <div 
+              className="flex transition-transform duration-500 ease-out h-full"
+              style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
+            >
+              {images.map((src: string, idx: number) => (
+                <div key={idx} className="w-full h-full flex-shrink-0 relative">
+                  <img 
+                    src={src} 
+                    onLoad={() => idx === currentImageIndex && setImgLoading(false)}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (idx === currentImageIndex) {
+                        console.error("Failed to load image:", src);
+                        // Hide failed image to show the icon behind it
+                        target.style.display = 'none';
+                      } else {
+                        target.style.display = 'none';
+                      }
+                    }}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer" 
+                  />
+                  {/* Fallback if single image fails */}
+                  <div className="absolute inset-0 -z-10 flex flex-col items-center justify-center text-zinc-400 bg-zinc-100 dark:bg-zinc-900/50">
+                    <Bike size={48} strokeWidth={1} className="opacity-20" />
+                    <span className="text-[10px] uppercase font-bold tracking-tighter mt-2 opacity-40">Erro ao carregar</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Image Indicators */}
+            {images.length > 1 && (
+              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 px-2">
+                {images.map((_: any, idx: number) => (
+                  <div 
+                    key={idx} 
+                    className={cn(
+                      "h-1 rounded-full transition-all duration-300 shadow-sm",
+                      idx === currentImageIndex ? "w-6 bg-white" : "w-1.5 bg-white/40"
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 bg-zinc-100 dark:bg-zinc-900/50">
+            <Bike size={48} strokeWidth={1} className="opacity-20" />
+            <span className="text-[10px] uppercase font-bold tracking-tighter mt-2 opacity-40">Sem Imagem</span>
+          </div>
+        )}
+        
+        {/* Status Badge - Improved */}
+        <div className="absolute top-3 left-3">
+          <span className={cn(
+            "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md border border-white/10",
+            getStatusColor(item.status, true)
+          )}>
+            {item.status}
+          </span>
+        </div>
+
+        {/* Quick Actions - Repositioned to top right */}
+        <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+          <button 
+            onClick={(e) => { e.stopPropagation(); handleEditMoto(item); }}
+            className="p-2.5 rounded-xl bg-white/90 backdrop-blur-sm text-zinc-900 hover:bg-violet-500 hover:text-white transition-all shadow-xl border border-zinc-200/50"
+          >
+            <Edit size={16} />
+          </button>
+          <button 
+            onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); setIsDeleteConfirmOpen(true); }}
+            className="p-2.5 rounded-xl bg-white/90 backdrop-blur-sm text-zinc-900 hover:bg-rose-500 hover:text-white transition-all shadow-xl border border-zinc-200/50"
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">{item.marca}</span>
+            </div>
+            <span className="text-[10px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{item.rk_id}</span>
+          </div>
+          
+          <div>
+            <h3 className={cn(
+              "font-black text-xl leading-tight line-clamp-1 tracking-tight",
+              theme === 'dark' ? "text-white" : "text-zinc-900"
+            )}>
+              {item.nome && item.nome !== '-' ? item.nome : (item.modelo && item.modelo !== '-' ? item.modelo : 'Moto sem Nome')}
+            </h3>
+            {item.nome && item.nome !== '-' && item.modelo && item.modelo !== '-' && item.nome !== item.modelo && (
+              <p className="text-xs text-zinc-500 font-medium mt-0.5">{item.modelo}</p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-y-2 gap-x-3 pt-1">
+            {item.lote && (
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                <Layers size={12} className="text-violet-500" />
+                <span className="font-bold">Lote: {item.lote}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+              <Calendar size={12} className="text-violet-500" />
+              <span>{item.ano}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+              <div 
+                className="w-2.5 h-2.5 rounded-full border border-zinc-300 dark:border-zinc-700 shadow-inner" 
+                style={{ backgroundColor: getMotoColor(item.cor) }} 
+              />
+              <span>{item.cor || '-'}</span>
+            </div>
+            {item.cilindrada && item.cilindrada !== '-' && (
+              <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                <TrendingUp size={12} className="text-violet-500" />
+                <span>{item.cilindrada}cc</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Investimento</span>
+            <span className="text-xl font-black text-violet-500">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor)}
+            </span>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center text-violet-500 group-hover:bg-violet-500 group-hover:text-white transition-all duration-300 shadow-sm group-hover:shadow-violet-500/20">
+            <ChevronRight size={20} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function AppContent() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento'>('dashboard');

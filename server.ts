@@ -7,7 +7,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import QRCode from 'qrcode';
 import axios from 'axios';
-import multer from "multer";
+import multer from 'multer';
 
 dotenv.config();
 
@@ -26,42 +26,6 @@ const DATABASE_ID = process.env.NOTION_DATABASE_ID || "2f4dfa25a52880c1b315f7e89
 const MOTOS_DATABASE_ID = "317dfa25a528805f9663ff0e6ebf0318";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
-
-// Uploads configuration
-const uploadsRootDir = path.resolve("uploads");
-const motosUploadsDir = path.join(uploadsRootDir, "motos");
-
-if (!fs.existsSync(uploadsRootDir)) {
-  fs.mkdirSync(uploadsRootDir, { recursive: true });
-}
-if (!fs.existsSync(motosUploadsDir)) {
-  fs.mkdirSync(motosUploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, motosUploadsDir);
-  },
-  filename: function (req, file, cb) {
-    const safeOriginal = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + "-" + safeOriginal);
-  }
-});
-
-const upload = multer({
-  storage,
-  limits: {
-    files: 12,
-    fileSize: 10 * 1024 * 1024 // 10MB por arquivo
-  },
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Apenas arquivos de imagem são permitidos"));
-    }
-    cb(null, true);
-  }
-});
 
 // Cache para estrutura do banco de dados
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
@@ -166,17 +130,130 @@ async function fetchAllFromNotion(databaseId: string) {
 }
 
 import mlClient from './services/mlClient.js';
+import storageService from './src/services/storageService';
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   const httpServer = createServer(app);
+  
+  // Garantir que a pasta uploads existe
+  const uploadDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log('📁 Pasta uploads criada com sucesso');
+  }
+
   const io = new Server(httpServer, {
     cors: { origin: "*" }
   });
 
   app.use(express.json());
-  app.use("/uploads", express.static(uploadsRootDir));
+
+  // Configurar multer para upload
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const uploadDir = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+
+  const upload = multer({ 
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Apenas imagens são permitidas'));
+      }
+    }
+  });
+
+  // Rota de upload
+  app.post('/api/upload', (req, res) => {
+    upload.array('files', 15)(req, res, async (err) => {
+      if (err) {
+        console.error('❌ Erro no multer:', err);
+        return res.status(400).json({ 
+          success: false, 
+          error: err.message || 'Erro ao processar arquivos' 
+        });
+      }
+
+      try {
+        const files = req.files as Express.Multer.File[];
+        if (!files || files.length === 0) {
+          return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+        }
+
+        const baseUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+        console.log(`🚀 Upload de ${files.length} arquivos. BaseURL: ${baseUrl}`);
+        
+        const urls = files.map(file => ({
+          filename: file.filename,
+          url: `${baseUrl}/uploads/${file.filename}`
+        }));
+        
+        res.json({ 
+          success: true, 
+          urls: urls.map(u => u.url),
+          message: `${files.length} arquivo(s) enviado(s) com sucesso`
+        });
+      } catch (error: any) {
+        console.error('❌ Erro no processamento de upload:', error);
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+  });
+
+  // ==================== GOOGLE CLOUD STORAGE ROUTES ====================
+
+  // Endpoint para solicitar uma URL de upload
+  app.post('/api/storage/request-upload', async (req, res) => {
+    try {
+      const { filename, fileType } = req.body;
+      
+      console.log(` Generating upload URL for: ${filename} (${fileType}) in bucket: ${process.env.GCS_BUCKET_NAME || 'rksucatas'}`);
+      const uploadData = await storageService.generateUploadUrl(filename, fileType);
+      console.log('✅ Upload URL generated successfully');
+      
+      res.json({
+        success: true,
+        data: uploadData
+      });
+    } catch (error: any) {
+      console.error('Erro ao gerar URL de upload:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Endpoint para deletar uma imagem (opcional)
+  app.delete('/api/storage/files/:filename', async (req, res) => {
+    try {
+      const { filename } = req.params;
+      await storageService.deleteFile(filename);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Servir arquivos estáticos da pasta uploads com log de erro se não encontrar
+  app.use('/uploads', (req, res, next) => {
+    const filePath = path.join(process.cwd(), 'uploads', req.path);
+    if (!fs.existsSync(filePath)) {
+      console.error(`⚠️ Arquivo não encontrado em /uploads: ${req.path}`);
+    }
+    next();
+  }, express.static(path.join(process.cwd(), 'uploads')));
 
   function formatInventoryItem(page: any) {
     const props = page.properties;
@@ -294,13 +371,19 @@ async function startServer() {
   
   function formatMotosItem(page: any) {
     const props = page.properties;
+    console.log(`\n🏍️ Formatando Moto: ${page.id}`);
+    
+    // Encontrar o campo de título dinamicamente
+    const titleProp = Object.values(props).find((p: any) => p.type === 'title') as any;
+    const nome = titleProp?.title?.[0]?.plain_text || '-';
+
     const result: any = {
       id: page.id,
-      nome: '-',
+      nome: nome,
       marca: '-',
       modelo: '-',
       ano: '-',
-      rk_id: '-', // Mapped from "ID" property
+      rk_id: '-', 
       cilindrada: '-',
       lote: '-',
       nome_nf: '-',
@@ -314,50 +397,53 @@ async function startServer() {
       criado_em: page.created_time
     };
 
-    // Tenta encontrar o título
-    const titlePropName = Object.keys(props).find(key => props[key].type === 'title');
-    if (titlePropName && props[titlePropName].title?.[0]?.plain_text) {
-      result.nome = props[titlePropName].title[0].plain_text;
-    }
-
     for (const [key, prop] of Object.entries(props)) {
       const value = prop as any;
       const lowerKey = key.toLowerCase();
       
-      if (value.type === 'rich_text' && value.rich_text?.[0]?.plain_text) {
-        const text = value.rich_text[0].plain_text;
+      // Rich Text
+      if (value.type === 'rich_text') {
+        const text = value.rich_text?.[0]?.plain_text || '-';
         if (lowerKey === 'marca') result.marca = text;
         else if (lowerKey === 'modelo') result.modelo = text;
-        else if (lowerKey === 'ano') result.ano = text;
         else if (lowerKey === 'cor') result.cor = text;
-        else if (lowerKey === 'observações' || lowerKey === 'desc') result.descricao = text;
+        else if (lowerKey === 'observações' || lowerKey === 'observacoes' || lowerKey === 'descrição') result.descricao = text;
         else if (lowerKey === 'nome nf') result.nome_nf = text;
-        else if (lowerKey === 'peças retiradas') result.pecas_retiradas = text;
-        else if (lowerKey === 'id') result.rk_id = text;
+        else if (lowerKey === 'peças retiradas' || lowerKey === 'pecas retiradas') result.pecas_retiradas = text;
       }
+      // Number
       else if (value.type === 'number') {
-        if (lowerKey === 'valor' || lowerKey === 'preço') result.valor = value.number || 0;
+        if (lowerKey === 'valor') result.valor = value.number || 0;
         else if (lowerKey === 'cilindrada') result.cilindrada = value.number || 0;
         else if (lowerKey === 'ano') result.ano = value.number?.toString() || '-';
       }
+      // Select
       else if (value.type === 'select' && value.select) {
-        if (lowerKey === 'marca') result.marca = value.select.name;
-        else if (lowerKey === 'cor') result.cor = value.select.name;
-        else if (lowerKey === 'status') result.status = value.select.name;
-        else if (lowerKey === 'lote') result.lote = value.select.name;
+        if (lowerKey === 'lote') result.lote = value.select.name;
       }
-      else if (value.type === 'files' && value.files?.length) {
-        const urls = value.files
-          .map((file: any) => file.file?.url || file.external?.url || '')
-          .filter((url: string) => !!url);
-        if (urls.length) {
+      // Status
+      else if (value.type === 'status' && value.status) {
+        if (lowerKey === 'status') result.status = value.status.name;
+      }
+      // Files (Fotos)
+      else if (value.type === 'files') {
+        const urls = value.files.map((file: any) => file.file?.url || file.external?.url || '').filter(Boolean);
+        if (urls.length > 0) {
           result.imagens = urls;
-          result.imagem = urls[0];
+          if (!result.imagem) result.imagem = urls[0];
         }
       }
+      // Unique ID (ID)
       else if (value.type === 'unique_id' && value.unique_id) {
-        if (lowerKey === 'id') result.rk_id = `${value.unique_id.prefix ? value.unique_id.prefix + '-' : ''}${value.unique_id.number}`;
+        if (lowerKey === 'id') {
+          result.rk_id = `${value.unique_id.prefix ? value.unique_id.prefix + '-' : ''}${value.unique_id.number}`;
+        }
       }
+    }
+    
+    // Fallback: se o nome for '-' mas o modelo existir, usa o modelo
+    if (result.nome === '-' && result.modelo !== '-') {
+      result.nome = result.modelo;
     }
     
     return result;
@@ -956,7 +1042,7 @@ async function startServer() {
       const { pergunta } = req.body;
       console.log(`\n🤖 IA Assistant: "${pergunta}"`);
       
-      const PORT = process.env.PORT || 3000;
+      const PORT = Number(process.env.PORT) || 3000;
       
       // Carrega dados do sistema
       const [inventoryRes, salesRes] = await Promise.all([
@@ -1181,88 +1267,76 @@ async function startServer() {
     }
   });
 
-  // Upload de imagens de motos (retorna apenas URLs locais; o cliente depois salva no Notion via PATCH /api/motos)
-  app.post("/api/upload/motos", upload.array("files", 12), async (req, res) => {
-    try {
-      const files = (req.files as Express.Multer.File[]) || [];
-      if (!files.length) {
-        return res.status(400).json({ success: false, error: "Nenhum arquivo enviado" });
-      }
-
-      const baseUrl =
-        (req.protocol || "http") +
-        "://" +
-        (req.get("host") || "localhost:3000");
-
-      const urls = files.map((file) => {
-        const relativePath = path.relative(uploadsRootDir, file.path).replace(/\\/g, "/");
-        return `${baseUrl}/uploads/${relativePath}`;
-      });
-
-      res.json({ success: true, urls });
-    } catch (error: any) {
-      console.error("Upload Motos Error:", error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
   app.post("/api/motos", async (req, res) => {
     try {
-      const { nome, marca, modelo, ano, valor, cor, cilindrada, lote, nome_nf, pecas_retiradas, status, descricao, imagens } = req.body;
+      const data = req.body;
+      console.log('📝 Criando nova moto:', data);
+      
       const dbData = await getCachedDbStructure(MOTOS_DATABASE_ID);
       const dbProps = dbData.properties;
 
       const properties: any = {};
       
-      // Mapeamento dinâmico de propriedades
-      for (const [key, prop] of Object.entries(dbProps)) {
-        const p = prop as any;
-        const lowerKey = key.toLowerCase();
+      // Mapeamento explícito baseado na estrutura do Notion fornecida pelo usuário
+      const mapping: Record<string, string> = {
+        'nome': 'Nome',
+        'cilindrada': 'Cilindrada',
+        'ano': 'Ano',
+        'lote': 'Lote',
+        'imagens': 'Fotos',
+        'descricao': 'Observações',
+        'nome_nf': 'Nome NF',
+        'pecas_retiradas': 'Peças Retiradas',
+        'valor': 'Valor',
+        'marca': 'Marca',
+        'status': 'Status',
+        'cor': 'Cor',
+        'modelo': 'Modelo'
+      };
+
+      for (const [field, value] of Object.entries(data)) {
+        if (value === undefined || value === null) continue;
         
-        if (p.type === 'title') {
-          properties[key] = { title: [{ text: { content: nome || "-" } }] };
-        } else if (lowerKey === 'marca') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: marca || "" } }] };
-          else if (p.type === 'select') properties[key] = { select: { name: marca } };
-        } else if (lowerKey === 'modelo') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: modelo || "" } }] };
-        } else if (lowerKey === 'ano') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: ano || "" } }] };
-          else if (p.type === 'number') properties[key] = { number: Number(ano) };
-        } else if (lowerKey === 'valor' || lowerKey === 'preço') {
-          if (p.type === 'number') properties[key] = { number: Number(valor) };
-        } else if (lowerKey === 'cor') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: cor || "" } }] };
-          else if (p.type === 'select') properties[key] = { select: { name: cor } };
-        } else if (lowerKey === 'cilindrada') {
-          if (p.type === 'number') properties[key] = { number: Number(cilindrada) };
-        } else if (lowerKey === 'lote') {
-          if (p.type === 'select') properties[key] = { select: { name: lote } };
-          else if (p.type === 'number') properties[key] = { number: Number(lote) };
-        } else if (lowerKey === 'nome nf') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: nome_nf || "" } }] };
-        } else if (lowerKey === 'peças retiradas') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: pecas_retiradas || "" } }] };
-        } else if (lowerKey === 'status') {
-          if (p.type === 'select') properties[key] = { select: { name: status } };
-        } else if (lowerKey === 'observações' || lowerKey === 'desc') {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: descricao || "" } }] };
-        } else if ((lowerKey.includes('imagem') || lowerKey.includes('foto')) && p.type === 'files' && imagens !== undefined) {
-          const imageUrls: string[] = Array.isArray(imagens)
-            ? imagens
-            : typeof imagens === 'string' && imagens
-              ? [imagens]
-              : [];
-          const limitedUrls = imageUrls.filter(Boolean).slice(0, 12);
-          properties[key] = {
-            files: limitedUrls.map((url, index) => ({
-              name: `Foto ${index + 1}`,
+        const mappedName = mapping[field];
+        if (!mappedName) continue;
+        
+        // Busca insensível a maiúsculas/minúsculas no dbProps
+        const notionPropName = Object.keys(dbProps).find(k => k.toLowerCase() === mappedName.toLowerCase());
+        if (!notionPropName) {
+          console.log(`⚠️ Propriedade "${mappedName}" não encontrada no Notion`);
+          continue;
+        }
+        
+        const propType = dbProps[notionPropName].type;
+        
+        if (propType === 'title') {
+          properties[notionPropName] = {
+            title: [{ text: { content: String(value || '-') } }]
+          };
+        } else if (propType === 'rich_text') {
+          properties[notionPropName] = {
+            rich_text: [{ text: { content: String(value || '') } }]
+          };
+        } else if (propType === 'number') {
+          properties[notionPropName] = {
+            number: Number(value) || 0
+          };
+        } else if (propType === 'select') {
+          if (value) properties[notionPropName] = { select: { name: String(value) } };
+        } else if (propType === 'status') {
+          if (value) properties[notionPropName] = { status: { name: String(value) } };
+        } else if (propType === 'files' && Array.isArray(value)) {
+          properties[notionPropName] = {
+            files: value.map((url: string) => ({
+              name: `foto_${Date.now()}.jpg`,
               type: 'external',
               external: { url }
             }))
           };
         }
       }
+
+      console.log("📤 Enviando para o Notion (POST):", JSON.stringify(properties, null, 2));
 
       const response = await fetch('https://api.notion.com/v1/pages', {
         method: 'POST',
@@ -1279,10 +1353,12 @@ async function startServer() {
 
       if (!response.ok) {
         const error = await response.text();
+        console.error('❌ Erro Notion (POST):', error);
         throw new Error(`Notion API error: ${error}`);
       }
 
       const result = await response.json();
+      console.log('✅ Moto criada com sucesso');
       res.json({ success: true, data: formatMotosItem(result) });
     } catch (error: any) {
       console.error("Create Moto Error:", error);
@@ -1293,61 +1369,82 @@ async function startServer() {
   app.patch("/api/motos/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const body = req.body;
+      const updateData = req.body;
+      
+      console.log('📝 Recebida requisição PATCH para moto:', id);
+      console.log('📦 Dados recebidos:', JSON.stringify(updateData, null, 2));
+      
+      // Buscar estrutura do banco
       const dbData = await getCachedDbStructure(MOTOS_DATABASE_ID);
       const dbProps = dbData.properties;
-
+      
+      // Construir properties no formato do Notion
       const properties: any = {};
       
-      for (const [key, prop] of Object.entries(dbProps)) {
-        const p = prop as any;
-        const lowerKey = key.toLowerCase();
+      // Mapear campos
+      const fieldMapping: Record<string, string> = {
+        nome: 'Nome',
+        marca: 'Marca',
+        modelo: 'Modelo',
+        ano: 'Ano',
+        valor: 'Valor',
+        cor: 'Cor',
+        cilindrada: 'Cilindrada',
+        lote: 'Lote',
+        nome_nf: 'Nome NF',
+        pecas_retiradas: 'Peças Retiradas',
+        status: 'Status',
+        descricao: 'Observações' // Ajustado para bater com o banco real
+      };
+      
+      for (const [field, value] of Object.entries(updateData)) {
+        if (value === undefined || value === null) continue;
         
-        if (p.type === 'title' && body.nome !== undefined) {
-          properties[key] = { title: [{ text: { content: body.nome || "-" } }] };
-        } else if (lowerKey === 'marca' && body.marca !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.marca || "" } }] };
-          else if (p.type === 'select') properties[key] = { select: { name: body.marca } };
-        } else if (lowerKey === 'modelo' && body.modelo !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.modelo || "" } }] };
-        } else if (lowerKey === 'ano' && body.ano !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.ano || "" } }] };
-          else if (p.type === 'number') properties[key] = { number: Number(body.ano) };
-        } else if ((lowerKey === 'valor' || lowerKey === 'preço') && body.valor !== undefined) {
-          if (p.type === 'number') properties[key] = { number: Number(body.valor) };
-        } else if (lowerKey === 'cor' && body.cor !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.cor || "" } }] };
-          else if (p.type === 'select') properties[key] = { select: { name: body.cor } };
-        } else if (lowerKey === 'cilindrada' && body.cilindrada !== undefined) {
-          if (p.type === 'number') properties[key] = { number: Number(body.cilindrada) };
-        } else if (lowerKey === 'lote' && body.lote !== undefined) {
-          if (p.type === 'select') properties[key] = { select: { name: body.lote } };
-          else if (p.type === 'number') properties[key] = { number: Number(body.lote) };
-        } else if (lowerKey === 'nome nf' && body.nome_nf !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.nome_nf || "" } }] };
-        } else if (lowerKey === 'peças retiradas' && body.pecas_retiradas !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.pecas_retiradas || "" } }] };
-        } else if (lowerKey === 'status' && body.status !== undefined) {
-          if (p.type === 'select') properties[key] = { select: { name: body.status } };
-        } else if ((lowerKey === 'observações' || lowerKey === 'desc') && body.descricao !== undefined) {
-          if (p.type === 'rich_text') properties[key] = { rich_text: [{ text: { content: body.descricao || "" } }] };
-        } else if ((lowerKey.includes('imagem') || lowerKey.includes('foto')) && p.type === 'files' && body.imagens !== undefined) {
-          const imageUrls: string[] = Array.isArray(body.imagens)
-            ? body.imagens
-            : typeof body.imagens === 'string' && body.imagens
-              ? [body.imagens]
-              : [];
-          const limitedUrls = imageUrls.filter(Boolean).slice(0, 12);
-          properties[key] = {
-            files: limitedUrls.map((url, index) => ({
-              name: `Foto ${index + 1}`,
+        const propName = fieldMapping[field];
+        if (!propName) continue;
+
+        // Busca insensível a maiúsculas/minúsculas no dbProps
+        const notionPropName = Object.keys(dbProps).find(k => k.toLowerCase() === propName.toLowerCase());
+        if (!notionPropName) {
+          console.log(`⚠️ Propriedade "${propName}" não encontrada no Notion`);
+          continue;
+        }
+        
+        const propType = dbProps[notionPropName].type;
+        
+        if (propType === 'title') {
+          properties[notionPropName] = {
+            title: [{ text: { content: String(value) } }]
+          };
+        } else if (propType === 'rich_text') {
+          properties[notionPropName] = {
+            rich_text: [{ text: { content: String(value) } }]
+          };
+        } else if (propType === 'number') {
+          properties[notionPropName] = {
+            number: Number(value)
+          };
+        } else if (propType === 'select') {
+          properties[notionPropName] = {
+            select: { name: String(value) }
+          };
+        } else if (propType === 'status') {
+          properties[notionPropName] = {
+            status: { name: String(value) }
+          };
+        } else if (propType === 'files' && Array.isArray(value)) {
+          properties[notionPropName] = {
+            files: value.map((url: string) => ({
+              name: `foto_${Date.now()}.jpg`,
               type: 'external',
               external: { url }
             }))
           };
         }
       }
-
+      
+      console.log('📤 Enviando para Notion:', JSON.stringify(properties, null, 2));
+      
       const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
         method: 'PATCH',
         headers: {
@@ -1359,12 +1456,16 @@ async function startServer() {
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Notion API error: ${error}`);
+        const errorText = await response.text();
+        console.error('❌ Erro Notion:', response.status, errorText);
+        throw new Error(`Notion error: ${response.status} - ${errorText}`);
       }
 
       const result = await response.json();
+      console.log('✅ Resposta do Notion:', result);
+      
       res.json({ success: true, data: formatMotosItem(result) });
+      
     } catch (error: any) {
       console.error("Update Moto Error:", error);
       res.status(500).json({ success: false, error: error.message });
@@ -1810,6 +1911,15 @@ async function startServer() {
         avgTicket: salesMetrics.average
       });
       
+      // Pegar os 4 primeiros anúncios para o dashboard
+      const recentListings = listings.slice(0, 4).map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        thumbnail: item.thumbnail,
+        status: item.status
+      }));
+
       res.json({
         success: true,
         data: {
@@ -1817,6 +1927,7 @@ async function startServer() {
           activeListings: listings.length || 0,
           monthlySales: salesMetrics.total || 0,
           avgTicket: salesMetrics.average || 0,
+          recentListings,
           period
         }
       });
@@ -2222,6 +2333,15 @@ async function startServer() {
   });
   */
 
+  // Error handler for API routes
+  app.use('/api', (err: any, req: any, res: any, next: any) => {
+    console.error('❌ Erro na API:', err);
+    res.status(err.status || 500).json({
+      success: false,
+      error: err.message || 'Erro interno no servidor'
+    });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -2239,6 +2359,7 @@ async function startServer() {
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Server running on http://localhost:${PORT} [PID:${process.pid}]`);
+    console.log(`🔗 APP_URL: ${process.env.APP_URL || 'Não definida (usando localhost)'}`);
     
     /*
     console.log("📱 Inicializando WhatsApp (Baileys)...");

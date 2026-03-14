@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Package, MessageSquare, TrendingUp, ShoppingCart, DollarSign, RefreshCw } from 'lucide-react';
+import { Package, MessageSquare, TrendingUp, ShoppingCart, DollarSign, RefreshCw, ExternalLink } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export const MLDashboard = ({ theme }: { theme: string }) => {
   const [data, setData] = useState<any>(null);
@@ -119,6 +125,67 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
           theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
         )}>
           <p className="text-zinc-500">Distribuição por status</p>
+        </div>
+      </div>
+
+      {/* Anúncios Recentes */}
+      <div className={cn(
+        "border p-6 rounded-2xl",
+        theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
+      )}>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className={cn("text-lg font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>Anúncios Recentes</h3>
+          <button className="text-xs font-bold text-violet-500 hover:text-violet-400 transition-colors uppercase tracking-wider">Ver Todos</button>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {data?.recentListings?.map((item: any) => (
+            <div key={item.id} className={cn(
+              "border rounded-xl overflow-hidden group transition-all hover:border-violet-500/50",
+              theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-zinc-50 border-zinc-200"
+            )}>
+              <div className="aspect-video relative overflow-hidden bg-zinc-800">
+                <>
+                  <img 
+                    src={item.thumbnail} 
+                    alt={item.title} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 -z-10">
+                    <Package size={24} className="text-zinc-600" />
+                  </div>
+                </>
+                <div className="absolute top-2 right-2">
+                  <span className={cn(
+                    "px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider",
+                    item.status === 'active' ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-zinc-500/20 text-zinc-400 border border-zinc-500/30"
+                  )}>
+                    {item.status}
+                  </span>
+                </div>
+              </div>
+              <div className="p-3">
+                <p className={cn("text-xs font-bold line-clamp-2 h-8 leading-tight", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>{item.title}</p>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-violet-500 font-bold text-sm">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price)}</span>
+                  <button className={cn(
+                    "p-1.5 rounded-lg transition-colors",
+                    theme === 'dark' ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-400" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-600"
+                  )}>
+                    <ExternalLink size={12} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {(!data?.recentListings || data.recentListings.length === 0) && (
+            <div className="col-span-full py-12 text-center text-zinc-500 italic text-sm">
+              Nenhum anúncio recente encontrado.
+            </div>
+          )}
         </div>
       </div>
     </div>
