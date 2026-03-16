@@ -40,7 +40,13 @@ import {
   LayoutGrid,
   Table as TableIcon,
   MessageSquare,
-  Upload
+  Upload,
+  User,
+  Camera,
+  Box,
+  BarChart3,
+  MessageCircle,
+  ShoppingBag
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -102,23 +108,43 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [motos, setMotos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastFetch, setLastFetch] = useState(0);
+  const lastMutationRef = useRef(0);
   const [whatsappStatus, setWhatsappStatus] = useState({ connected: false, isConnecting: false, reconnectAttempts: 0 });
   const [whatsappConversations, setWhatsappConversations] = useState<any[]>([]);
   const [whatsappQr, setWhatsappQr] = useState<string | null>(null);
   const CACHE_TIME = 5 * 60 * 1000; // 5 minutos
 
-  const loadData = async (force = false) => {
+  const loadData = async (force = false, silent = false) => {
     const now = Date.now();
-    if (!force && (now - lastFetch) < CACHE_TIME && inventory.length > 0) {
-      return; // Usa cache
+    // Se não for forçado, não for silencioso e o cache for recente, não faz nada
+    if (!force && !silent && (now - lastFetch) < CACHE_TIME && inventory.length > 0) {
+      return; 
     }
 
-    setLoading(true);
+    if (!silent) setLoading(true);
+    
     try {
-      const [invRes, salesRes, motosRes] = await Promise.all([
-        fetch('/api/inventory'),
-        fetch('/api/sales'),
-        fetch('/api/motos')
+      const query = force ? '?force=true' : '';
+      
+      // Função auxiliar para fetch com retry
+      const fetchWithRetry = async (url: string, retries = 2) => {
+        for (let i = 0; i <= retries; i++) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Status ${res.status}`);
+            return res;
+          } catch (err) {
+            if (i === retries) throw err;
+            await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+          }
+        }
+        throw new Error('Falha após retentativas');
+      };
+
+      const results = await Promise.allSettled([
+        fetchWithRetry(`/api/inventory${query}`),
+        fetchWithRetry(`/api/sales${query}`),
+        fetchWithRetry(`/api/motos${query}`)
       ]);
       
       const parseJson = async (res: Response) => {
@@ -127,20 +153,63 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           return JSON.parse(text);
         } catch (e) {
           console.error(`❌ Erro ao parsear JSON de ${res.url}. Conteúdo recebido:`, text.substring(0, 200));
-          throw new Error(`Resposta inválida de ${res.url}: ${text.substring(0, 50)}...`);
+          throw new Error(`Resposta inválida de ${res.url}`);
         }
       };
 
-      const invData = await parseJson(invRes);
-      const salesData = await parseJson(salesRes);
-      const motosData = await parseJson(motosRes);
+      // Processar resultados individualmente
+      // Estoque
+      if (results[0].status === 'fulfilled') {
+        try {
+          const data = await parseJson(results[0].value);
+          if (data.success) setInventory(data.data);
+        } catch (e) {
+          console.error('❌ Erro ao processar estoque:', e);
+        }
+      } else {
+        console.error('❌ Erro ao buscar estoque:', results[0].reason);
+      }
+
+      // Vendas
+      if (results[1].status === 'fulfilled') {
+        try {
+          const data = await parseJson(results[1].value);
+          if (data.success) setSales(data.data);
+        } catch (e) {
+          console.error('❌ Erro ao processar vendas:', e);
+        }
+      } else {
+        console.error('❌ Erro ao buscar vendas:', results[1].reason);
+      }
+
+      // Motos
+      if (results[2].status === 'fulfilled') {
+        try {
+          const data = await parseJson(results[2].value);
+          if (data.success) {
+            // Grace period: se houve uma mutação recente (últimos 15s) e é um fetch silencioso,
+            // não sobrescrevemos o estado das motos para evitar que itens novos sumam (eventual consistency do Notion)
+            const isRecentMutation = (Date.now() - lastMutationRef.current) < 15000;
+            if (!silent || !isRecentMutation || motos.length === 0) {
+              setMotos(data.data);
+            } else {
+              console.log('⏳ Pulando atualização de motos devido a mutação recente');
+            }
+          }
+        } catch (e) {
+          console.error('❌ Erro ao processar motos:', e);
+        }
+      } else {
+        console.error('❌ Erro ao buscar motos:', results[2].reason);
+      }
       
-      if (invData.success) setInventory(invData.data);
-      if (salesData.success) setSales(salesData.data);
-      if (motosData.success) setMotos(motosData.data);
       setLastFetch(now);
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
+    } catch (error: any) {
+      console.error('Erro crítico ao carregar dados:', error);
+      // Só mostra erro se não for silencioso
+      if (!silent) {
+        // Aqui poderíamos usar um toast ou setError global
+      }
     } finally {
       setLoading(false);
     }
@@ -181,8 +250,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       }));
     });
 
+    // Polling para sincronização "instantânea" (silenciosa)
+    const interval = setInterval(() => {
+      loadData(false, true);
+    }, 30000); // Aumentado para 30 segundos para evitar sobrecarga
+
     return () => {
       socket.disconnect();
+      clearInterval(interval);
     };
   }, []);
 
@@ -197,7 +272,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       whatsappQr,
       setInventory, 
       setSales, 
-      setMotos,
+      setMotos: (val) => {
+        if (typeof val === 'function') {
+          setMotos(prev => {
+            const next = (val as any)(prev);
+            lastMutationRef.current = Date.now();
+            return next;
+          });
+        } else {
+          setMotos(val);
+          lastMutationRef.current = Date.now();
+        }
+      },
       refreshData: () => loadData(true) 
     }}>
       {children}
@@ -280,18 +366,22 @@ const SkeletonRow = ({ theme }: { theme: 'light' | 'dark', key?: any }) => (
   </tr>
 );
 
-const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme }: any) => (
-  <div className={cn(
-    "border rounded-2xl p-6 transition-all duration-300 relative overflow-hidden group",
-    theme === 'dark' 
-      ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgb(139,92,246,0.15)] hover:scale-[1.02]" 
-      : "bg-white border-zinc-200 hover:border-violet-500/30 shadow-sm hover:scale-[1.02]"
-  )}>
+const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onClick }: any) => (
+  <div 
+    onClick={onClick}
+    className={cn(
+      "border rounded-2xl p-6 transition-all duration-300 relative overflow-hidden group",
+      onClick && "cursor-pointer",
+      theme === 'dark' 
+        ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgb(139,92,246,0.15)] hover:scale-[1.02]" 
+        : "bg-white border-zinc-200 hover:border-violet-500/30 shadow-sm hover:scale-[1.02]"
+    )}
+  >
     {theme === 'dark' && (
       <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-500/5 via-transparent to-transparent pointer-events-none" />
     )}
     <div className="flex items-start justify-between relative z-10">
-      <div className={cn("p-3 rounded-xl bg-opacity-10 shadow-inner", color)}>
+      <div className={cn("p-3 rounded-xl bg-opacity-10 shadow-inner transition-transform group-hover:scale-110 duration-300", color)}>
         <Icon size={24} className={color.replace('bg-', 'text-')} />
       </div>
       {trend !== undefined && (
@@ -305,21 +395,41 @@ const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme }: a
       )}
     </div>
     <div className="mt-4 relative z-10">
-      <p className="text-zinc-500 text-xs uppercase font-medium tracking-wider">{label}</p>
+      <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest opacity-80">{label}</p>
       <h3 className={cn(
-        "text-2xl font-bold mt-1 tracking-tight", 
+        "text-2xl font-black mt-1 tracking-tight", 
         theme === 'dark' ? "text-white" : "text-zinc-900",
         trend !== undefined && trend > 0 && theme === 'dark' && "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]",
         trend !== undefined && trend < 0 && theme === 'dark' && "text-rose-400 drop-shadow-[0_0_8px_rgba(251,113,133,0.3)]"
       )}>
         {value}
       </h3>
-      {subValue && <p className="text-xs text-zinc-500 mt-1 font-medium">{subValue}</p>}
+      {subValue && <p className="text-[10px] text-zinc-500 mt-1.5 font-bold uppercase tracking-wider">{subValue}</p>}
     </div>
+    
+    {/* Efeito de brilho no hover */}
+    <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/10 blur-3xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
   </div>
 );
 
-const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void }) => {
+const DashboardView = ({ 
+  theme, 
+  onSelectItem, 
+  mlData, 
+  source, 
+  onToggleSource, 
+  onTabChange,
+  allMlListings,
+  showAllMlAds,
+  setShowAllMlAds,
+  onFetchAllMlListings,
+  isMlListingsLoading,
+  mlPeriod,
+  setMlPeriod,
+  mlCustomDate,
+  setMlCustomDate,
+  isMlDashboardLoading
+}: any) => {
   const { inventory, sales, loading, refreshData } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
 
@@ -331,6 +441,20 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
   };
 
   const metrics = useMemo(() => {
+    if (source === 'mercadolivre' && mlData) {
+      return {
+        valorTotalEstoque: 0, // ML não tem valor total de estoque fácil
+        totalItensEstoque: mlData.totalListings || 0,
+        activeListings: mlData.activeListings || 0,
+        valorVendasMes: mlData.monthlySales || 0,
+        totalVendasMes: mlData.totalSalesCount || 0,
+        ticketMedio: mlData.avgTicket || 0,
+        perguntasPendentes: mlData.pendingQuestions || 0,
+        ultimosItens: mlData.recentListings || [],
+        ultimasVendas: mlData.recentSales || []
+      };
+    }
+
     const hoje = new Date();
     const mesAtual = hoje.getMonth();
     const anoAtual = hoje.getFullYear();
@@ -377,12 +501,17 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
       totalVendasMes: vendasMes.length,
       valorSaidasMes,
       totalSaidasMes: saidasMes.length,
-      ticketMedio
+      ticketMedio,
+      ultimasVendas: [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()).slice(0, 5)
     };
-  }, [inventory, sales]);
+  }, [inventory, sales, mlData, source]);
 
   // Gráfico Vendas por Dia (últimos 30 dias)
   const chartData = useMemo(() => {
+    if (source === 'mercadolivre' && mlData?.chartData) {
+      return mlData.chartData;
+    }
+
     const days = [];
     const hoje = new Date();
     for (let i = 29; i >= 0; i--) {
@@ -415,7 +544,7 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     });
 
     return days;
-  }, [sales]);
+  }, [sales, mlData, source]);
 
   // Gráfico Vendas por Tipo (Valor)
   const pieData = useMemo(() => {
@@ -446,62 +575,201 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className={cn("text-xl font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>Dashboard</h2>
-        <button 
-          onClick={refreshData}
-          disabled={loading}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border",
-            theme === 'dark' 
-              ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-              : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+    <>
+      <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className={cn("text-2xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+            Dashboard <span className="text-violet-500">RK</span>
+          </h2>
+          
+          {/* Toggle de Fonte de Dados */}
+          <div className={cn(
+            "flex p-1 rounded-xl border transition-all",
+            theme === 'dark' ? "bg-zinc-900/80 border-zinc-800" : "bg-zinc-100 border-zinc-200"
+          )}>
+            <button
+              onClick={() => onToggleSource('estoque')}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                source === 'estoque'
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                  : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <Package size={14} />
+              Estoque
+            </button>
+            <button
+              onClick={() => onToggleSource('mercadolivre')}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
+                source === 'mercadolivre'
+                  ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                  : "text-zinc-500 hover:text-zinc-300"
+              )}
+            >
+              <TrendingUp size={14} />
+              Mercado Livre
+            </button>
+          </div>
+
+          {source === 'mercadolivre' && (
+            <div className="flex items-center gap-2 ml-4">
+              <select
+                value={mlPeriod}
+                onChange={(e) => setMlPeriod(e.target.value)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-bold border outline-none transition-all",
+                  theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"
+                )}
+              >
+                <option value="7d">Últimos 7 dias</option>
+                <option value="15d">Últimos 15 dias</option>
+                <option value="30d">Últimos 30 dias</option>
+                <option value="60d">Últimos 60 dias</option>
+                <option value="custom">Data Específica</option>
+              </select>
+
+              {mlPeriod === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={mlCustomDate.start}
+                    onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold border outline-none transition-all",
+                      theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"
+                    )}
+                  />
+                  <span className="text-zinc-500 text-xs">até</span>
+                  <input
+                    type="date"
+                    value={mlCustomDate.end}
+                    onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
+                    className={cn(
+                      "px-3 py-1.5 rounded-lg text-xs font-bold border outline-none transition-all",
+                      theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"
+                    )}
+                  />
+                </div>
+              )}
+              {isMlDashboardLoading && <Loader2 className="animate-spin text-amber-500" size={16} />}
+            </div>
           )}
-        >
-          <RefreshCw size={16} className={cn(loading && "animate-spin")} />
-          {loading ? "Atualizando..." : "Atualizar Dados"}
-        </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {source === 'mercadolivre' && (
+            <button 
+              onClick={() => onTabChange('mercadolivre')}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                theme === 'dark' 
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20" 
+                  : "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100"
+              )}
+            >
+              <ExternalLink size={14} />
+              Gerenciar ML
+            </button>
+          )}
+          <button 
+            onClick={refreshData}
+            disabled={loading}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+              theme === 'dark' 
+                ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+            )}
+          >
+            <RefreshCw size={14} className={cn(loading && "animate-spin")} />
+            {loading ? "Sincronizando..." : "Sincronizar"}
+          </button>
+        </div>
       </div>
 
-      {/* Cards de Resumo */}
+      {/* Cards de Resumo Dinâmicos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard 
-          icon={Package} 
-          label="Valor do Estoque" 
-          value={formatCurrency(metrics.valorTotalEstoque)} 
-          subValue={`${metrics.totalItensEstoque} itens em estoque`}
-          color="bg-blue-500" 
-          theme={theme} 
-        />
-        <StatCard 
-          icon={TrendingUp} 
-          label="Vendas (Mês)" 
-          value={formatCurrency(metrics.valorVendasMes)} 
-          subValue={`${metrics.totalVendasMes} vendas no mês`}
-          color="bg-emerald-500" 
-          theme={theme} 
-        />
-        <StatCard 
-          icon={DollarSign} 
-          label="Saídas (Mês)" 
-          value={formatCurrency(metrics.valorSaidasMes)} 
-          subValue="despesas"
-          color="bg-rose-500" 
-          theme={theme} 
-        />
-        <StatCard 
-          icon={ShoppingCart} 
-          label="Ticket Médio" 
-          value={formatCurrency(metrics.ticketMedio)} 
-          subValue="por venda"
-          color="bg-amber-500" 
-          theme={theme} 
-        />
+        {source === 'estoque' ? (
+          <>
+            <StatCard 
+              icon={Package} 
+              label="Valor do Estoque" 
+              value={formatCurrency(metrics.valorTotalEstoque)} 
+              subValue={`${metrics.totalItensEstoque} itens em estoque`}
+              color="bg-blue-500" 
+              theme={theme} 
+            />
+            <StatCard 
+              icon={TrendingUp} 
+              label="Vendas (Mês)" 
+              value={formatCurrency(metrics.valorVendasMes)} 
+              subValue={`${metrics.totalVendasMes} vendas no mês`}
+              color="bg-emerald-500" 
+              theme={theme} 
+            />
+            <StatCard 
+              icon={DollarSign} 
+              label="Saídas (Mês)" 
+              value={formatCurrency(metrics.valorSaidasMes)} 
+              subValue="despesas operacionais"
+              color="bg-rose-500" 
+              theme={theme} 
+            />
+            <StatCard 
+              icon={ShoppingCart} 
+              label="Ticket Médio" 
+              value={formatCurrency(metrics.ticketMedio)} 
+              subValue="por venda realizada"
+              color="bg-amber-500" 
+              theme={theme} 
+            />
+          </>
+        ) : (
+          <>
+    <StatCard 
+      icon={Box} 
+      label="Anúncios Ativos" 
+      value={metrics.activeListings} 
+      subValue={`De ${metrics.totalItensEstoque} anúncios totais`}
+      color="bg-blue-500" 
+      theme={theme} 
+      onClick={onFetchAllMlListings}
+    />
+    <StatCard 
+      icon={BarChart3} 
+      label="Vendas ML (Mês)" 
+      value={formatCurrency(metrics.valorVendasMes)} 
+      subValue={`${metrics.totalVendasMes} pedidos no período`}
+      color="bg-emerald-500" 
+      theme={theme} 
+    />
+    <StatCard 
+      icon={MessageCircle} 
+      label="Perguntas" 
+      value={metrics.perguntasPendentes} 
+      subValue="pendentes de resposta"
+      color="bg-rose-500" 
+      theme={theme} 
+      trend={metrics.perguntasPendentes > 0 ? -10 : 0}
+      onClick={() => onTabChange('mercadolivre')}
+    />
+    <StatCard 
+      icon={ShoppingBag} 
+      label="Ticket Médio ML" 
+      value={formatCurrency(metrics.ticketMedio)} 
+      subValue="valor médio por pedido"
+      color="bg-amber-500" 
+      theme={theme} 
+    />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Gráfico Vendas por Dia */}
+        {/* Gráfico Principal */}
         <div className={cn(
           "lg:col-span-2 border p-6 rounded-2xl transition-all duration-300",
           theme === 'dark' 
@@ -510,17 +778,19 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
         )}>
           <div className="flex items-center justify-between mb-6">
             <h3 className={cn("text-lg font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-              Vendas por Dia (30 dias)
+              {source === 'estoque' ? "Fluxo de Caixa (30 dias)" : `Vendas Mercado Livre (${mlPeriod === 'custom' ? 'Período Específico' : `${mlPeriod.replace('d', '')} dias`})`}
             </h3>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-violet-500 shadow-[0_0_8px_rgba(139,92,246,0.5)]" />
+                <div className={cn("w-3 h-3 rounded-full shadow-[0_0_8px_rgba(139,92,246,0.5)]", source === 'estoque' ? "bg-violet-500" : "bg-emerald-500")} />
                 <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Vendas</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Saídas</span>
-              </div>
+              {source === 'estoque' && (
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
+                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Saídas</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="h-[300px]">
@@ -528,8 +798,8 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                    <stop offset="5%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorSaidas" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
@@ -563,76 +833,96 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                   }}
                   itemStyle={{ fontWeight: 'bold' }}
                 />
-                <Area type="monotone" dataKey="vendas" name="Vendas" stroke="#8b5cf6" strokeWidth={3} fillOpacity={1} fill="url(#colorVendas)" />
-                <Area type="monotone" dataKey="saidas" name="Saídas" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorSaidas)" />
+                <Area type="monotone" dataKey="vendas" name="Vendas" stroke={source === 'estoque' ? "#8b5cf6" : "#10b981"} strokeWidth={3} fillOpacity={1} fill="url(#colorVendas)" />
+                {source === 'estoque' && (
+                  <Area type="monotone" dataKey="saidas" name="Saídas" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorSaidas)" />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Gráfico Vendas por Tipo */}
-        <div className={cn(
-          "border p-6 rounded-2xl transition-all duration-300",
-          theme === 'dark' 
-            ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-violet-500/30" 
-            : "bg-white border-zinc-200 shadow-sm"
-        )}>
-          <h3 className={cn("text-lg font-bold tracking-tight mb-6", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-            Vendas por Tipo
-          </h3>
-          <div className="h-[250px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                  stroke="none"
-                  onClick={(data) => setSelectedPaymentType(data.name)}
-                  style={{ cursor: 'pointer' }}
+        {/* Gráfico Secundário / Ações Rápidas */}
+        <div className="space-y-6">
+          <div className={cn(
+            "border p-6 rounded-2xl transition-all duration-300",
+            theme === 'dark' 
+              ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-violet-500/30" 
+              : "bg-white border-zinc-200 shadow-sm"
+          )}>
+            <h3 className={cn("text-lg font-bold tracking-tight mb-6", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+              {source === 'estoque' ? "Vendas por Tipo" : "Status de Anúncios"}
+            </h3>
+            <div className="h-[200px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={source === 'estoque' ? pieData : [
+                      { name: 'Ativos', value: metrics.activeListings },
+                      { name: 'Inativos', value: metrics.totalItensEstoque - metrics.activeListings }
+                    ]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {(source === 'estoque' ? pieData : [
+                      { name: 'Ativos', value: metrics.activeListings },
+                      { name: 'Inativos', value: metrics.totalItensEstoque - metrics.activeListings }
+                    ]).map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={source === 'estoque' ? COLORS[index % COLORS.length] : (index === 0 ? '#10b981' : '#f43f5e')} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value: number) => source === 'estoque' ? formatCurrency(value) : value}
+                    contentStyle={{ 
+                      backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
+                      border: `1px solid ${theme === 'dark' ? '#27272a' : '#e5e7eb'}`, 
+                      borderRadius: '12px' 
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Ações Rápidas ML */}
+          {source === 'mercadolivre' && (
+            <div className={cn(
+              "border p-6 rounded-2xl transition-all duration-300",
+              theme === 'dark' 
+                ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
+                : "bg-white border-zinc-200 shadow-sm"
+            )}>
+              <h3 className={cn("text-sm font-bold tracking-tight mb-4 uppercase text-zinc-500", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+                Ações Rápidas ML
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={() => onTabChange('mercadolivre')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/20 transition-all group"
                 >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  formatter={(value: number) => formatCurrency(value)}
-                  contentStyle={{ 
-                    backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
-                    border: `1px solid ${theme === 'dark' ? '#27272a' : '#e5e7eb'}`, 
-                    borderRadius: '12px' 
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-wrap gap-x-3 gap-y-2 mt-6 justify-center">
-            {pieData.map((item, i) => (
-              <button 
-                key={item.name} 
-                onClick={() => setSelectedPaymentType(item.name)}
-                className="flex items-center gap-2 bg-zinc-800/30 px-3 py-2 rounded-xl border border-zinc-700/30 hover:bg-zinc-800/60 transition-all cursor-pointer group relative"
-              >
-                <div className="w-2 h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.3)] group-hover:scale-110 transition-transform" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider group-hover:text-zinc-300 transition-colors">{item.name}</span>
-                
-                {/* Tooltip de valor no hover */}
-                <div className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-[10px] font-black text-emerald-400 opacity-0 group-hover:opacity-100 group-hover:-top-11 pointer-events-none transition-all duration-200 shadow-2xl whitespace-nowrap z-20">
-                  {formatCurrency(item.value)}
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 border-b border-r border-zinc-700 rotate-45" />
-                </div>
-              </button>
-            ))}
-          </div>
+                  <MessageSquare className="text-violet-500 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-violet-400">Responder</span>
+                </button>
+                <button 
+                  onClick={() => onTabChange('mercadolivre')}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-all group"
+                >
+                  <Package className="text-amber-500 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Anúncios</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Últimas Vendas */}
+        {/* Últimas Vendas / Pedidos ML */}
         <div className={cn(
           "border rounded-2xl overflow-hidden transition-all duration-300",
           theme === 'dark' 
@@ -643,59 +933,295 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             "p-4 border-b flex items-center justify-between",
             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
           )}>
-            <h3 className={cn("font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>Últimas Vendas</h3>
+            <h3 className={cn("font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+              {source === 'estoque' ? "Últimas Vendas" : "Vendas (Mercado Livre)"}
+            </h3>
             <History size={16} className="text-zinc-500" />
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className={cn(
-                  "text-[10px] uppercase font-bold tracking-wider",
-                  theme === 'dark' ? "bg-zinc-800/30 text-zinc-500" : "bg-zinc-50 text-zinc-500"
-                )}>
-                  <th className="px-4 py-3">Peça</th>
-                  <th className="px-4 py-3">Valor</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3">Data</th>
-                </tr>
-              </thead>
-              <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
-                {latestSales.map((sale) => (
-                  <tr 
-                    key={sale.id} 
-                    onClick={() => onSelectItem(sale)}
-                    className={cn(
-                      "transition-colors group cursor-pointer",
-                      theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
-                    )}
-                  >
-                    <td className={cn("px-4 py-3 font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
-                      {sale.nome}
-                    </td>
-                    <td className="px-4 py-3 text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]">
-                      {formatCurrency(sale.valor)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
-                        theme === 'dark' 
-                          ? "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50" 
-                          : "bg-zinc-100 text-zinc-600"
-                      )}>
-                        {sale.tipo}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-500 text-xs font-medium">
-                      {new Date(sale.data).toLocaleDateString('pt-BR')}
-                    </td>
+          
+          {source === 'estoque' ? (
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className={cn(
+                    "text-[10px] uppercase font-bold tracking-wider",
+                    theme === 'dark' ? "bg-zinc-800/90 backdrop-blur-sm text-zinc-500" : "bg-zinc-50/90 backdrop-blur-sm text-zinc-500"
+                  )}>
+                    <th className="px-4 py-3">Peça</th>
+                    <th className="px-4 py-3">Valor</th>
+                    <th className="px-4 py-3">Tipo</th>
+                    <th className="px-4 py-3">Data</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
+                  {metrics.ultimasVendas.map((sale: any) => (
+                    <tr 
+                      key={sale.id} 
+                      onClick={() => onSelectItem(sale)}
+                      className="transition-colors group cursor-pointer hover:bg-zinc-800/20"
+                    >
+                      <td className={cn("px-4 py-3 font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
+                        <div className="flex items-center gap-3">
+                          <span className="truncate max-w-[200px]" title={sale.nome}>
+                            {sale.nome}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]">
+                        {formatCurrency(sale.valor)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                          theme === 'dark' 
+                            ? "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50" 
+                            : "bg-zinc-100 text-zinc-600"
+                        )}>
+                          {sale.tipo}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-500 text-xs font-medium">
+                        {new Date(sale.data).toLocaleDateString('pt-BR')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-4 p-4">
+              {/* Resumo de Envios */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
+                <button 
+                  onClick={() => setActiveTab('pending')}
+                  className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                  activeTab === 'pending' 
+                    ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                    : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                )}>
+                  Envios pendentes
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full",
+                    activeTab === 'pending' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")
+                  )}>
+                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'ready_to_print' || s.shipping_status === 'pending').length}
+                  </span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('shipped')}
+                  className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+                  activeTab === 'shipped' 
+                    ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                    : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                )}>
+                  Em trânsito
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full",
+                    activeTab === 'shipped' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")
+                  )}>
+                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'shipped').length}
+                  </span>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('delivered')}
+                  className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+                  activeTab === 'delivered' 
+                    ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                    : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                )}>
+                  Finalizadas
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full",
+                    activeTab === 'delivered' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")
+                  )}>
+                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'delivered').length}
+                  </span>
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                {metrics.ultimasVendas
+                  .filter((sale: any) => {
+                    if (activeTab === 'pending') return sale.shipping_status === 'ready_to_print' || sale.shipping_status === 'pending';
+                    if (activeTab === 'shipped') return sale.shipping_status === 'shipped';
+                    if (activeTab === 'delivered') return sale.shipping_status === 'delivered';
+                    return true;
+                  })
+                  .map((sale: any) => {
+                const getShippingStatusInfo = (sale: any) => {
+                  if (sale.shipping_status === 'ready_to_print') {
+                    return {
+                      title: 'Etiqueta pronta para imprimir',
+                      titleColor: 'text-orange-500',
+                      description: 'Você deve despachar o pacote hoje ou amanhã em Correios.',
+                      buttonText: 'Imprimir etiqueta',
+                      buttonAction: 'print'
+                    };
+                  }
+                  if (sale.shipping_status === 'shipped') {
+                    return {
+                      title: 'Enviado',
+                      titleColor: 'text-emerald-500',
+                      description: 'O pacote está a caminho do comprador.',
+                      buttonText: 'Ver detalhes',
+                      buttonAction: 'view'
+                    };
+                  }
+                  if (sale.shipping_status === 'delivered') {
+                    return {
+                      title: 'Entregue',
+                      titleColor: 'text-emerald-500',
+                      description: 'O pacote foi entregue ao comprador.',
+                      buttonText: 'Ver detalhes',
+                      buttonAction: 'view'
+                    };
+                  }
+                  if (sale.shipping_status === 'pending') {
+                    return {
+                      title: 'Envio pendente',
+                      titleColor: 'text-amber-500',
+                      description: 'Aguardando liberação da etiqueta.',
+                      buttonText: 'Ver detalhes',
+                      buttonAction: 'view'
+                    };
+                  }
+                  return {
+                    title: sale.status === 'Pago' ? 'Pagamento aprovado' : sale.status,
+                    titleColor: 'text-zinc-500',
+                    description: 'Aguardando atualização de envio.',
+                    buttonText: 'Ver detalhes',
+                    buttonAction: 'view'
+                  };
+                };
+                
+                const statusInfo = getShippingStatusInfo(sale);
+
+                return (
+                <div key={sale.id} className={cn(
+                  "border rounded-xl p-4 flex flex-col gap-4 transition-all",
+                  theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+                )}>
+                  {/* Header do Card */}
+                  <div className="flex items-center justify-between border-b pb-3 border-zinc-800/50">
+                    <div className="flex items-center gap-3">
+                      <span className="bg-amber-400 text-black text-[10px] font-black px-1.5 py-0.5 rounded">ML</span>
+                      <span className="text-xs text-zinc-400 font-medium">#{sale.id}</span>
+                      <span className="text-xs text-zinc-500">|</span>
+                      <span className="text-xs text-zinc-400">{new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex flex-col items-end">
+                        <span className={cn("text-sm font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>{sale.cliente}</span>
+                        <span className="text-[10px] text-zinc-500">{sale.nickname}</span>
+                      </div>
+                      <button 
+                        onClick={() => window.open(`https://myaccount.mercadolivre.com.br/messaging/orders/${sale.id}`, '_blank')}
+                        className="text-blue-500 hover:text-blue-400 text-xs font-bold flex items-center gap-1"
+                      >
+                        <MessageSquare size={12} />
+                        Mensagens
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Ação Principal */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className={cn("font-bold text-sm", statusInfo.titleColor)}>{statusInfo.title}</span>
+                      <span className="text-zinc-500 text-xs">{statusInfo.description}</span>
+                    </div>
+                    {statusInfo.buttonAction === 'print' ? (
+                      <button 
+                        onClick={async () => {
+                          if (!sale.shipping_id) {
+                            alert('ID de envio não encontrado para este pedido.');
+                            return;
+                          }
+                          try {
+                            const res = await fetch(`/api/ml/shipment-label/${sale.shipping_id}`);
+                            if (!res.ok) throw new Error('Falha ao baixar etiqueta');
+                            const blob = await res.blob();
+                            
+                            // Obter o nome do arquivo do header Content-Disposition se possível
+                            const contentDisposition = res.headers.get('Content-Disposition');
+                            let filename = `etiqueta-${sale.shipping_id}.pdf`;
+                            if (contentDisposition) {
+                              const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                              if (filenameMatch && filenameMatch.length === 2) {
+                                filename = filenameMatch[1];
+                              } else if (contentDisposition.includes('zip')) {
+                                filename = `etiqueta-${sale.shipping_id}.zip`;
+                              }
+                            } else if (blob.type === 'application/zip') {
+                              filename = `etiqueta-${sale.shipping_id}.zip`;
+                            }
+
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = filename;
+                            document.body.appendChild(a);
+                            a.click();
+                            
+                            // Limpeza
+                            setTimeout(() => {
+                              document.body.removeChild(a);
+                              window.URL.revokeObjectURL(url);
+                            }, 100);
+                          } catch (err) {
+                            console.error('Erro ao baixar etiqueta:', err);
+                            alert('Erro ao baixar etiqueta. Verifique se o pedido já possui etiqueta gerada.');
+                          }
+                        }}
+                        className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      >
+                        {statusInfo.buttonText}
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
+                        className={cn(
+                          "px-4 py-2 rounded-lg text-sm font-bold transition-colors border",
+                          theme === 'dark' ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                        )}
+                      >
+                        {statusInfo.buttonText}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Detalhes do Item */}
+                  <div className={cn(
+                    "flex items-center justify-between p-3 rounded-lg",
+                    theme === 'dark' ? "bg-zinc-800/30" : "bg-zinc-50"
+                  )}>
+                    <div className="flex items-center gap-3">
+                      {sale.thumbnail && (
+                        <img src={sale.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                      )}
+                      <span className={cn("text-sm font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>{sale.itens}</span>
+                    </div>
+                    <div className="flex items-center gap-8">
+                      <span className="text-zinc-500 text-sm">{formatCurrency(sale.valor)}</span>
+                      <span className="text-zinc-500 text-sm">{sale.quantidade} unidade{sale.quantidade > 1 ? 's' : ''}</span>
+                    </div>
+                  </div>
+                </div>
+              )})}
+              {metrics.ultimasVendas.length === 0 && (
+                <div className="text-center py-8 text-zinc-500">
+                  Nenhuma venda encontrada no período.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Últimos Itens Adicionados */}
+        {/* Últimos Itens / Anúncios Recentes ML */}
         <div className={cn(
           "border rounded-2xl overflow-hidden transition-all duration-300",
           theme === 'dark' 
@@ -706,46 +1232,60 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             "p-4 border-b flex items-center justify-between",
             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
           )}>
-            <h3 className={cn("font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>Últimos itens adicionados</h3>
+            <h3 className={cn("font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+              {source === 'estoque' ? "Últimos itens adicionados" : "Anúncios Recentes ML"}
+            </h3>
             <Package size={16} className="text-violet-500" />
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
             <table className="w-full text-left text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className={cn(
                   "text-[10px] uppercase font-bold tracking-wider",
-                  theme === 'dark' ? "bg-zinc-800/30 text-zinc-500" : "bg-zinc-50 text-zinc-500"
+                  theme === 'dark' ? "bg-zinc-800/90 backdrop-blur-sm text-zinc-500" : "bg-zinc-50/90 backdrop-blur-sm text-zinc-500"
                 )}>
-                  <th className="px-4 py-3">Peça</th>
-                  <th className="px-4 py-3 text-center">Qtd</th>
-                  <th className="px-4 py-3">Moto</th>
+                  <th className="px-4 py-3">{source === 'estoque' ? "Peça" : "Anúncio"}</th>
+                  <th className="px-4 py-3 text-center">{source === 'estoque' ? "Qtd" : "Vendas"}</th>
+                  <th className="px-4 py-3">{source === 'estoque' ? "Moto" : "Status"}</th>
                   <th className="px-4 py-3">Valor</th>
                 </tr>
               </thead>
               <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
-                {metrics.ultimosItens.map((item) => (
+                {metrics.ultimosItens.map((item: any) => (
                   <tr 
                     key={item.id} 
-                    onClick={() => onSelectItem(item)}
+                    onClick={() => {
+                      if (source === 'estoque') onSelectItem(item);
+                      else if (item.permalink) window.open(item.permalink, '_blank');
+                    }}
                     className={cn(
                       "transition-colors group cursor-pointer",
                       theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
                     )}
                   >
                     <td className={cn("px-4 py-3 font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
-                      {item.nome}
+                      <div className="flex items-center gap-3">
+                        {source === 'mercadolivre' && item.thumbnail && (
+                          <img src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                        )}
+                        <span className="truncate max-w-[200px]">{item.nome || item.title}</span>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className={cn(
                         "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
                         theme === 'dark' ? "bg-violet-500/20 text-violet-400 ring-1 ring-violet-500/30" : "bg-violet-100 text-violet-600"
                       )}>
-                        {item.estoque}
+                        {item.estoque || item.sold_quantity || 0}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-zinc-500 text-xs font-medium">{item.moto}</td>
-                    <td className={cn("px-4 py-3 font-medium", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                      {formatCurrency(item.valor)}
+                    <td className="px-4 py-3">
+                      <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">
+                        {item.moto || item.status}
+                      </span>
+                    </td>
+                    <td className={cn("px-4 py-3 font-black", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
+                      {formatCurrency(item.valor || item.price)}
                     </td>
                   </tr>
                 ))}
@@ -754,6 +1294,7 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
           </div>
         </div>
       </div>
+    </div>
 
       {/* Modal de Transações por Tipo */}
       <AnimatePresence>
@@ -863,7 +1404,120 @@ const DashboardView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
           </div>
         )}
       </AnimatePresence>
-    </div>
+
+      {/* Modal de Todos os Anúncios ML */}
+      <AnimatePresence>
+        {showAllMlAds && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={cn(
+                "w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl border shadow-2xl flex flex-col",
+                theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+              )}
+            >
+              <div className="p-6 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/50">
+                <div>
+                  <h3 className="text-xl font-bold text-white flex items-center gap-3">
+                    <Package className="text-amber-500" />
+                    Todos os Anúncios Mercado Livre
+                  </h3>
+                  <p className="text-zinc-500 text-sm mt-1">
+                    Listagem completa de anúncios ativos
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setShowAllMlAds(false)}
+                  className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto p-0">
+                {isMlListingsLoading ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <Loader2 className="animate-spin text-amber-500" size={40} />
+                    <p className="text-zinc-500 font-bold animate-pulse">Buscando anúncios...</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead className="sticky top-0 z-10">
+                      <tr className={cn(
+                        "text-[10px] uppercase font-bold tracking-wider",
+                        theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-50 text-zinc-500"
+                      )}>
+                        <th className="px-6 py-4 border-b border-zinc-800/50">Anúncio</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50">Preço</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50 text-center">Estoque</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50 text-center">Vendas</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
+                      {allMlListings.map((item) => (
+                        <tr 
+                          key={item.id} 
+                          onClick={() => window.open(item.permalink, '_blank')}
+                          className={cn(
+                            "transition-colors cursor-pointer",
+                            theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
+                          )}
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-4">
+                              <img src={item.thumbnail} className="w-12 h-12 rounded-xl object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                              <div className="flex flex-col min-w-0">
+                                <span className="font-bold text-white truncate max-w-[300px]">{item.title}</span>
+                                <span className="text-[10px] text-zinc-500 font-mono">{item.id}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-emerald-400 font-black">
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price)}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="px-2 py-1 rounded-lg bg-zinc-800 text-zinc-300 font-bold text-xs">
+                              {item.available_quantity}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <span className="px-2 py-1 rounded-lg bg-violet-500/10 text-violet-400 font-bold text-xs">
+                              {item.sold_quantity}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={cn(
+                              "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
+                              item.status === 'active' ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"
+                            )}>
+                              {item.status === 'active' ? 'Ativo' : item.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              
+              <div className="p-4 border-t border-zinc-800/50 bg-zinc-900/30 flex justify-end">
+                <button 
+                  onClick={() => setShowAllMlAds(false)}
+                  className="px-6 py-2 rounded-xl bg-zinc-800 text-white font-bold hover:bg-zinc-700 transition-all"
+                >
+                  Fechar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
@@ -2776,7 +3430,10 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 >
                   <td className="px-6 py-4">
                     <div 
-                      onClick={() => toggleSelect(item.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(item.id);
+                      }}
                       className={cn(
                         "w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all duration-200",
                         selectedIds.includes(item.id)
@@ -2821,7 +3478,10 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
-                        onClick={() => handleEditSale(item)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditSale(item);
+                        }}
                         className={cn(
                           "p-2 rounded-lg transition-all",
                           theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-700" : "text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
@@ -2831,7 +3491,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                         <Edit size={16} />
                       </button>
                       <button 
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setItemToDelete(item.id);
                           setIsDeleteConfirmOpen(true);
                         }}
@@ -3417,7 +4078,8 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
       // Realizar uploads em paralelo para maior velocidade
       const uploadPromises = selectedFiles.map(async (file) => {
         try {
-          // TENTATIVA 1: URL assinada
+          /* 
+          // TENTATIVA 1: URL assinada (Desabilitado temporariamente devido a erro 500)
           const requestRes = await fetch('/api/storage/request-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3445,6 +4107,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
             
             if (uploadRes.ok) return publicUrl;
           }
+          */
         } catch (e) {
           console.warn('Falha no upload assinado, tentando direto:', e);
         }
@@ -5439,10 +6102,29 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
 };
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'mercadolivre'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('activeTab') as any) || 'dashboard';
+    }
+    return 'dashboard';
+  });
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [mlDashboardData, setMlDashboardData] = useState<any>(null);
+  const [isMlDashboardLoading, setIsMlDashboardLoading] = useState(false);
+  const [dashboardSource, setDashboardSource] = useState<'estoque' | 'mercadolivre'>('estoque');
+  const [mlPeriod, setMlPeriod] = useState('30d');
+  const [mlCustomDate, setMlCustomDate] = useState({ start: '', end: '' });
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('profilePhoto');
+    }
+    return null;
+  });
+  const [allMlListings, setAllMlListings] = useState<any[]>([]);
+  const [showAllMlAds, setShowAllMlAds] = useState(false);
+  const [isMlListingsLoading, setIsMlListingsLoading] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
@@ -5481,8 +6163,64 @@ function AppContent() {
     }
   }, [theme]);
 
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const fetchMlDashboard = async () => {
+      setIsMlDashboardLoading(true);
+      try {
+        let url = `/api/ml/dashboard?period=${mlPeriod}`;
+        if (mlPeriod === 'custom' && mlCustomDate.start && mlCustomDate.end) {
+          url += `&start=${mlCustomDate.start}&end=${mlCustomDate.end}`;
+        }
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+          setMlDashboardData(data.data);
+        }
+      } catch (err) {
+        console.error('Erro ao buscar dashboard ML:', err);
+      } finally {
+        setIsMlDashboardLoading(false);
+      }
+    };
+
+    if (activeTab === 'dashboard' || activeTab === 'mercadolivre') {
+      fetchMlDashboard();
+    }
+  }, [activeTab, mlPeriod, mlCustomDate]);
+
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+  };
+
+  const handleProfilePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setProfilePhoto(base64String);
+        localStorage.setItem('profilePhoto', base64String);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const fetchAllMlListings = async () => {
+    setIsMlListingsLoading(true);
+    try {
+      const res = await fetch('/api/ml/listings?limit=50');
+      const data = await res.json();
+      setAllMlListings(data.data || []);
+      setShowAllMlAds(true);
+    } catch (err) {
+      console.error('Erro ao buscar todos os anúncios ML:', err);
+    } finally {
+      setIsMlListingsLoading(false);
+    }
   };
 
   return (
@@ -5508,16 +6246,19 @@ function AppContent() {
               <Wrench className="text-white" size={24} />
             </div>
             {isSidebarOpen && (
-              <motion.span 
+              <motion.div 
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
-                className={cn(
-                  "text-xl font-bold tracking-tight whitespace-nowrap transition-colors",
-                  theme === 'dark' ? "text-white" : "text-zinc-900"
-                )}
+                className="flex flex-col min-w-0"
               >
-                RK <span className="text-violet-500">SUCATAS</span>
-              </motion.span>
+                <span className={cn(
+                  "font-black text-xl tracking-tighter truncate",
+                  theme === 'dark' ? "text-white" : "text-zinc-900"
+                )}>
+                  RK <span className="text-violet-500">SUCATAS</span>
+                </span>
+                <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Gestão Inteligente</span>
+              </motion.div>
             )}
           </div>
 
@@ -5558,28 +6299,40 @@ function AppContent() {
               theme={theme}
               badge={unreadCount > 0 ? unreadCount : undefined}
             />
-            <SidebarItem 
-              icon={TrendingUp} 
-              label={isSidebarOpen ? "Mercado Livre" : ""} 
-              active={activeTab === 'mercadolivre'} 
-              onClick={() => setActiveTab('mercadolivre')} 
-              theme={theme}
-            />
           </nav>
 
+          {/* User Profile Section */}
           <div className={cn(
-            "mt-auto p-4 rounded-2xl border transition-colors",
-            theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-100 border-zinc-200"
+            "mt-auto pt-4 border-t",
+            theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
           )}>
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 shrink-0 rounded-full bg-gradient-to-tr from-violet-500 to-fuchsia-500" />
+            <div className={cn(
+              "flex items-center gap-3 p-2 rounded-xl transition-all",
+              isSidebarOpen ? "hover:bg-zinc-800/30" : "justify-center"
+            )}>
+              <label className="relative cursor-pointer group shrink-0">
+                <div className={cn(
+                  "w-10 h-10 rounded-full overflow-hidden border-2 transition-all",
+                  theme === 'dark' ? "border-zinc-800 group-hover:border-violet-500" : "border-zinc-200 group-hover:border-violet-400"
+                )}>
+                  {profilePhoto ? (
+                    <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+                      <User size={20} />
+                    </div>
+                  )}
+                </div>
+                <input type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoUpload} />
+                <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                  <Camera size={12} className="text-white" />
+                </div>
+              </label>
+              
               {isSidebarOpen && (
-                <div className="overflow-hidden">
-                  <p className={cn(
-                    "text-sm font-medium truncate transition-colors",
-                    theme === 'dark' ? "text-zinc-100" : "text-zinc-900"
-                  )}>Admin User</p>
-                  <p className="text-xs text-zinc-500 truncate">oryanzin09@gmail.com</p>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold truncate">Oryan Silva</span>
+                  <span className="text-[10px] text-zinc-500 truncate">Administrador</span>
                 </div>
               )}
             </div>
@@ -5655,7 +6408,24 @@ function AppContent() {
               transition={{ duration: 0.2 }}
             >
               {activeTab === 'dashboard' ? (
-                <DashboardView theme={theme} onSelectItem={setSelectedDetailItem} />
+                <DashboardView 
+                  theme={theme} 
+                  onSelectItem={setSelectedDetailItem} 
+                  mlData={mlDashboardData}
+                  source={dashboardSource}
+                  onToggleSource={setDashboardSource}
+                  onTabChange={setActiveTab}
+                  allMlListings={allMlListings}
+                  showAllMlAds={showAllMlAds}
+                  setShowAllMlAds={setShowAllMlAds}
+                  onFetchAllMlListings={fetchAllMlListings}
+                  isMlListingsLoading={isMlListingsLoading}
+                  mlPeriod={mlPeriod}
+                  setMlPeriod={setMlPeriod}
+                  mlCustomDate={mlCustomDate}
+                  setMlCustomDate={setMlCustomDate}
+                  isMlDashboardLoading={isMlDashboardLoading}
+                />
               ) : activeTab === 'estoque' ? (
                 <InventoryView theme={theme} onSelectItem={setSelectedDetailItem} />
               ) : activeTab === 'vendas' ? (
@@ -5664,8 +6434,6 @@ function AppContent() {
                 <MotosView theme={theme} onSelectItem={setSelectedDetailItem} />
               ) : activeTab === 'atendimento' ? (
                 <Atendimento theme={theme} />
-              ) : activeTab === 'mercadolivre' ? (
-                <MercadoLivre theme={theme} />
               ) : (
                 <div className={cn(
                   "flex flex-col items-center justify-center h-[60vh] transition-colors",

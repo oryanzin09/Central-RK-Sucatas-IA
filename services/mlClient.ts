@@ -1,22 +1,48 @@
 import axios from 'axios';
 
 class MLClient {
-  baseURL: string;
-  clientId: string;
-  clientSecret: string;
-  accessToken: string;
-  refreshToken: string;
-  userId: string;
+  private baseURL: string;
+  private clientId: string;
+  private clientSecret: string;
+  private accessToken: string;
+  private refreshToken: string;
+  private userId: string;
 
   constructor() {
     this.baseURL = 'https://api.mercadolibre.com';
-    this.clientId = process.env.ML_CLIENT_ID || '458087912144789';
-    this.clientSecret = process.env.ML_CLIENT_SECRET || 'FpzTCzJmEG7FdcaMWk81H9nnNpxUTAQc';
-    this.accessToken = process.env.ML_ACCESS_TOKEN || 'APP_USR-458087912144789-031314-82c06a646fbda963d7fc2568a1e8f89b-2908181527';
-    this.refreshToken = process.env.ML_REFRESH_TOKEN || 'TG-69b456d706333000017bd997-2908181527';
-    this.userId = process.env.ML_USER_ID || '2908181527';
+    this.clientId = process.env.ML_CLIENT_ID || '';
+    this.clientSecret = process.env.ML_CLIENT_SECRET || '';
+    this.accessToken = process.env.ML_ACCESS_TOKEN || '';
+    this.refreshToken = process.env.ML_REFRESH_TOKEN || '';
+    this.userId = process.env.ML_USER_ID || '';
+
+    // Validação das credenciais no início
+    if (!this.clientId || !this.clientSecret) {
+      console.warn('⚠️ ML_CLIENT_ID ou ML_CLIENT_SECRET não configurados');
+    }
   }
 
+  /**
+   * Garante que o userId está correto (obtido do token)
+   */
+  async ensureUserId() {
+    if (!this.userId || this.userId === 'undefined' || this.userId === 'null') {
+      console.log('🔍 Obtendo User ID do token...');
+      try {
+        const user = await this.getUserInfo();
+        this.userId = user.id.toString();
+        console.log(`✅ User ID obtido: ${this.userId}`);
+      } catch (error) {
+        console.error('❌ Falha ao obter User ID do token');
+        throw error;
+      }
+    }
+    return this.userId;
+  }
+
+  /**
+   * Método base para todas as requisições com retry automático em caso de token expirado
+   */
   async request(endpoint: string, options: any = {}) {
     try {
       console.log(`📡 Chamando API ML: ${endpoint}`);
@@ -24,137 +50,260 @@ class MLClient {
         url: `${this.baseURL}${endpoint}`,
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
+        timeout: 10000,
         ...options
       });
-      console.log(`✅ Resposta recebida de ${endpoint}`);
       return response.data;
     } catch (error: any) {
-      console.error(`❌ Erro na requisição ${endpoint}:`, error.response?.data || error.message);
-      
+      // Se for erro 401 (token expirado), tenta refresh automático
       if (error.response?.status === 401) {
-        console.log('🔄 Token expirado, renovando...');
-        await this.refreshAccessToken();
-        return this.request(endpoint, options);
+        console.log('🔄 Token expirado, tentando renovar...');
+        const renewed = await this.refreshAccessToken();
+        if (renewed) {
+          console.log('✅ Token renovado, retentando requisição');
+          return this.request(endpoint, options);
+        }
       }
+      
+      // Log detalhado do erro
+      if (error.response?.status === 403) {
+        console.error('🚫 Erro 403 (Forbidden) no Mercado Livre. Verifique se o ML_USER_ID corresponde ao token e se o token tem as permissões necessárias.');
+        console.error('Detalhes do erro:', JSON.stringify(error.response.data, null, 2));
+      }
+
+      console.error(`❌ Erro na requisição ${endpoint}:`, {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
       throw error;
     }
   }
 
-  async refreshAccessToken() {
+  /**
+   * Renova o access token usando o refresh token
+   */
+  async refreshAccessToken(): Promise<boolean> {
     try {
+      console.log('🔄 Executando refresh token...');
       const response = await axios.post('https://api.mercadolibre.com/oauth/token', {
         grant_type: 'refresh_token',
         client_id: this.clientId,
         client_secret: this.clientSecret,
         refresh_token: this.refreshToken
+      }, {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        }
       });
-      
-      this.accessToken = response.data.access_token;
-      this.refreshToken = response.data.refresh_token;
-      
-      console.log('✅ Token renovado com sucesso');
-      return this.accessToken;
+
+      if (response.data.access_token) {
+        this.accessToken = response.data.access_token;
+        // O refresh token também é renovado!
+        if (response.data.refresh_token) {
+          this.refreshToken = response.data.refresh_token;
+        }
+        console.log('✅ Token renovado com sucesso');
+        
+        // Aqui você pode salvar os novos tokens no ambiente (opcional)
+        // process.env.ML_ACCESS_TOKEN = this.accessToken;
+        // process.env.ML_REFRESH_TOKEN = this.refreshToken;
+        
+        return true;
+      }
+      return false;
     } catch (error: any) {
-      console.error('❌ Erro ao renovar token:', error.message);
-      throw error;
+      console.error('❌ Erro ao renovar token:', error.response?.data || error.message);
+      return false;
     }
   }
 
-  // ========== MÉTRICAS ==========
+  // ========== MÉTODOS PÚBLICOS DA API ==========
+
+  /**
+   * Busca informações do usuário (para teste)
+   */
   async getUserInfo() {
     return this.request('/users/me');
   }
 
-  async getSalesMetrics(dateFrom: string, dateTo: string) {
-    // Primeiro, vamos buscar as vendas do período
-    const orders = await this.request(`/orders/search`, {
-      params: {
-        seller: this.userId,
-        order_date_from: dateFrom,
-        order_date_to: dateTo,
-        limit: 100
-      }
-    });
-    
-    // Calcular métricas manualmente
-    let totalSales = 0;
-    let totalAmount = 0;
-    
-    if (orders.results) {
-      orders.results.forEach((order: any) => {
-        if (order.status === 'paid') {
-          totalSales++;
-          totalAmount += order.total_amount || 0;
-        }
-      });
-    }
-    
-    const average = totalSales > 0 ? totalAmount / totalSales : 0;
-    
-    return {
-      total: totalAmount,
-      count: totalSales,
-      average: average
-    };
-  }
-
-  // ========== ANÚNCIOS ==========
-  async getListings(status = 'active', limit = 50) {
+  /**
+   * Busca anúncios do vendedor
+   */
+  async getListings(status: string = 'active', sort: string = 'date_desc', limit: number = 50, offset: number = 0) {
     try {
-      console.log(`🔍 Buscando anúncios com status: ${status}`);
+      await this.ensureUserId();
+
+      console.log(`🔍 Buscando anúncios (status: ${status}, sort: ${sort}, limit: ${limit}, offset: ${offset})...`);
+      const params: any = {
+        limit: Math.min(limit, 50),
+        offset: offset,
+        sort: sort
+      };
       
-      const search = await this.request(`/users/${this.userId}/items/search`, {
-        params: { status, limit }
+      if (status !== 'all') {
+        params.status = status;
+      }
+
+      const response = await this.request(`/users/${this.userId}/items/search`, {
+        params
       });
       
-      console.log('📦 Resultado da busca:', search);
-      
-      if (search.results && search.results.length > 0) {
-        const items = await this.request('/items', {
-          params: { 
-            ids: search.results.join(','), 
-            attributes: 'id,title,price,available_quantity,status,permalink,thumbnail,condition' 
-          }
-        });
-        
-        return items.map((item: any) => item.body);
-      }
-      return [];
+      console.log(`📦 Total de anúncios encontrados: ${response.paging?.total || 0}`);
+      return {
+        total: response.paging?.total || 0,
+        results: response.results || []
+      };
     } catch (error) {
       console.error('Erro ao buscar anúncios:', error);
-      return [];
+      return { total: 0, results: [] };
     }
   }
 
-  // ========== PERGUNTAS ==========
-  async getQuestions(status = 'UNANSWERED', limit = 50) {
+  /**
+   * Busca perguntas do vendedor
+   */
+  async getQuestions(status: string = 'UNANSWERED', limit: number = 50) {
     try {
-      const response = await this.request('/marketplace/questions/search', {
+      await this.ensureUserId();
+
+      console.log(`🔍 Buscando perguntas (${status})...`);
+      const response = await this.request('/questions/search', {
         params: {
           seller_id: this.userId,
           status,
-          limit,
-          api_version: 4
+          limit: Math.min(limit, 50),
+          sort: 'date_desc'
+        }
+      });
+      
+      return {
+        total: response.paging?.total || 0,
+        questions: response.questions || []
+      };
+    } catch (error) {
+      console.error('Erro ao buscar perguntas:', error);
+      return { total: 0, questions: [] };
+    }
+  }
+
+  /**
+   * Responde uma pergunta
+   */
+  async answerQuestion(questionId: number, answer: string) {
+    try {
+      console.log(`📝 Respondendo pergunta ${questionId}...`);
+      const response = await this.request('/answers', {
+        method: 'POST',
+        data: {
+          question_id: questionId,
+          text: answer
         }
       });
       return response;
     } catch (error) {
-      console.error('Erro ao buscar perguntas:', error);
-      return { questions: [], total: 0 };
+      console.error('Erro ao responder pergunta:', error);
+      throw error;
     }
   }
 
-  async answerQuestion(questionId: string, answer: string) {
-    return this.request('/answers', {
-      method: 'POST',
-      data: {
-        question_id: questionId,
-        text: answer
+  /**
+   * Busca métricas de vendas em um período
+   */
+  async getSalesMetrics(dateFrom: string, dateTo: string) {
+    try {
+      await this.ensureUserId();
+
+      console.log(`📊 Buscando métricas de ${dateFrom} a ${dateTo}...`);
+      const orders = await this.request('/orders/search', {
+        params: {
+          seller: this.userId,
+          'order.date_created.from': `${dateFrom}T00:00:00.000-00:00`,
+          'order.date_created.to': `${dateTo}T23:59:59.000-00:00`,
+          limit: 50 
+        }
+      });
+      
+      let totalAmount = 0;
+      let totalSales = 0;
+      const dailyData: Record<string, number> = {};
+      
+      if (orders.results && Array.isArray(orders.results)) {
+        orders.results.forEach((order: any) => {
+          if (order.status === 'paid') {
+            totalSales++;
+            totalAmount += order.total_amount || 0;
+            
+            // Extract date (YYYY-MM-DD)
+            if (order.date_created) {
+              const dateStr = order.date_created.split('T')[0];
+              dailyData[dateStr] = (dailyData[dateStr] || 0) + (order.total_amount || 0);
+            }
+          }
+        });
       }
-    });
+      
+      const average = totalSales > 0 ? totalAmount / totalSales : 0;
+      
+      return {
+        total: totalAmount,
+        count: totalSales,
+        average: average,
+        dailyData: dailyData
+      };
+    } catch (error) {
+      console.error('Erro ao buscar métricas:', error);
+      return { total: 0, count: 0, average: 0 };
+    }
+  }
+
+  /**
+   * Baixa a etiqueta de envio
+   */
+  async getShippingLabel(shipmentId: string) {
+    try {
+      console.log(`🏷️ Baixando etiqueta para envio ${shipmentId}...`);
+      const response = await this.request(`/shipment_labels?shipment_ids=${shipmentId}&response_type=pdf`, {
+        responseType: 'arraybuffer',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Accept': 'application/pdf, application/zip, application/octet-stream'
+        }
+      });
+      return response;
+    } catch (error) {
+      console.error('Erro ao baixar etiqueta:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Método de teste para verificar conexão
+   */
+  async testConnection() {
+    try {
+      const user = await this.getUserInfo();
+      const listings = await this.getListings();
+      return {
+        success: true,
+        user: user.nickname,
+        userId: user.id,
+        listings: listings.total,
+        message: '✅ Conexão com Mercado Livre OK'
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+        message: '❌ Falha na conexão com Mercado Livre'
+      };
+    }
   }
 }
 
+// Exporta uma instância única (singleton)
 export default new MLClient();

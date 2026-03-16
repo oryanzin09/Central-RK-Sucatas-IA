@@ -3,6 +3,7 @@ import { Package, MessageSquare, TrendingUp, ShoppingCart, DollarSign, RefreshCw
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { mlApiFetch } from '../../utils/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,8 +18,7 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
     setLoading(true);
     try {
       console.log(`🔍 Buscando dados do período: ${period}`);
-      const response = await fetch(`/api/ml/dashboard?period=${period}`);
-      const result = await response.json();
+      const result = await mlApiFetch(`/api/ml/dashboard?period=${period}`);
       console.log('📦 Resposta da API:', result);
       
       if (result.success) {
@@ -80,9 +80,9 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           icon={Package}
-          label="Anúncios Ativos"
-          value={data?.activeListings || 0}
-          subValue="itens publicados"
+          label="Total de Anúncios"
+          value={data?.totalListings || 0}
+          subValue={`${data?.activeListings || 0} ativos no momento`}
           color="bg-blue-500"
           theme={theme}
         />

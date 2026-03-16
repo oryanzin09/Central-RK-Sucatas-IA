@@ -1,4 +1,5 @@
 import express from "express";
+import cors from 'cors';
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
@@ -31,7 +32,8 @@ const serverStartTime = new Date().toISOString();
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
 const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 10; // 10 minutos
-const DATA_CACHE_TTL = 1000 * 60 * 2; // 2 minutos para dados (mais frequente)
+const DATA_CACHE_TTL = 1000 * 60; // 60 segundos para dados
+const fetchLocks: Record<string, Promise<any> | null> = {};
 
 function invalidateCache(databaseId?: string) {
   if (databaseId) {
@@ -103,53 +105,67 @@ async function fetchAllFromNotion(databaseId: string) {
     return cached.data;
   }
 
-  let allResults: any[] = [];
-  let cursor = undefined;
-  let hasMore = true;
-  
-  console.log(`🔄 Buscando TODAS as páginas do banco ${databaseId}`);
-  
-  while (hasMore) {
-    const payload: any = { 
-      page_size: 100,
-      sorts: [
-        {
-          timestamp: "created_time",
-          direction: "descending"
-        }
-      ]
-    };
-    if (cursor) payload.start_cursor = cursor;
-    
-    const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_TOKEN}`,
-        'Content-Type': 'application/json',
-        'Notion-Version': NOTION_VERSION
-      },
-      body: JSON.stringify(payload)
-    });
-    
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`❌ Erro Notion ${response.status}:`, error);
-      throw new Error(`Notion API error (${response.status}): ${error.substring(0, 200)}`);
-    }
-
-    const data = await response.json();
-    allResults = [...allResults, ...data.results];
-    
-    hasMore = data.has_more;
-    cursor = data.next_cursor;
-    
-    console.log(`   → +${data.results.length} itens. Total: ${allResults.length}`);
+  // Se já houver uma busca em andamento para este banco, aguarda ela
+  if (fetchLocks[databaseId]) {
+    console.log(`⏳ Aguardando busca em andamento para o banco ${databaseId}`);
+    return fetchLocks[databaseId];
   }
-  
-  // Salvar no cache
-  notionDataCache[databaseId] = { data: allResults, timestamp: Date.now() };
-  
-  return allResults;
+
+  const fetchPromise = (async () => {
+    try {
+      let allResults: any[] = [];
+      let cursor = undefined;
+      let hasMore = true;
+      
+      console.log(`🔄 Buscando TODAS as páginas do banco ${databaseId}`);
+      
+      while (hasMore) {
+        const payload: any = { 
+          page_size: 100,
+          sorts: [
+            {
+              timestamp: "created_time",
+              direction: "descending"
+            }
+          ]
+        };
+        if (cursor) payload.start_cursor = cursor;
+        
+        const response = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+          const error = await response.text();
+          console.error(`❌ Erro Notion ${response.status}:`, error);
+          throw new Error(`Notion API error (${response.status}): ${error.substring(0, 200)}`);
+        }
+
+        const data = await response.json();
+        allResults = [...allResults, ...data.results];
+        
+        hasMore = data.has_more;
+        cursor = data.next_cursor;
+        
+        console.log(`   → +${data.results.length} itens. Total: ${allResults.length}`);
+      }
+      
+      // Salvar no cache
+      notionDataCache[databaseId] = { data: allResults, timestamp: Date.now() };
+      return allResults;
+    } finally {
+      fetchLocks[databaseId] = null;
+    }
+  })();
+
+  fetchLocks[databaseId] = fetchPromise;
+  return fetchPromise;
 }
 
 import mlClient from './services/mlClient.js';
@@ -171,11 +187,363 @@ async function startServer() {
     cors: { origin: "*" }
   });
 
+  const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+
   app.use(express.json());
+
+  // Configuração do CORS
+  const allowedOrigins = [
+    'https://aistudio.google.com',
+    'http://localhost:3000',
+    'https://rk-sucatas-987595911324.southamerica-east1.run.app'
+  ];
+  
+  if (process.env.APP_URL) {
+    allowedOrigins.push(process.env.APP_URL);
+  }
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Permitir requisições sem origin (como mobile apps ou curl)
+      if (!origin) return callback(null, true);
+      
+      const isAllowed = allowedOrigins.some(allowed => 
+        origin === allowed || origin.startsWith(allowed)
+      );
+      
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        console.log(`⚠️ Origin não permitida pelo CORS: ${origin}`);
+        callback(null, true); // Permitir por enquanto para debug, mas logar
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
+
+  // Middleware de log para API
+  app.use('/api', (req, res, next) => {
+    console.log(`📡 API Request: ${req.method} ${req.url}`);
+    next();
+  });
 
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // ==================== MERCADO LIVRE ROUTES ====================
+
+  // Endpoint de teste
+  app.get('/api/ml/test', async (req, res) => {
+    try {
+      const result = await mlClient.testConnection();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Dashboard - Métricas principais
+  app.get('/api/ml/dashboard', async (req, res) => {
+    try {
+      const { period = '30d', start, end } = req.query;
+      console.log('📊 Iniciando busca do dashboard ML...');
+      
+      // Inicializar dados padrão
+      let activeListingsCount = 0;
+      let totalListingsCount = 0;
+      let pendingQuestionsCount = 0;
+      let monthlySalesTotal = 0;
+      let totalSalesCount = 0;
+      let avgTicketValue = 0;
+      let recentListings = [];
+
+      // 1. Buscar anúncios (Total e Ativos)
+      try {
+        const allListings = await mlClient.getListings('all', 'start_time_desc');
+        totalListingsCount = allListings.total;
+        
+        // Use all listings for recent listings to show the newest ones regardless of status
+        if (allListings.results && allListings.results.length > 0) {
+          try {
+            const ids = allListings.results.slice(0, 20).join(',');
+            const itemsResponse = await mlClient.request('/items', {
+              params: { ids, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,sold_quantity' }
+            });
+            
+            recentListings = itemsResponse.map((item: any) => {
+              const body = item.body;
+              if (!body) return null;
+              const highResImage = body.pictures && body.pictures.length > 0 
+                ? body.pictures[0].secure_url || body.pictures[0].url 
+                : body.thumbnail;
+                
+              return {
+                ...body,
+                thumbnail: highResImage
+              };
+            }).filter((b: any) => b)
+              .sort((a: any, b: any) => new Date(b.date_created).getTime() - new Date(a.date_created).getTime())
+              .slice(0, 5);
+          } catch (err) {
+            console.error('⚠️ Erro ao buscar detalhes dos anúncios recentes:', err);
+          }
+        }
+
+        // Also get active count just for the stat card
+        const activeListings = await mlClient.getListings('active', 'start_time_desc');
+        activeListingsCount = activeListings.total;
+      } catch (err) {
+        console.error('⚠️ Erro ao buscar anúncios:', err);
+      }
+      
+      // 2. Buscar perguntas pendentes
+      try {
+        const questions = await mlClient.getQuestions('UNANSWERED', 1);
+        pendingQuestionsCount = questions.total;
+      } catch (err) {
+        console.error('⚠️ Erro ao buscar perguntas:', err);
+      }
+      
+      // 3. Buscar métricas de vendas e dados para o gráfico
+      let chartData = [];
+      let recentSales = [];
+      try {
+        let endDate = new Date();
+        let startDate = new Date();
+        let days = 30;
+
+        if (start && end) {
+          startDate = new Date(start as string);
+          endDate = new Date(end as string);
+          days = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+        } else {
+          days = parseInt(period as string) || 30;
+          startDate.setDate(startDate.getDate() - days);
+        }
+        
+        const formatDate = (date: Date) => date.toISOString().split('T')[0];
+        
+        const salesMetrics = await mlClient.getSalesMetrics(
+          formatDate(startDate),
+          formatDate(endDate)
+        );
+        monthlySalesTotal = salesMetrics.total;
+        avgTicketValue = salesMetrics.average;
+
+        // Buscar ordens recentes para a lista de vendas
+        const ordersResponse = await mlClient.request('/orders/search', {
+          params: {
+            seller: await mlClient.ensureUserId(),
+            sort: 'date_desc',
+            limit: 5,
+            'order.date_created.from': formatDate(startDate) + 'T00:00:00.000-00:00',
+            'order.date_created.to': formatDate(endDate) + 'T23:59:59.000-00:00'
+          }
+        });
+
+        totalSalesCount = ordersResponse.paging?.total || ordersResponse.total || 0;
+
+        recentSales = (ordersResponse.results || []).map((order: any) => {
+          const buyer = order.buyer || {};
+          const nomeCliente = buyer.first_name && buyer.last_name 
+            ? `${buyer.first_name} ${buyer.last_name}` 
+            : (buyer.nickname || 'Cliente ML');
+            
+          return {
+            id: order.id,
+            cliente: nomeCliente,
+            nickname: buyer.nickname,
+            valor: order.total_amount,
+            data: order.date_created,
+            status: order.status === 'paid' ? 'Pago' : order.status,
+            shipping_status: order.shipping?.status,
+            itens: order.order_items?.map((i: any) => i.item?.title || i.item?.id || 'Produto ML').join(', '),
+            thumbnail: order.order_items?.[0]?.item?.thumbnail,
+            shipping_id: order.shipping?.id,
+            quantidade: order.order_items?.reduce((acc: number, item: any) => acc + (item.quantity || 1), 0) || 1
+          };
+        });
+
+        // Gerar dados para o gráfico (agrupados por dia)
+        const dailyData: Record<string, number> = {};
+        for (let i = days; i >= 0; i--) {
+          const d = new Date(endDate);
+          d.setDate(endDate.getDate() - i);
+          const dateStr = formatDate(d);
+          dailyData[dateStr] = salesMetrics.dailyData?.[dateStr] || 0;
+        }
+
+        chartData = Object.entries(dailyData)
+          .map(([date, total]) => {
+            const [y, m, d] = date.split('-').map(Number);
+            const dateObj = new Date(y, m - 1, d);
+            return {
+              date,
+              label: dateObj.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }),
+              vendas: total
+            };
+          })
+          .sort((a, b) => a.date.localeCompare(b.date));
+
+      } catch (err) {
+        console.error('⚠️ Erro ao buscar métricas de vendas:', err);
+      }
+      
+      res.json({
+        success: true,
+        data: {
+          activeListings: activeListingsCount,
+          totalListings: totalListingsCount,
+          pendingQuestions: pendingQuestionsCount,
+          monthlySales: monthlySalesTotal,
+          totalSalesCount: totalSalesCount,
+          avgTicket: avgTicketValue,
+          recentListings,
+          recentSales,
+          chartData,
+          period
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ Erro crítico no dashboard ML:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message
+      });
+    }
+  });
+
+  // Baixar etiqueta de envio
+  app.get('/api/ml/shipment-label/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const buffer = await mlClient.getShippingLabel(id);
+      const uint8Array = new Uint8Array(buffer);
+      
+      // Detectar se é PDF ou ZIP
+      const isZip = uint8Array.length > 2 && uint8Array[0] === 0x50 && uint8Array[1] === 0x4B;
+      const contentType = isZip ? 'application/zip' : 'application/pdf';
+      const extension = isZip ? 'zip' : 'pdf';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename=etiqueta-${id}.${extension}`);
+      res.send(Buffer.from(buffer));
+    } catch (error: any) {
+      console.error(`❌ Erro ao baixar etiqueta ${req.params.id}:`, error);
+      res.status(500).json({ 
+        success: false, 
+        error: error.message || 'Erro ao baixar etiqueta'
+      });
+    }
+  });
+
+  // Perguntas - Listar
+  app.get('/api/ml/questions', async (req, res) => {
+    try {
+      const { status = 'UNANSWERED', limit = 50 } = req.query;
+      
+      const result = await mlClient.getQuestions(status as string, Number(limit));
+      
+      // Buscar detalhes dos itens para cada pergunta de forma resiliente
+      const enrichedQuestions = await Promise.all(
+        (result.questions || []).map(async (q: any) => {
+          try {
+            // Se falhar ao buscar o item, ainda retornamos a pergunta com dados básicos
+            const item = await mlClient.request(`/items/${q.item_id}`);
+            return { 
+              ...q, 
+              item_title: item.title, 
+              item_thumbnail: item.thumbnail,
+              item_price: item.price
+            };
+          } catch (err) {
+            console.error(`⚠️ Erro ao buscar item ${q.item_id} para pergunta ${q.id}:`, err.message);
+            return {
+              ...q,
+              item_title: 'Item não disponível',
+              item_thumbnail: '',
+              item_price: 0
+            };
+          }
+        })
+      );
+      
+      res.json({
+        success: true,
+        data: enrichedQuestions,
+        total: result.total
+      });
+    } catch (error: any) {
+      console.error('❌ Erro ao listar perguntas ML:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Responder pergunta
+  app.post('/api/ml/questions/:id/answer', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { answer } = req.body;
+      
+      const result = await mlClient.answerQuestion(parseInt(id), answer);
+      
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Anúncios ativos - Listar com detalhes
+  app.get('/api/ml/listings', async (req, res) => {
+    try {
+      const { status = 'active', limit = 50, offset = 0 } = req.query;
+      const listings = await mlClient.getListings(status as any, 'date_desc', parseInt(limit as string), parseInt(offset as string));
+      
+      if (listings.results && listings.results.length > 0) {
+        // O Mercado Livre permite buscar até 20 itens por vez no endpoint /items
+        const results = [];
+        const batchSize = 20;
+        
+        for (let i = 0; i < listings.results.length; i += batchSize) {
+          const batchIds = listings.results.slice(i, i + batchSize).join(',');
+          const itemsResponse = await mlClient.request('/items', {
+            params: { ids: batchIds, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,available_quantity,sold_quantity' }
+          });
+          
+          const formattedBatch = itemsResponse.map((item: any) => {
+            const body = item.body;
+            return {
+              id: body.id,
+              titulo: body.title,
+              preco: body.price,
+              thumbnail: body.thumbnail,
+              status: body.status,
+              link: body.permalink,
+              estoque: body.available_quantity,
+              vendidos: body.sold_quantity,
+              criado_em: body.date_created,
+              fotos: body.pictures?.map((p: any) => p.url) || []
+            };
+          });
+          results.push(...formattedBatch);
+        }
+        
+        res.json({ 
+          success: true, 
+          data: results,
+          total: listings.total || results.length
+        });
+      } else {
+        res.json({ success: true, data: [], total: 0 });
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao buscar anúncios ML:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
   });
 
   // Configurar multer para upload
@@ -581,6 +949,8 @@ async function startServer() {
   // API Route for Notion Inventory
   app.get("/api/inventory", async (req, res) => {
     try {
+      const force = req.query.force === 'true';
+      if (force) invalidateCache(DATABASE_ID);
       const allItems = await fetchAllFromNotion(DATABASE_ID);
       const formattedData = allItems.map(formatInventoryItem);
       res.json({ success: true, data: formattedData, total: allItems.length });
@@ -856,7 +1226,6 @@ async function startServer() {
   app.post("/api/sales", async (req, res) => {
     try {
       const { nome, moto, valor, tipo, data } = req.body;
-      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
 
       // Busca a estrutura do banco (usando cache)
       const dbData = await getCachedDbStructure(salesDbId);
@@ -944,6 +1313,7 @@ async function startServer() {
       }
 
       const result = await response.json();
+      invalidateCache(salesDbId);
       res.json({ success: true, data: formatSalesItem(result) });
     } catch (error: any) {
       console.error("Create Sale Error:", error);
@@ -955,7 +1325,6 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { nome, moto, valor, tipo, data } = req.body;
-      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
 
       // Busca a estrutura do banco (usando cache)
       const dbData = await getCachedDbStructure(salesDbId);
@@ -1027,6 +1396,7 @@ async function startServer() {
       }
 
       const result = await response.json();
+      invalidateCache(salesDbId);
       res.json({ success: true, data: formatSalesItem(result) });
     } catch (error: any) {
       console.error("Update Sale Error:", error);
@@ -1052,6 +1422,8 @@ async function startServer() {
         throw new Error(`Notion API error: ${error}`);
       }
 
+      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+      invalidateCache(salesDbId);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Delete Sale Error:", error);
@@ -1079,6 +1451,8 @@ async function startServer() {
       );
 
       await Promise.all(deletePromises);
+      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+      invalidateCache(salesDbId);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Bulk Delete Sales Error:", error);
@@ -1089,7 +1463,11 @@ async function startServer() {
   app.get("/api/sales", async (req, res) => {
     try {
       // Use o ID correto do banco de vendas
-      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+      const force = req.query.force === 'true';
+      
+      if (force) {
+        invalidateCache(salesDbId);
+      }
       
       console.log(`📊 Consultando banco de vendas: ${salesDbId}`);
       
@@ -1326,6 +1704,8 @@ async function startServer() {
 
   app.get("/api/motos", async (req, res) => {
     try {
+      const force = req.query.force === 'true';
+      if (force) invalidateCache(MOTOS_DATABASE_ID);
       console.log(`🏍️ Consultando banco de motos: ${MOTOS_DATABASE_ID}`);
       const allItems = await fetchAllFromNotion(MOTOS_DATABASE_ID);
       const formattedData = allItems.map(formatMotosItem);
@@ -1436,6 +1816,12 @@ async function startServer() {
 
       const result = await response.json();
       console.log('✅ Moto criada com sucesso');
+      
+      // Invalida o cache para que a nova moto apareça na próxima listagem
+      if (notionDataCache[MOTOS_DATABASE_ID]) {
+        delete notionDataCache[MOTOS_DATABASE_ID];
+      }
+      
       res.json({ success: true, data: formatMotosItem(result) });
     } catch (error: any) {
       console.error("Create Moto Error:", error);
@@ -1562,6 +1948,11 @@ async function startServer() {
       const result = await response.json();
       console.log('✅ Resposta do Notion:', result);
       
+      // Invalida o cache
+      if (notionDataCache[MOTOS_DATABASE_ID]) {
+        delete notionDataCache[MOTOS_DATABASE_ID];
+      }
+      
       res.json({ success: true, data: formatMotosItem(result) });
       
     } catch (error: any) {
@@ -1586,6 +1977,11 @@ async function startServer() {
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Notion API error: ${error}`);
+      }
+
+      // Invalida o cache
+      if (notionDataCache[MOTOS_DATABASE_ID]) {
+        delete notionDataCache[MOTOS_DATABASE_ID];
       }
 
       res.json({ success: true });
@@ -1962,136 +2358,8 @@ async function startServer() {
 
   // ==================== MERCADO LIVRE ROUTES ====================
 
-  // Dashboard - Métricas principais
-  app.get('/api/ml/dashboard', async (req, res) => {
-    try {
-      const { period = '30d' } = req.query;
-      
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - parseInt(period as string));
-      
-      const formatDate = (date: Date) => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}T00:00:00.000-03:00`;
-      };
-      
-      console.log(`📊 Buscando dados ML de ${formatDate(startDate)} até ${formatDate(endDate)}`);
-      
-      // Buscar dados em paralelo com tratamento de erros individual
-      const questionsPromise = mlClient.getQuestions('UNANSWERED', 1).catch(err => {
-        console.error('Erro ao buscar perguntas:', err);
-        return { total: 0 };
-      });
-      
-      const listingsPromise = mlClient.getListings('active', 100).catch(err => {
-        console.error('Erro ao buscar anúncios:', err);
-        return [];
-      });
-      
-      const salesPromise = mlClient.getSalesMetrics(formatDate(startDate), formatDate(endDate)).catch(err => {
-        console.error('Erro ao buscar métricas de vendas:', err);
-        return { total: 0, average: 0 };
-      });
-      
-      const [questions, listings, salesMetrics] = await Promise.all([
-        questionsPromise,
-        listingsPromise,
-        salesPromise
-      ]);
-      
-      console.log('📊 Dados obtidos:', {
-        questions: questions.total,
-        listings: listings.length,
-        sales: salesMetrics.total,
-        avgTicket: salesMetrics.average
-      });
-      
-      // Pegar os 4 primeiros anúncios para o dashboard
-      const recentListings = listings.slice(0, 4).map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        price: item.price,
-        thumbnail: item.thumbnail,
-        status: item.status
-      }));
-
-      res.json({
-        success: true,
-        data: {
-          pendingQuestions: questions.total || 0,
-          activeListings: listings.length || 0,
-          monthlySales: salesMetrics.total || 0,
-          avgTicket: salesMetrics.average || 0,
-          recentListings,
-          period
-        }
-      });
-    } catch (error: any) {
-      console.error('❌ Erro no dashboard ML:', error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  // Perguntas - Listar
-  app.get('/api/ml/questions', async (req, res) => {
-    try {
-      const { status = 'UNANSWERED', limit = 50 } = req.query;
-      
-      const result = await mlClient.getQuestions(status as string, Number(limit));
-      
-      // Enriquecer com dados dos itens
-      const enrichedQuestions = await Promise.all(
-        (result.questions || []).map(async (q: any) => {
-          try {
-            const item = await mlClient.request(`/items/${q.item_id}`);
-            return { 
-              ...q, 
-              item_title: item.title, 
-              item_thumbnail: item.thumbnail 
-            };
-          } catch {
-            return q;
-          }
-        })
-      );
-      
-      res.json({
-        success: true,
-        data: enrichedQuestions,
-        total: result.total
-      });
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  // Responder pergunta
-  app.post('/api/ml/questions/:id/answer', async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { answer } = req.body;
-      
-      const result = await mlClient.answerQuestion(id, answer);
-      res.json({ success: true, data: result });
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  // Listar anúncios
-  app.get('/api/ml/listings', async (req, res) => {
-    try {
-      const { status = 'active', limit = 50 } = req.query;
-      
-      const listings = await mlClient.getListings(status as string, Number(limit));
-      res.json({ success: true, data: listings });
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
+  // Endpoint de teste
+  // (Removido daqui e movido para cima)
 
   app.get("/api/whatsapp/status", (req, res) => {
     res.json({ 
@@ -2437,6 +2705,14 @@ async function startServer() {
     res.status(err.status || 500).json({
       success: false,
       error: err.message || 'Erro interno no servidor'
+    });
+  });
+
+  // Catch-all para rotas /api não encontradas (evita retornar HTML)
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ 
+      success: false, 
+      error: `Rota API não encontrada: ${req.method} ${req.url}` 
     });
   });
 
