@@ -27,9 +27,22 @@ const MOTOS_DATABASE_ID = "317dfa25a528805f9663ff0e6ebf0318";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
 
-// Cache para estrutura do banco de dados
+// Cache para estrutura do banco de dados e resultados de query
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
+const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 10; // 10 minutos
+const DATA_CACHE_TTL = 1000 * 60 * 2; // 2 minutos para dados (mais frequente)
+
+function invalidateCache(databaseId?: string) {
+  if (databaseId) {
+    delete notionDataCache[databaseId];
+    console.log(`🧹 Cache invalidado para o banco ${databaseId}`);
+  } else {
+    // Limpa tudo se não for passado ID
+    Object.keys(notionDataCache).forEach(key => delete notionDataCache[key]);
+    console.log('🧹 Todo o cache do Notion foi limpo');
+  }
+}
 
 async function getCachedDbStructure(databaseId: string) {
   const cached = dbStructureCache[databaseId];
@@ -83,6 +96,13 @@ async function notionQuery(databaseId: string) {
 }
 
 async function fetchAllFromNotion(databaseId: string) {
+  // Verificar cache
+  const cached = notionDataCache[databaseId];
+  if (cached && (Date.now() - cached.timestamp < DATA_CACHE_TTL)) {
+    console.log(`📦 Usando cache para o banco ${databaseId}`);
+    return cached.data;
+  }
+
   let allResults: any[] = [];
   let cursor = undefined;
   let hasMore = true;
@@ -126,11 +146,14 @@ async function fetchAllFromNotion(databaseId: string) {
     console.log(`   → +${data.results.length} itens. Total: ${allResults.length}`);
   }
   
+  // Salvar no cache
+  notionDataCache[databaseId] = { data: allResults, timestamp: Date.now() };
+  
   return allResults;
 }
 
 import mlClient from './services/mlClient.js';
-import storageService from './src/services/storageService';
+import storageService from './src/services/storageService.js';
 
 async function startServer() {
   const app = express();
@@ -149,6 +172,11 @@ async function startServer() {
   });
 
   app.use(express.json());
+
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   // Configurar multer para upload
   const storage = multer.diskStorage({
@@ -216,6 +244,41 @@ async function startServer() {
 
   // ==================== GOOGLE CLOUD STORAGE ROUTES ====================
 
+  // Endpoint para upload direto para o servidor (fallback se URL assinada falhar)
+  app.post('/api/storage/upload', upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+      }
+
+      console.log(`🚀 Recebido arquivo para upload direto para GCS: ${req.file.filename}`);
+      
+      const publicUrl = await storageService.uploadFile(
+        req.file.path,
+        req.file.filename,
+        req.file.mimetype
+      );
+
+      // Opcional: deletar o arquivo local após o upload para o GCS
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {
+        console.error('Erro ao deletar arquivo temporário:', e);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          publicUrl,
+          filename: req.file.filename
+        }
+      });
+    } catch (error: any) {
+      console.error('❌ Erro no upload direto para GCS:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // Endpoint para solicitar uma URL de upload
   app.post('/api/storage/request-upload', async (req, res) => {
     try {
@@ -230,8 +293,13 @@ async function startServer() {
         data: uploadData
       });
     } catch (error: any) {
-      console.error('Erro ao gerar URL de upload:', error);
-      res.status(500).json({ success: false, error: error.message });
+      // Log informativo: o frontend tem fallback para upload direto
+      if (error.message.includes('IAM Service Account Credentials API')) {
+        console.log('ℹ️ Info: API de Assinatura de URL desativada no GCP. O sistema usará o fallback de upload direto automaticamente.');
+      } else {
+        console.error('❌ Erro ao gerar URL de upload:', error.message);
+      }
+      res.status(500).json({ success: false, error: 'URL signing unavailable' });
     }
   });
 
@@ -611,6 +679,7 @@ async function startServer() {
       }
 
       const data = await response.json();
+      invalidateCache(DATABASE_ID);
       res.json(formatInventoryItem(data));
     } catch (error: any) {
       console.error("Create Item Error:", error);
@@ -1326,13 +1395,21 @@ async function startServer() {
         } else if (propType === 'status') {
           if (value) properties[notionPropName] = { status: { name: String(value) } };
         } else if (propType === 'files' && Array.isArray(value)) {
-          properties[notionPropName] = {
-            files: value.map((url: string) => ({
-              name: `foto_${Date.now()}.jpg`,
-              type: 'external',
-              external: { url }
-            }))
-          };
+          // Filtramos URLs que venham do s3 da amazon ou do notion-static
+          const externalUrls = value.filter((url: string) => {
+            if (!url || typeof url !== 'string') return false;
+            return !url.includes('notion-static.com') && !url.includes('amazonaws.com');
+          });
+
+          if (externalUrls.length > 0) {
+            properties[notionPropName] = {
+              files: externalUrls.map((url: string) => ({
+                name: `foto_${Date.now()}.jpg`,
+                type: 'external',
+                external: { url }
+              }))
+            };
+          }
         }
       }
 
@@ -1372,7 +1449,8 @@ async function startServer() {
       const updateData = req.body;
       
       console.log('📝 Recebida requisição PATCH para moto:', id);
-      console.log('📦 Dados recebidos:', JSON.stringify(updateData, null, 2));
+      console.log('📦 Dados recebidos para atualização:', JSON.stringify(req.body, null, 2));
+      console.log('📸 Campo imagens:', req.body.imagens);
       
       // Buscar estrutura do banco
       const dbData = await getCachedDbStructure(MOTOS_DATABASE_ID);
@@ -1394,7 +1472,8 @@ async function startServer() {
         nome_nf: 'Nome NF',
         pecas_retiradas: 'Peças Retiradas',
         status: 'Status',
-        descricao: 'Observações' // Ajustado para bater com o banco real
+        descricao: 'Observações', // Ajustado para bater com o banco real
+        imagens: 'Fotos'
       };
       
       for (const [field, value] of Object.entries(updateData)) {
@@ -1404,7 +1483,16 @@ async function startServer() {
         if (!propName) continue;
 
         // Busca insensível a maiúsculas/minúsculas no dbProps
-        const notionPropName = Object.keys(dbProps).find(k => k.toLowerCase() === propName.toLowerCase());
+        let notionPropName = Object.keys(dbProps).find(k => k.toLowerCase() === propName.toLowerCase());
+        
+        // Fallback especial para imagens
+        if (!notionPropName && field === 'imagens') {
+          notionPropName = Object.keys(dbProps).find(k => 
+            k.toLowerCase() === 'imagem' || 
+            dbProps[k].type === 'files'
+          );
+        }
+
         if (!notionPropName) {
           console.log(`⚠️ Propriedade "${propName}" não encontrada no Notion`);
           continue;
@@ -1433,13 +1521,23 @@ async function startServer() {
             status: { name: String(value) }
           };
         } else if (propType === 'files' && Array.isArray(value)) {
-          properties[notionPropName] = {
-            files: value.map((url: string) => ({
-              name: `foto_${Date.now()}.jpg`,
-              type: 'external',
-              external: { url }
-            }))
-          };
+          // FILTRO CRÍTICO: O Notion não aceita suas próprias URLs temporárias como 'external'
+          // Filtramos URLs que venham do s3 da amazon ou do notion-static
+          const externalUrls = value.filter((url: string) => {
+            if (!url || typeof url !== 'string') return false;
+            const isNotionUrl = url.includes('notion-static.com') || url.includes('amazonaws.com') || url.includes('secure.notion-static.com');
+            return !isNotionUrl;
+          });
+
+          if (externalUrls.length > 0) {
+            properties[notionPropName] = {
+              files: externalUrls.map((url: string) => ({
+                name: `foto_${Date.now()}.jpg`,
+                type: 'external',
+                external: { url }
+              }))
+            };
+          }
         }
       }
       

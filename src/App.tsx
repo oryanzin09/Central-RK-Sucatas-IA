@@ -121,9 +121,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         fetch('/api/motos')
       ]);
       
-      const invData = await invRes.json();
-      const salesData = await salesRes.json();
-      const motosData = await motosRes.json();
+      const parseJson = async (res: Response) => {
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error(`❌ Erro ao parsear JSON de ${res.url}. Conteúdo recebido:`, text.substring(0, 200));
+          throw new Error(`Resposta inválida de ${res.url}: ${text.substring(0, 50)}...`);
+        }
+      };
+
+      const invData = await parseJson(invRes);
+      const salesData = await parseJson(salesRes);
+      const motosData = await parseJson(motosRes);
       
       if (invData.success) setInventory(invData.data);
       if (salesData.success) setSales(salesData.data);
@@ -3323,15 +3333,66 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     
     const uploadedUrls = await performUpload();
     if (uploadedUrls.length > 0) {
-      if (isEdit) {
-        setEditFormData(prev => {
-          const newImagens = [...prev.imagens, ...uploadedUrls];
-          return {
-            ...prev, 
-            imagens: newImagens,
-            imagem: prev.imagem || newImagens[0] || ''
-          };
-        });
+      if (isEdit && editingMoto) {
+        console.log('🎉 Todas as imagens enviadas:', uploadedUrls);
+
+        // 3. ATUALIZAR A MOTO COM AS NOVAS IMAGENS
+        // PEGAR AS IMAGENS EXISTENTES + AS NOVAS
+        const imagensExistentes = editFormData.imagens || [];
+        const todasImagens = [...imagensExistentes, ...uploadedUrls];
+
+        console.log('📸 Imagens que serão salvas:', todasImagens);
+
+        // Preparar os dados para atualização
+        const motoData = {
+          nome: editFormData.nome,
+          marca: editFormData.marca,
+          modelo: editFormData.modelo,
+          ano: editFormData.ano,
+          valor: Number(editFormData.valor),
+          cor: editFormData.cor,
+          cilindrada: Number(editFormData.cilindrada),
+          lote: editFormData.lote,
+          nome_nf: editFormData.nome_nf,
+          pecas_retiradas: editFormData.pecas_retiradas,
+          status: editFormData.status,
+          descricao: editFormData.descricao,
+          imagens: todasImagens // ← IMPORTANTE: incluir as imagens aqui
+        };
+
+        console.log('📤 Enviando atualização com imagens:', motoData);
+
+        try {
+          const updateResponse = await fetch(`/api/motos/${editingMoto.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(motoData)
+          });
+          
+          const responseText = await updateResponse.text();
+          let result;
+          try {
+            result = JSON.parse(responseText);
+          } catch (e) {
+            console.error('❌ Resposta inválida do servidor:', responseText.substring(0, 200));
+            throw new Error('O servidor retornou um formato inválido (HTML em vez de JSON).');
+          }
+
+          if (result.success) {
+            setMotos(prev => prev.map(m => m.id === editingMoto.id ? result.data : m));
+            setEditFormData(prev => ({
+              ...prev,
+              imagens: todasImagens,
+              imagem: prev.imagem || todasImagens[0] || ''
+            }));
+            alert('✅ Imagens salvas com sucesso!');
+          } else {
+            alert('❌ Erro ao salvar imagens no banco: ' + result.error);
+          }
+        } catch (error) {
+          console.error('Erro ao atualizar moto após upload:', error);
+          alert('❌ Erro de conexão ao salvar imagens.');
+        }
       } else {
         setFormData(prev => {
           const newImagens = [...prev.imagens, ...uploadedUrls];
@@ -3342,6 +3403,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
           };
         });
       }
+      setSelectedFiles([]);
     }
   };
 
@@ -3352,40 +3414,60 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     const uploadedUrls: string[] = [];
 
     try {
-      // Para cada arquivo, fazer o processo de upload assinado
-      for (const file of selectedFiles) {
-        // 1. Solicitar URL assinada para upload
-        const requestRes = await fetch('/api/storage/request-upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            filename: file.name,
-            fileType: file.type
-          })
-        });
-        
-        const requestData = await requestRes.json();
-        if (!requestData.success) throw new Error('Falha ao solicitar upload');
-        
-        const { uploadUrl, publicUrl } = requestData.data;
-        
-        // 2. Fazer upload DIRETO para o Google Cloud Storage usando a URL assinada
-        const uploadRes = await fetch(uploadUrl, {
-          method: 'PUT',
-          body: file,
-          headers: {
-            'Content-Type': file.type,
+      // Realizar uploads em paralelo para maior velocidade
+      const uploadPromises = selectedFiles.map(async (file) => {
+        try {
+          // TENTATIVA 1: URL assinada
+          const requestRes = await fetch('/api/storage/request-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: file.name,
+              fileType: file.type
+            })
+          });
+          
+          const requestText = await requestRes.text();
+          let requestData;
+          try {
+            requestData = JSON.parse(requestText);
+          } catch (e) {
+            requestData = { success: false };
           }
+          
+          if (requestData.success) {
+            const { uploadUrl, publicUrl } = requestData.data;
+            const uploadRes = await fetch(uploadUrl, {
+              method: 'PUT',
+              body: file,
+              headers: { 'Content-Type': file.type }
+            });
+            
+            if (uploadRes.ok) return publicUrl;
+          }
+        } catch (e) {
+          console.warn('Falha no upload assinado, tentando direto:', e);
+        }
+
+        // TENTATIVA 2: Upload direto (Fallback)
+        const formData = new FormData();
+        formData.append('file', file);
+        const directRes = await fetch('/api/storage/upload', {
+          method: 'POST',
+          body: formData
         });
-        
-        if (!uploadRes.ok) throw new Error('Falha no upload da imagem');
-        
-        // 3. Guardar a URL pública permanente
-        uploadedUrls.push(publicUrl);
-      }
+
+        const directText = await directRes.text();
+        const directData = JSON.parse(directText);
+        if (directData.success) return directData.data.publicUrl;
+        throw new Error(directData.error || 'Falha no upload');
+      });
+
+      const results = await Promise.all(uploadPromises);
+      const successfulUrls = results.filter(url => !!url) as string[];
       
       setSelectedFiles([]);
-      return uploadedUrls;
+      return successfulUrls;
     } catch (error: any) {
       console.error('Erro no upload:', error);
       alert('❌ Erro ao enviar fotos: ' + (error as Error).message);
