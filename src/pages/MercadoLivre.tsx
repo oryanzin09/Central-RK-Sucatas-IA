@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { TrendingUp, MessageSquare, Package, LayoutDashboard } from 'lucide-react';
+import { TrendingUp, MessageSquare, Package, LayoutDashboard, Truck } from 'lucide-react';
 import { MLDashboard } from '../components/ml/MLDashboard';
 import { MLQuestions } from '../components/ml/MLQuestions';
 import { MLCatalog } from '../components/ml/MLCatalog';
+import { MLSales } from '../components/ml/MLSales';
 
 export const MercadoLivre = ({ theme }: { theme: string }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'sales', label: 'Vendas', icon: Truck },
     { id: 'questions', label: 'Perguntas', icon: MessageSquare },
     { id: 'catalog', label: 'Catálogo', icon: Package }
   ];
@@ -44,6 +46,7 @@ export const MercadoLivre = ({ theme }: { theme: string }) => {
       {/* Conteúdo das abas */}
       <div>
         {activeTab === 'dashboard' && <MLDashboard theme={theme} />}
+        {activeTab === 'sales' && <MLSales theme={theme} />}
         {activeTab === 'questions' && <MLQuestions theme={theme} />}
         {activeTab === 'catalog' && <MLCatalog theme={theme} />}
       </div>

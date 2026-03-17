@@ -173,7 +173,7 @@ import storageService from './src/services/storageService.js';
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
   const httpServer = createServer(app);
   
   // Garantir que a pasta uploads existe
@@ -546,6 +546,43 @@ async function startServer() {
     }
   });
 
+  // Listar vendas
+  app.get('/api/ml/sales', async (req, res) => {
+    try {
+      const ordersResponse = await mlClient.request(`/orders/search`, {
+        params: { seller: mlClient.userId, order: 'date_desc', limit: 50 }
+      });
+      
+      const salesMap = new Map();
+      (ordersResponse.results || []).forEach((order: any) => {
+        if (salesMap.has(order.id)) return;
+        
+        const buyer = order.buyer || {};
+        const nomeCliente = buyer.first_name && buyer.last_name 
+          ? `${buyer.first_name} ${buyer.last_name}` 
+          : (buyer.nickname || 'Cliente ML');
+          
+        salesMap.set(order.id, {
+          id: order.id,
+          cliente: nomeCliente,
+          nickname: buyer.nickname,
+          valor: order.total_amount,
+          data: order.date_created,
+          status: order.status === 'paid' ? 'Pago' : order.status,
+          shipping_status: order.shipping?.status,
+          itens: order.order_items?.map((i: any) => i.item?.title || i.item?.id || 'Produto ML').join(', '),
+          thumbnail: order.order_items?.[0]?.item?.thumbnail,
+          shipping_id: order.shipping?.id,
+          quantidade: order.order_items?.reduce((acc: number, item: any) => acc + (item.quantity || 1), 0) || 1
+        });
+      });
+      
+      res.json({ success: true, data: Array.from(salesMap.values()) });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // Configurar multer para upload
   const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -608,6 +645,54 @@ async function startServer() {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+  });
+
+  // ==================== FRETE ROUTES ====================
+  app.post('/api/frete/calculate', async (req, res) => {
+    console.log('Recebida requisição de frete:', req.body);
+    console.log('Token presente:', !!process.env.MELHOR_ENVIO_TOKEN);
+    try {
+      const { cep_origem, cep_destino, peso, largura, altura, comprimento } = req.body;
+      
+      // Melhor Envio API call
+      const token = process.env.MELHOR_ENVIO_TOKEN || process.env.MELHOR_ENVIO_TO;
+      console.log('Token utilizado:', token ? 'Token presente' : 'Token ausente');
+
+      const response = await axios.post('https://melhorenvio.com.br/api/v2/me/shipment/calculate', {
+        from: { postal_code: cep_origem },
+        to: { postal_code: cep_destino },
+        products: [{
+          id: "sucata1",
+          weight: parseFloat(peso),
+          width: parseFloat(largura),
+          height: parseFloat(altura),
+          length: parseFloat(comprimento),
+          insurance_value: 0.0,
+          quantity: 1
+        }],
+        options: {
+          insurance_value: 0.0,
+          receipt: false,
+          own_hand: false
+        }
+      }, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'RK Sucatas (contato@rksucatas.com.br)'
+        }
+      });
+      
+      res.json({ success: true, data: response.data });
+    } catch (error: any) {
+      console.error('❌ Erro detalhado ao calcular frete:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      res.status(500).json({ success: false, error: error.response?.data?.message || error.message });
+    }
   });
 
   // ==================== GOOGLE CLOUD STORAGE ROUTES ====================
@@ -948,6 +1033,7 @@ async function startServer() {
 
   // API Route for Notion Inventory
   app.get("/api/inventory", async (req, res) => {
+    console.log("🔍 Acessando /api/inventory");
     try {
       const force = req.query.force === 'true';
       if (force) invalidateCache(DATABASE_ID);

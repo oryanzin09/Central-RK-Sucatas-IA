@@ -46,7 +46,10 @@ import {
   Box,
   BarChart3,
   MessageCircle,
-  ShoppingBag
+  ShoppingBag,
+  Eye,
+  EyeOff,
+  Truck
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -63,17 +66,12 @@ import {
   Cell
 } from 'recharts';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { cn } from './utils';
 import { FloatingAIChat } from './components/FloatingAIChat';
+import { FreteView } from './components/FreteView';
 import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
 import { io } from 'socket.io-client';
-
-// Utility for Tailwind classes
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
 // Global Data Context
 export const DataContext = createContext<{
@@ -88,6 +86,8 @@ export const DataContext = createContext<{
   setSales: React.Dispatch<React.SetStateAction<any[]>>;
   setMotos: React.Dispatch<React.SetStateAction<any[]>>;
   refreshData: () => Promise<void>;
+  showSensitiveInfo: boolean;
+  setShowSensitiveInfo: React.Dispatch<React.SetStateAction<boolean>>;
 }>({
   inventory: [],
   sales: [],
@@ -99,7 +99,9 @@ export const DataContext = createContext<{
   setInventory: () => {},
   setSales: () => {},
   setMotos: () => {},
-  refreshData: async () => {}
+  refreshData: async () => {},
+  showSensitiveInfo: true,
+  setShowSensitiveInfo: () => {},
 });
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
@@ -112,6 +114,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [whatsappStatus, setWhatsappStatus] = useState({ connected: false, isConnecting: false, reconnectAttempts: 0 });
   const [whatsappConversations, setWhatsappConversations] = useState<any[]>([]);
   const [whatsappQr, setWhatsappQr] = useState<string | null>(null);
+  const [showSensitiveInfo, setShowSensitiveInfo] = useState(true);
   const CACHE_TIME = 5 * 60 * 1000; // 5 minutos
 
   const loadData = async (force = false, silent = false) => {
@@ -284,7 +287,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           lastMutationRef.current = Date.now();
         }
       },
-      refreshData: () => loadData(true) 
+      refreshData: () => loadData(true),
+      showSensitiveInfo,
+      setShowSensitiveInfo
     }}>
       {children}
     </DataContext.Provider>
@@ -331,16 +336,16 @@ const SidebarItem = ({
     className={cn(
       "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group relative overflow-hidden",
       active 
-        ? "bg-violet-600 text-white shadow-[0_0_20px_rgba(139,92,246,0.3)] ring-1 ring-violet-400/30" 
+        ? "bg-zinc-900 text-white border border-zinc-800 shadow-lg" 
         : theme === 'dark' 
-          ? "text-zinc-400 hover:bg-zinc-800/40 hover:text-zinc-100"
+          ? "text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300"
           : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
     )}
   >
     {active && (
-      <div className="absolute inset-0 bg-gradient-to-r from-violet-400/10 to-transparent pointer-events-none" />
+      <div className="absolute left-0 top-2 bottom-2 w-1 bg-zinc-100 rounded-r-full" />
     )}
-    <Icon size={20} className={cn(active ? "text-white" : "group-hover:text-violet-400 transition-colors")} />
+    <Icon size={20} className={cn(active ? "text-zinc-100" : "group-hover:text-zinc-300 transition-colors")} />
     {label && <span className="font-bold tracking-tight whitespace-nowrap">{label}</span>}
     {badge !== undefined && (
       <span className="absolute right-3 top-1/2 -translate-y-1/2 bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-lg shadow-rose-500/20">
@@ -366,51 +371,52 @@ const SkeletonRow = ({ theme }: { theme: 'light' | 'dark', key?: any }) => (
   </tr>
 );
 
-const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onClick }: any) => (
-  <div 
-    onClick={onClick}
-    className={cn(
-      "border rounded-2xl p-6 transition-all duration-300 relative overflow-hidden group",
-      onClick && "cursor-pointer",
-      theme === 'dark' 
-        ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-violet-500/50 hover:shadow-[0_8px_30px_rgb(139,92,246,0.15)] hover:scale-[1.02]" 
-        : "bg-white border-zinc-200 hover:border-violet-500/30 shadow-sm hover:scale-[1.02]"
-    )}
-  >
-    {theme === 'dark' && (
-      <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-500/5 via-transparent to-transparent pointer-events-none" />
-    )}
-    <div className="flex items-start justify-between relative z-10">
-      <div className={cn("p-3 rounded-xl bg-opacity-10 shadow-inner transition-transform group-hover:scale-110 duration-300", color)}>
-        <Icon size={24} className={color.replace('bg-', 'text-')} />
-      </div>
-      {trend !== undefined && (
-        <span className={cn("text-xs font-bold px-2 py-1 rounded-full shadow-sm", 
-          trend > 0 
-            ? "bg-emerald-500/10 text-emerald-400 shadow-emerald-500/10" 
-            : "bg-rose-500/10 text-rose-400 shadow-rose-500/10"
-        )}>
-          {trend > 0 ? '+' : ''}{trend}%
-        </span>
+const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onClick, isSensitive }: any) => {
+  const context = useContext(DataContext);
+  const showSensitiveInfo = context?.showSensitiveInfo ?? true;
+  
+  return (
+    <div 
+      onClick={onClick}
+      className={cn(
+        "border rounded-xl p-5 transition-all duration-300 relative overflow-hidden group flex flex-col gap-3",
+        onClick && "cursor-pointer",
+        theme === 'dark' 
+          ? "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50" 
+          : "bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
       )}
+    >
+      <div className="flex items-center justify-between relative z-10">
+        <div className={cn(
+          "p-2 rounded-lg backdrop-blur-md border",
+          theme === 'dark' ? "bg-zinc-800/50 border-zinc-700" : "bg-zinc-100/50 border-zinc-200",
+          color.replace('bg-', 'text-')
+        )}>
+          <Icon size={20} />
+        </div>
+        {trend !== undefined && (
+          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", 
+            trend > 0 
+              ? "bg-emerald-500/10 text-emerald-500" 
+              : "bg-rose-500/10 text-rose-500"
+          )}>
+            {trend > 0 ? '+' : ''}{trend}%
+          </span>
+        )}
+      </div>
+      <div className="relative z-10">
+        <p className={cn("text-[10px] uppercase font-bold tracking-wider", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>{label}</p>
+        <h3 className={cn(
+          "text-xl font-bold mt-1 tracking-tight", 
+          theme === 'dark' ? "text-white" : "text-zinc-900"
+        )}>
+          {isSensitive && !showSensitiveInfo ? "••••••••" : value}
+        </h3>
+        {subValue && <p className="text-[10px] text-zinc-500 mt-1 font-medium">{subValue}</p>}
+      </div>
     </div>
-    <div className="mt-4 relative z-10">
-      <p className="text-zinc-500 text-[10px] uppercase font-bold tracking-widest opacity-80">{label}</p>
-      <h3 className={cn(
-        "text-2xl font-black mt-1 tracking-tight", 
-        theme === 'dark' ? "text-white" : "text-zinc-900",
-        trend !== undefined && trend > 0 && theme === 'dark' && "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]",
-        trend !== undefined && trend < 0 && theme === 'dark' && "text-rose-400 drop-shadow-[0_0_8px_rgba(251,113,133,0.3)]"
-      )}>
-        {value}
-      </h3>
-      {subValue && <p className="text-[10px] text-zinc-500 mt-1.5 font-bold uppercase tracking-wider">{subValue}</p>}
-    </div>
-    
-    {/* Efeito de brilho no hover */}
-    <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-violet-500/10 blur-3xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-  </div>
-);
+  );
+};
 
 const DashboardView = ({ 
   theme, 
@@ -428,9 +434,17 @@ const DashboardView = ({
   setMlPeriod,
   mlCustomDate,
   setMlCustomDate,
-  isMlDashboardLoading
+  isMlDashboardLoading,
+  mlSearchTerm,
+  setMlSearchTerm,
+  mlSortConfig,
+  toggleMlSort,
+  mlCurrentPage,
+  setMlCurrentPage,
+  mlTotalPages,
+  paginatedMlListings
 }: any) => {
-  const { inventory, sales, loading, refreshData } = useContext(DataContext);
+  const { inventory, sales, loading, refreshData, showSensitiveInfo, setShowSensitiveInfo } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
 
   const formatCurrency = (value: number) => {
@@ -613,8 +627,24 @@ const DashboardView = ({
               Mercado Livre
             </button>
           </div>
+          
+          {/* Toggle de Informações Sensíveis */}
+          <button
+            onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+              theme === 'dark' 
+                ? "bg-zinc-800/50 border-zinc-700 text-zinc-300 hover:bg-zinc-800" 
+                : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+            )}
+          >
+            {showSensitiveInfo ? <EyeOff size={14} /> : <Eye size={14} />}
+            {showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
+          </button>
+        </div>
+      </div>
 
-          {source === 'mercadolivre' && (
+        {source === 'mercadolivre' && (
             <div className="flex items-center gap-2 ml-4">
               <select
                 value={mlPeriod}
@@ -688,7 +718,6 @@ const DashboardView = ({
             {loading ? "Sincronizando..." : "Sincronizar"}
           </button>
         </div>
-      </div>
 
       {/* Cards de Resumo Dinâmicos */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -699,32 +728,36 @@ const DashboardView = ({
               label="Valor do Estoque" 
               value={formatCurrency(metrics.valorTotalEstoque)} 
               subValue={`${metrics.totalItensEstoque} itens em estoque`}
-              color="bg-blue-500" 
-              theme={theme} 
+              color="bg-indigo-500" 
+              theme={theme}
+              isSensitive={true}
             />
             <StatCard 
               icon={TrendingUp} 
               label="Vendas (Mês)" 
               value={formatCurrency(metrics.valorVendasMes)} 
               subValue={`${metrics.totalVendasMes} vendas no mês`}
-              color="bg-emerald-500" 
-              theme={theme} 
+              color="bg-teal-500" 
+              theme={theme}
+              isSensitive={true}
             />
             <StatCard 
               icon={DollarSign} 
               label="Saídas (Mês)" 
               value={formatCurrency(metrics.valorSaidasMes)} 
               subValue="despesas operacionais"
-              color="bg-rose-500" 
+              color="bg-rose-400" 
               theme={theme} 
+              isSensitive={true}
             />
             <StatCard 
               icon={ShoppingCart} 
               label="Ticket Médio" 
               value={formatCurrency(metrics.ticketMedio)} 
               subValue="por venda realizada"
-              color="bg-amber-500" 
+              color="bg-amber-400" 
               theme={theme} 
+              isSensitive={true}
             />
           </>
         ) : (
@@ -734,7 +767,7 @@ const DashboardView = ({
       label="Anúncios Ativos" 
       value={metrics.activeListings} 
       subValue={`De ${metrics.totalItensEstoque} anúncios totais`}
-      color="bg-blue-500" 
+      color="bg-indigo-500" 
       theme={theme} 
       onClick={onFetchAllMlListings}
     />
@@ -743,7 +776,7 @@ const DashboardView = ({
       label="Vendas ML (Mês)" 
       value={formatCurrency(metrics.valorVendasMes)} 
       subValue={`${metrics.totalVendasMes} pedidos no período`}
-      color="bg-emerald-500" 
+      color="bg-teal-500" 
       theme={theme} 
     />
     <StatCard 
@@ -751,7 +784,7 @@ const DashboardView = ({
       label="Perguntas" 
       value={metrics.perguntasPendentes} 
       subValue="pendentes de resposta"
-      color="bg-rose-500" 
+      color="bg-rose-400" 
       theme={theme} 
       trend={metrics.perguntasPendentes > 0 ? -10 : 0}
       onClick={() => onTabChange('mercadolivre')}
@@ -761,7 +794,7 @@ const DashboardView = ({
       label="Ticket Médio ML" 
       value={formatCurrency(metrics.ticketMedio)} 
       subValue="valor médio por pedido"
-      color="bg-amber-500" 
+      color="bg-amber-400" 
       theme={theme} 
     />
           </>
@@ -887,6 +920,28 @@ const DashboardView = ({
                 </PieChart>
               </ResponsiveContainer>
             </div>
+            <div className="flex flex-wrap justify-center gap-2 mt-4">
+              {(source === 'estoque' ? pieData : [
+                { name: 'Ativos', value: metrics.activeListings, color: '#10b981' },
+                { name: 'Inativos', value: metrics.totalItensEstoque - metrics.activeListings, color: '#f43f5e' }
+              ]).map((item: any, index: number) => (
+                <div 
+                  key={index} 
+                  className={cn(
+                    "group relative px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border flex items-center gap-2 transition-all w-fit",
+                    theme === 'dark' 
+                      ? "bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-100" 
+                      : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+                  )}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: source === 'estoque' ? COLORS[index % COLORS.length] : item.color }} />
+                  {item.name}
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-zinc-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20">
+                    {source === 'estoque' ? formatCurrency(item.value) : item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Ações Rápidas ML */}
@@ -940,12 +995,12 @@ const DashboardView = ({
           </div>
           
           {source === 'estoque' ? (
-            <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+            <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 z-10">
+                <thead>
                   <tr className={cn(
                     "text-[10px] uppercase font-bold tracking-wider",
-                    theme === 'dark' ? "bg-zinc-800/90 backdrop-blur-sm text-zinc-500" : "bg-zinc-50/90 backdrop-blur-sm text-zinc-500"
+                    theme === 'dark' ? "bg-zinc-800/30 text-zinc-500" : "bg-zinc-50 text-zinc-500"
                   )}>
                     <th className="px-4 py-3">Peça</th>
                     <th className="px-4 py-3">Valor</th>
@@ -992,65 +1047,36 @@ const DashboardView = ({
             <div className="flex flex-col gap-4 p-4">
               {/* Resumo de Envios */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
-                <button 
-                  onClick={() => setActiveTab('pending')}
-                  className={cn(
+                <button className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
-                  activeTab === 'pending' 
-                    ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
-                    : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900"
                 )}>
                   Envios pendentes
-                  <span className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded-full",
-                    activeTab === 'pending' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")
-                  )}>
+                  <span className="bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
                     {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'ready_to_print' || s.shipping_status === 'pending').length}
                   </span>
                 </button>
-                <button 
-                  onClick={() => setActiveTab('shipped')}
-                  className={cn(
+                <button className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
-                  activeTab === 'shipped' 
-                    ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
-                    : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50"
                 )}>
                   Em trânsito
-                  <span className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded-full",
-                    activeTab === 'shipped' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")
-                  )}>
+                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")}>
                     {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'shipped').length}
                   </span>
                 </button>
-                <button 
-                  onClick={() => setActiveTab('delivered')}
-                  className={cn(
+                <button className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
-                  activeTab === 'delivered' 
-                    ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
-                    : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50"
                 )}>
                   Finalizadas
-                  <span className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded-full",
-                    activeTab === 'delivered' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")
-                  )}>
+                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")}>
                     {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'delivered').length}
                   </span>
                 </button>
               </div>
 
-              <div className="flex flex-col gap-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                {metrics.ultimasVendas
-                  .filter((sale: any) => {
-                    if (activeTab === 'pending') return sale.shipping_status === 'ready_to_print' || sale.shipping_status === 'pending';
-                    if (activeTab === 'shipped') return sale.shipping_status === 'shipped';
-                    if (activeTab === 'delivered') return sale.shipping_status === 'delivered';
-                    return true;
-                  })
-                  .map((sale: any) => {
+              {metrics.ultimasVendas.map((sale: any) => {
                 const getShippingStatusInfo = (sale: any) => {
                   if (sale.shipping_status === 'ready_to_print') {
                     return {
@@ -1144,34 +1170,14 @@ const DashboardView = ({
                             const res = await fetch(`/api/ml/shipment-label/${sale.shipping_id}`);
                             if (!res.ok) throw new Error('Falha ao baixar etiqueta');
                             const blob = await res.blob();
-                            
-                            // Obter o nome do arquivo do header Content-Disposition se possível
-                            const contentDisposition = res.headers.get('Content-Disposition');
-                            let filename = `etiqueta-${sale.shipping_id}.pdf`;
-                            if (contentDisposition) {
-                              const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
-                              if (filenameMatch && filenameMatch.length === 2) {
-                                filename = filenameMatch[1];
-                              } else if (contentDisposition.includes('zip')) {
-                                filename = `etiqueta-${sale.shipping_id}.zip`;
-                              }
-                            } else if (blob.type === 'application/zip') {
-                              filename = `etiqueta-${sale.shipping_id}.zip`;
-                            }
-
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
-                            a.style.display = 'none';
                             a.href = url;
-                            a.download = filename;
+                            a.download = `etiqueta-${sale.shipping_id}.pdf`;
                             document.body.appendChild(a);
                             a.click();
-                            
-                            // Limpeza
-                            setTimeout(() => {
-                              document.body.removeChild(a);
-                              window.URL.revokeObjectURL(url);
-                            }, 100);
+                            a.remove();
+                            window.URL.revokeObjectURL(url);
                           } catch (err) {
                             console.error('Erro ao baixar etiqueta:', err);
                             alert('Erro ao baixar etiqueta. Verifique se o pedido já possui etiqueta gerada.');
@@ -1237,12 +1243,12 @@ const DashboardView = ({
             </h3>
             <Package size={16} className="text-violet-500" />
           </div>
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
+          <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 z-10">
+              <thead>
                 <tr className={cn(
                   "text-[10px] uppercase font-bold tracking-wider",
-                  theme === 'dark' ? "bg-zinc-800/90 backdrop-blur-sm text-zinc-500" : "bg-zinc-50/90 backdrop-blur-sm text-zinc-500"
+                  theme === 'dark' ? "bg-zinc-800/30 text-zinc-500" : "bg-zinc-50 text-zinc-500"
                 )}>
                   <th className="px-4 py-3">{source === 'estoque' ? "Peça" : "Anúncio"}</th>
                   <th className="px-4 py-3 text-center">{source === 'estoque' ? "Qtd" : "Vendas"}</th>
@@ -1268,7 +1274,7 @@ const DashboardView = ({
                         {source === 'mercadolivre' && item.thumbnail && (
                           <img src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                         )}
-                        <span className="truncate max-w-[200px]">{item.nome || item.title}</span>
+                        <span className="truncate max-w-[200px]">{source === 'mercadolivre' ? (item.titulo || item.id) : (item.nome || item.title)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -1276,16 +1282,16 @@ const DashboardView = ({
                         "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
                         theme === 'dark' ? "bg-violet-500/20 text-violet-400 ring-1 ring-violet-500/30" : "bg-violet-100 text-violet-600"
                       )}>
-                        {item.estoque || item.sold_quantity || 0}
+                        {source === 'mercadolivre' ? (item.estoque || item.vendidos || 0) : (item.estoque || 0)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider">
-                        {item.moto || item.status}
+                        {source === 'mercadolivre' ? (item.status === 'active' ? 'Ativo' : item.status) : (item.moto || item.status)}
                       </span>
                     </td>
                     <td className={cn("px-4 py-3 font-black", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
-                      {formatCurrency(item.valor || item.price)}
+                      {formatCurrency(source === 'mercadolivre' ? (item.preco || 0) : (item.valor || 0))}
                     </td>
                   </tr>
                 ))}
@@ -1294,7 +1300,6 @@ const DashboardView = ({
           </div>
         </div>
       </div>
-    </div>
 
       {/* Modal de Transações por Tipo */}
       <AnimatePresence>
@@ -1428,12 +1433,21 @@ const DashboardView = ({
                     Listagem completa de anúncios ativos
                   </p>
                 </div>
-                <button 
-                  onClick={() => setShowAllMlAds(false)}
-                  className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
-                >
-                  <X size={24} />
-                </button>
+                <div className="flex items-center gap-4">
+                  <input 
+                    type="text"
+                    placeholder="Buscar anúncio..."
+                    value={mlSearchTerm}
+                    onChange={(e) => { setMlSearchTerm(e.target.value); setMlCurrentPage(1); }}
+                    className="px-4 py-2 rounded-xl bg-zinc-800 text-white text-sm border border-zinc-700 focus:outline-none focus:border-amber-500"
+                  />
+                  <button 
+                    onClick={() => setShowAllMlAds(false)}
+                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
+                  >
+                    <X size={24} />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-auto p-0">
@@ -1449,18 +1463,18 @@ const DashboardView = ({
                         "text-[10px] uppercase font-bold tracking-wider",
                         theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-50 text-zinc-500"
                       )}>
-                        <th className="px-6 py-4 border-b border-zinc-800/50">Anúncio</th>
-                        <th className="px-6 py-4 border-b border-zinc-800/50">Preço</th>
-                        <th className="px-6 py-4 border-b border-zinc-800/50 text-center">Estoque</th>
-                        <th className="px-6 py-4 border-b border-zinc-800/50 text-center">Vendas</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50 cursor-pointer" onClick={() => toggleMlSort('titulo')}>Anúncio {mlSortConfig.key === 'titulo' && (mlSortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50 cursor-pointer" onClick={() => toggleMlSort('preco')}>Preço {mlSortConfig.key === 'preco' && (mlSortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50 text-center cursor-pointer" onClick={() => toggleMlSort('estoque')}>Estoque {mlSortConfig.key === 'estoque' && (mlSortConfig.direction === 'asc' ? '↑' : '↓')}</th>
+                        <th className="px-6 py-4 border-b border-zinc-800/50 cursor-pointer" onClick={() => toggleMlSort('criado_em')}>Data {mlSortConfig.key === 'criado_em' && (mlSortConfig.direction === 'asc' ? '↑' : '↓')}</th>
                         <th className="px-6 py-4 border-b border-zinc-800/50">Status</th>
                       </tr>
                     </thead>
                     <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
-                      {allMlListings.map((item) => (
+                      {paginatedMlListings.map((item) => (
                         <tr 
                           key={item.id} 
-                          onClick={() => window.open(item.permalink, '_blank')}
+                          onClick={() => window.open(item.link, '_blank')}
                           className={cn(
                             "transition-colors cursor-pointer",
                             theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
@@ -1470,25 +1484,23 @@ const DashboardView = ({
                             <div className="flex items-center gap-4">
                               <img src={item.thumbnail} className="w-12 h-12 rounded-xl object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                               <div className="flex flex-col min-w-0">
-                                <span className="font-bold text-white truncate max-w-[300px]">{item.title}</span>
+                                <span className="font-bold text-white truncate max-w-[300px]">{item.titulo || item.id}</span>
                                 <span className="text-[10px] text-zinc-500 font-mono">{item.id}</span>
                               </div>
                             </div>
                           </td>
                           <td className="px-6 py-4">
                             <span className="text-emerald-400 font-black">
-                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.price)}
+                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.preco) || 0)}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-center">
                             <span className="px-2 py-1 rounded-lg bg-zinc-800 text-zinc-300 font-bold text-xs">
-                              {item.available_quantity}
+                              {item.estoque}
                             </span>
                           </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className="px-2 py-1 rounded-lg bg-violet-500/10 text-violet-400 font-bold text-xs">
-                              {item.sold_quantity}
-                            </span>
+                          <td className="px-6 py-4 text-zinc-400 font-mono text-xs">
+                            {item.criado_em ? new Date(item.criado_em).toLocaleDateString('pt-BR') : '-'}
                           </td>
                           <td className="px-6 py-4">
                             <span className={cn(
@@ -1505,13 +1517,24 @@ const DashboardView = ({
                 )}
               </div>
               
-              <div className="p-4 border-t border-zinc-800/50 bg-zinc-900/30 flex justify-end">
-                <button 
-                  onClick={() => setShowAllMlAds(false)}
-                  className="px-6 py-2 rounded-xl bg-zinc-800 text-white font-bold hover:bg-zinc-700 transition-all"
-                >
-                  Fechar
-                </button>
+              <div className="p-4 border-t border-zinc-800/50 bg-zinc-900/30 flex justify-between items-center">
+                <span className="text-sm text-zinc-500">Página {mlCurrentPage} de {mlTotalPages || 1}</span>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setMlCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={mlCurrentPage === 1}
+                    className="px-4 py-2 rounded-xl bg-zinc-800 text-white font-bold hover:bg-zinc-700 transition-all disabled:opacity-50"
+                  >
+                    Anterior
+                  </button>
+                  <button 
+                    onClick={() => setMlCurrentPage(p => Math.min(mlTotalPages, p + 1))}
+                    disabled={mlCurrentPage >= mlTotalPages}
+                    className="px-4 py-2 rounded-xl bg-zinc-800 text-white font-bold hover:bg-zinc-700 transition-all disabled:opacity-50"
+                  >
+                    Próximo
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
@@ -5021,7 +5044,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                         </select>
                       ) : (
                         <span className={cn(
-                          "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
+                          "px-2 py-1 rounded-md text-[10px] font-bold uppercase whitespace-normal break-words max-w-[120px] inline-block",
                           getStatusColor(item.status)
                         )}>
                           {item.status}
@@ -6102,14 +6125,17 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
 };
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'mercadolivre'>(() => {
+  const context = useContext(DataContext);
+  const showSensitiveInfo = context?.showSensitiveInfo ?? true;
+  const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'mercadolivre' | 'frete'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('activeTab') as any) || 'dashboard';
     }
     return 'dashboard';
   });
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [mlDashboardData, setMlDashboardData] = useState<any>(null);
   const [isMlDashboardLoading, setIsMlDashboardLoading] = useState(false);
@@ -6125,6 +6151,39 @@ function AppContent() {
   const [allMlListings, setAllMlListings] = useState<any[]>([]);
   const [showAllMlAds, setShowAllMlAds] = useState(false);
   const [isMlListingsLoading, setIsMlListingsLoading] = useState(false);
+  
+  // Estados para filtros, ordenação e paginação
+  const [mlSearchTerm, setMlSearchTerm] = useState('');
+  const [mlSortConfig, setMlSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'criado_em', direction: 'desc' });
+  const [mlCurrentPage, setMlCurrentPage] = useState(1);
+  const mlItemsPerPage = 10;
+
+  const toggleMlSort = (key: string) => {
+    setMlSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc'
+    }));
+  };
+
+  const filteredMlListings = allMlListings
+    .filter(item => 
+      (item.titulo || '').toLowerCase().includes(mlSearchTerm.toLowerCase()) ||
+      (item.id || '').toLowerCase().includes(mlSearchTerm.toLowerCase())
+    )
+    .sort((a, b) => {
+      const aVal = a[mlSortConfig.key as keyof typeof a];
+      const bVal = b[mlSortConfig.key as keyof typeof b];
+      if (aVal < bVal) return mlSortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return mlSortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+  const mlTotalPages = Math.ceil(filteredMlListings.length / mlItemsPerPage);
+  const paginatedMlListings = filteredMlListings.slice(
+    (mlCurrentPage - 1) * mlItemsPerPage,
+    mlCurrentPage * mlItemsPerPage
+  );
+  
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
@@ -6235,15 +6294,15 @@ function AppContent() {
         "fixed lg:sticky top-0 h-screen inset-y-0 left-0 z-50 transition-all duration-300 ease-in-out border-r",
         theme === 'dark' ? "bg-zinc-950/50 border-zinc-800/50 backdrop-blur-xl" : "bg-white border-zinc-200 shadow-xl",
         isSidebarOpen ? "w-64" : "w-20",
-        !isSidebarOpen && "-translate-x-full lg:translate-x-0"
+        !isSidebarOpen && "lg:w-20"
       )}>
         <div className={cn(
           "h-full flex flex-col p-4",
-          theme === 'dark' ? "bg-transparent" : "bg-white"
+          theme === 'dark' ? "bg-zinc-950" : "bg-white"
         )}>
           <div className="flex items-center gap-3 px-2 mb-10 overflow-hidden">
-            <div className="w-10 h-10 shrink-0 rounded-xl bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-600/20">
-              <Wrench className="text-white" size={24} />
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+              <Wrench className={theme === 'dark' ? "text-zinc-100" : "text-zinc-900"} size={20} />
             </div>
             {isSidebarOpen && (
               <motion.div 
@@ -6298,6 +6357,13 @@ function AppContent() {
               onClick={() => setActiveTab('atendimento')} 
               theme={theme}
               badge={unreadCount > 0 ? unreadCount : undefined}
+            />
+            <SidebarItem 
+              icon={Truck} 
+              label={isSidebarOpen ? "Frete" : ""} 
+              active={activeTab === 'frete'} 
+              onClick={() => setActiveTab('frete')} 
+              theme={theme}
             />
           </nav>
 
@@ -6425,6 +6491,14 @@ function AppContent() {
                   mlCustomDate={mlCustomDate}
                   setMlCustomDate={setMlCustomDate}
                   isMlDashboardLoading={isMlDashboardLoading}
+                  mlSearchTerm={mlSearchTerm}
+                  setMlSearchTerm={setMlSearchTerm}
+                  mlSortConfig={mlSortConfig}
+                  toggleMlSort={toggleMlSort}
+                  mlCurrentPage={mlCurrentPage}
+                  setMlCurrentPage={setMlCurrentPage}
+                  mlTotalPages={mlTotalPages}
+                  paginatedMlListings={paginatedMlListings}
                 />
               ) : activeTab === 'estoque' ? (
                 <InventoryView theme={theme} onSelectItem={setSelectedDetailItem} />
@@ -6434,6 +6508,8 @@ function AppContent() {
                 <MotosView theme={theme} onSelectItem={setSelectedDetailItem} />
               ) : activeTab === 'atendimento' ? (
                 <Atendimento theme={theme} />
+              ) : activeTab === 'frete' ? (
+                <FreteView theme={theme} />
               ) : (
                 <div className={cn(
                   "flex flex-col items-center justify-center h-[60vh] transition-colors",
