@@ -570,6 +570,8 @@ async function startServer() {
           data: order.date_created,
           status: order.status === 'paid' ? 'Pago' : order.status,
           shipping_status: order.shipping?.status,
+          shipping_substatus: order.shipping?.substatus,
+          has_dispute: order.status_detail === 'mediation' || order.tags?.includes('disputed'),
           itens: order.order_items?.map((i: any) => i.item?.title || i.item?.id || 'Produto ML').join(', '),
           thumbnail: order.order_items?.[0]?.item?.thumbnail,
           shipping_id: order.shipping?.id,

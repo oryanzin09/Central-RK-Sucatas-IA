@@ -6,7 +6,11 @@ class MLClient {
   private clientSecret: string;
   private accessToken: string;
   private refreshToken: string;
-  private userId: string;
+  get userId() {
+    return this._userId;
+  }
+  
+  private _userId: string;
 
   constructor() {
     this.baseURL = 'https://api.mercadolibre.com';
@@ -14,7 +18,7 @@ class MLClient {
     this.clientSecret = process.env.ML_CLIENT_SECRET || '';
     this.accessToken = process.env.ML_ACCESS_TOKEN || '';
     this.refreshToken = process.env.ML_REFRESH_TOKEN || '';
-    this.userId = process.env.ML_USER_ID || '';
+    this._userId = process.env.ML_USER_ID || '';
 
     // Validação das credenciais no início
     if (!this.clientId || !this.clientSecret) {
@@ -26,18 +30,18 @@ class MLClient {
    * Garante que o userId está correto (obtido do token)
    */
   async ensureUserId() {
-    if (!this.userId || this.userId === 'undefined' || this.userId === 'null') {
+    if (!this._userId || this._userId === 'undefined' || this._userId === 'null') {
       console.log('🔍 Obtendo User ID do token...');
       try {
         const user = await this.getUserInfo();
-        this.userId = user.id.toString();
-        console.log(`✅ User ID obtido: ${this.userId}`);
+        this._userId = user.id.toString();
+        console.log(`✅ User ID obtido: ${this._userId}`);
       } catch (error) {
         console.error('❌ Falha ao obter User ID do token');
         throw error;
       }
     }
-    return this.userId;
+    return this._userId;
   }
 
   /**

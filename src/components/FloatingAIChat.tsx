@@ -210,7 +210,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
   return (
     <>
       <motion.button
-        className="fixed bottom-8 right-8 w-14 h-14 bg-violet-600 rounded-full shadow-xl flex items-center justify-center z-50 hover:bg-violet-500 transition-all duration-200 group"
+        className="fixed bottom-24 right-8 w-14 h-14 bg-violet-600 rounded-full shadow-xl flex items-center justify-center z-50 hover:bg-violet-500 transition-all duration-200 group"
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         onClick={handleOpen}

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TrendingUp, MessageSquare, Package, LayoutDashboard, Truck } from 'lucide-react';
 import { MLDashboard } from '../components/ml/MLDashboard';
+import { MobileDashboard } from '../components/ml/MobileDashboard';
 import { MLQuestions } from '../components/ml/MLQuestions';
 import { MLCatalog } from '../components/ml/MLCatalog';
 import { MLSales } from '../components/ml/MLSales';
@@ -45,7 +46,16 @@ export const MercadoLivre = ({ theme }: { theme: string }) => {
 
       {/* Conteúdo das abas */}
       <div>
-        {activeTab === 'dashboard' && <MLDashboard theme={theme} />}
+        {activeTab === 'dashboard' && (
+          <>
+            <div className="hidden md:block">
+              <MLDashboard theme={theme} />
+            </div>
+            <div className="md:hidden">
+              <MobileDashboard theme={theme} />
+            </div>
+          </>
+        )}
         {activeTab === 'sales' && <MLSales theme={theme} />}
         {activeTab === 'questions' && <MLQuestions theme={theme} />}
         {activeTab === 'catalog' && <MLCatalog theme={theme} />}

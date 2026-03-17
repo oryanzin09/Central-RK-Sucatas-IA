@@ -68,10 +68,19 @@ import {
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
 import { FloatingAIChat } from './components/FloatingAIChat';
+import { CustomDropdown } from './components/CustomDropdown';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { FreteView } from './components/FreteView';
 import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
 import { io } from 'socket.io-client';
+
+const dropdownClass = (theme: string) => cn(
+  "w-full border rounded-xl py-2 px-4 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
+  theme === 'dark' 
+    ? "bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-700" 
+    : "bg-white border-zinc-200 text-zinc-900 hover:border-zinc-300"
+);
 
 // Global Data Context
 export const DataContext = createContext<{
@@ -446,6 +455,7 @@ const DashboardView = ({
 }: any) => {
   const { inventory, sales, loading, refreshData, showSensitiveInfo, setShowSensitiveInfo } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
+  const [mlSalesSubTab, setMlSalesSubTab] = useState('pending');
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -516,9 +526,22 @@ const DashboardView = ({
       valorSaidasMes,
       totalSaidasMes: saidasMes.length,
       ticketMedio,
-      ultimasVendas: [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime()).slice(0, 5)
+      ultimasVendas: [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
     };
   }, [inventory, sales, mlData, source]);
+
+  const filteredSales = useMemo(() => {
+    if (source === 'estoque') return metrics.ultimasVendas;
+    return metrics.ultimasVendas.filter((sale: any) => {
+      if (mlSalesSubTab === 'pending') return !sale.has_dispute && sale.shipping_status === 'ready_to_print';
+      if (mlSalesSubTab === 'waiting') return !sale.has_dispute && sale.shipping_status === 'pending';
+      if (mlSalesSubTab === 'dispute') return sale.has_dispute;
+      if (mlSalesSubTab === 'shipped') return sale.shipping_status === 'shipped';
+      if (mlSalesSubTab === 'delivered') return sale.shipping_status === 'delivered';
+      if (mlSalesSubTab === 'all') return true;
+      return false;
+    });
+  }, [metrics.ultimasVendas, mlSalesSubTab, source]);
 
   // Gráfico Vendas por Dia (últimos 30 dias)
   const chartData = useMemo(() => {
@@ -591,135 +614,121 @@ const DashboardView = ({
   return (
     <>
       <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <h2 className={cn("text-2xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+      <div className="space-y-4 mb-6">
+        {/* Linha 1: Título e Ações Principais */}
+        <div className="flex items-center justify-between">
+          <h2 className={cn("text-3xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
             Dashboard <span className="text-violet-500">RK</span>
           </h2>
           
-          {/* Toggle de Fonte de Dados */}
-          <div className={cn(
-            "flex p-1 rounded-xl border transition-all",
-            theme === 'dark' ? "bg-zinc-900/80 border-zinc-800" : "bg-zinc-100 border-zinc-200"
-          )}>
-            <button
-              onClick={() => onToggleSource('estoque')}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                source === 'estoque'
-                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
-                  : "text-zinc-500 hover:text-zinc-300"
-              )}
-            >
-              <Package size={14} />
-              Estoque
-            </button>
-            <button
-              onClick={() => onToggleSource('mercadolivre')}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2",
-                source === 'mercadolivre'
-                  ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                  : "text-zinc-500 hover:text-zinc-300"
-              )}
-            >
-              <TrendingUp size={14} />
-              Mercado Livre
-            </button>
-          </div>
-          
-          {/* Toggle de Informações Sensíveis */}
-          <button
-            onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
-              theme === 'dark' 
-                ? "bg-zinc-800/50 border-zinc-700 text-zinc-300 hover:bg-zinc-800" 
-                : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-            )}
-          >
-            {showSensitiveInfo ? <EyeOff size={14} /> : <Eye size={14} />}
-            {showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
-          </button>
-        </div>
-      </div>
-
-        {source === 'mercadolivre' && (
-            <div className="flex items-center gap-2 ml-4">
-              <select
-                value={mlPeriod}
-                onChange={(e) => setMlPeriod(e.target.value)}
+          <div className="flex items-center gap-2">
+            {/* Toggle de Fonte de Dados */}
+            <div className={cn(
+              "flex p-1 rounded-full border transition-all",
+              theme === 'dark' ? "bg-zinc-900/80 border-zinc-800" : "bg-zinc-100 border-zinc-200"
+            )}>
+              <button
+                onClick={() => onToggleSource('estoque')}
                 className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-bold border outline-none transition-all",
-                  theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"
+                  "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
+                  source === 'estoque'
+                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                    : "text-zinc-500 hover:text-zinc-300"
                 )}
               >
-                <option value="7d">Últimos 7 dias</option>
-                <option value="15d">Últimos 15 dias</option>
-                <option value="30d">Últimos 30 dias</option>
-                <option value="60d">Últimos 60 dias</option>
-                <option value="custom">Data Específica</option>
-              </select>
-
-              {mlPeriod === 'custom' && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={mlCustomDate.start}
-                    onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-bold border outline-none transition-all",
-                      theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"
-                    )}
-                  />
-                  <span className="text-zinc-500 text-xs">até</span>
-                  <input
-                    type="date"
-                    value={mlCustomDate.end}
-                    onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
-                    className={cn(
-                      "px-3 py-1.5 rounded-lg text-xs font-bold border outline-none transition-all",
-                      theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-300" : "bg-white border-zinc-200 text-zinc-700"
-                    )}
-                  />
-                </div>
-              )}
-              {isMlDashboardLoading && <Loader2 className="animate-spin text-amber-500" size={16} />}
+                <Package size={14} />
+                Estoque
+              </button>
+              <button
+                onClick={() => onToggleSource('mercadolivre')}
+                className={cn(
+                  "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
+                  source === 'mercadolivre'
+                    ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                <TrendingUp size={14} />
+                M. Livre
+              </button>
             </div>
-          )}
-        </div>
 
-        <div className="flex items-center gap-2">
-          {source === 'mercadolivre' && (
+            {/* Botão de Sincronizar */}
             <button 
-              onClick={() => onTabChange('mercadolivre')}
+              onClick={refreshData}
+              disabled={loading}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+                "p-2 rounded-full transition-all border",
                 theme === 'dark' 
-                  ? "bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20" 
-                  : "bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100"
+                  ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                  : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
               )}
+              title="Sincronizar Dados"
             >
-              <ExternalLink size={14} />
-              Gerenciar ML
+              <RefreshCw size={18} className={cn(loading && "animate-spin")} />
             </button>
-          )}
-          <button 
-            onClick={refreshData}
-            disabled={loading}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
-              theme === 'dark' 
-                ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-                : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
-            )}
-          >
-            <RefreshCw size={14} className={cn(loading && "animate-spin")} />
-            {loading ? "Sincronizando..." : "Sincronizar"}
-          </button>
+            
+            {/* Toggle de Informações Sensíveis */}
+            <button
+              onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
+              className={cn(
+                "p-2 rounded-full transition-all border",
+                theme === 'dark' 
+                  ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                  : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+              )}
+              title={showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
+            >
+              {showSensitiveInfo ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
         </div>
 
-      {/* Cards de Resumo Dinâmicos */}
+        {/* Linha 2: Filtro de Período (apenas ML) */}
+        {source === 'mercadolivre' && (
+          <div className="flex items-center gap-2">
+            <CustomDropdown
+              value={mlPeriod}
+              onChange={setMlPeriod}
+              theme={theme}
+              options={[
+                { value: '7d', label: 'Últimos 7 dias' },
+                { value: '15d', label: 'Últimos 15 dias' },
+                { value: '30d', label: 'Últimos 30 dias' },
+                { value: '60d', label: 'Últimos 60 dias' },
+                { value: 'custom', label: 'Data Específica' },
+              ]}
+              className="w-48"
+            />
+
+            {mlPeriod === 'custom' && (
+              <div className="flex items-center gap-1 pr-2">
+                <input
+                  type="date"
+                  value={mlCustomDate.start}
+                  onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
+                    theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
+                  )}
+                />
+                <span className="text-zinc-500 text-xs font-bold">a</span>
+                <input
+                  type="date"
+                  value={mlCustomDate.end}
+                  onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
+                    theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
+                  )}
+                />
+              </div>
+            )}
+            {isMlDashboardLoading && <Loader2 className="animate-spin text-amber-500 mr-2" size={16} />}
+          </div>
+        )}
+      </div>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {source === 'estoque' ? (
           <>
@@ -826,7 +835,7 @@ const DashboardView = ({
               )}
             </div>
           </div>
-          <div className="h-[300px]">
+          <div className="h-[300px] hidden sm:block">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
@@ -872,6 +881,32 @@ const DashboardView = ({
                 )}
               </AreaChart>
             </ResponsiveContainer>
+          </div>
+
+          {/* Mobile Simplified View */}
+          <div className="sm:hidden space-y-3">
+            {chartData.slice(-5).reverse().map((day: any, i: number) => (
+              <div key={i} className={cn(
+                "flex items-center justify-between p-3 rounded-xl border",
+                theme === 'dark' ? "bg-zinc-950/50 border-zinc-800" : "bg-zinc-50 border-zinc-200"
+              )}>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase">{day.label}</span>
+                  <span className={cn("text-xs font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
+                    {source === 'estoque' ? "Resumo do dia" : "Vendas ML"}
+                  </span>
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-sm font-bold text-emerald-500">+{formatCurrency(day.vendas)}</span>
+                  {source === 'estoque' && day.saidas > 0 && (
+                    <span className="text-[10px] font-bold text-rose-500">-{formatCurrency(day.saidas)}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+            <p className="text-[10px] text-center text-zinc-500 font-bold uppercase tracking-widest pt-2">
+              Últimos 5 dias
+            </p>
           </div>
         </div>
 
@@ -974,9 +1009,6 @@ const DashboardView = ({
             </div>
           )}
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Últimas Vendas / Pedidos ML */}
         <div className={cn(
           "border rounded-2xl overflow-hidden transition-all duration-300",
@@ -994,9 +1026,10 @@ const DashboardView = ({
             <History size={16} className="text-zinc-500" />
           </div>
           
-          {source === 'estoque' ? (
+          {source === 'estoque' ?
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              {/* Desktop Table */}
+              <table className="hidden md:table w-full text-left text-sm">
                 <thead>
                   <tr className={cn(
                     "text-[10px] uppercase font-bold tracking-wider",
@@ -1009,7 +1042,7 @@ const DashboardView = ({
                   </tr>
                 </thead>
                 <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
-                  {metrics.ultimasVendas.map((sale: any) => (
+                  {metrics.ultimasVendas.slice(0, 5).map((sale: any) => (
                     <tr 
                       key={sale.id} 
                       onClick={() => onSelectItem(sale)}
@@ -1042,42 +1075,162 @@ const DashboardView = ({
                   ))}
                 </tbody>
               </table>
+
+              {/* Mobile Cards */}
+              <div className="md:hidden flex flex-col divide-y divide-zinc-800/30">
+                {metrics.ultimasVendas.slice(0, 5).map((sale: any) => (
+                  <div 
+                    key={sale.id}
+                    onClick={() => onSelectItem(sale)}
+                    className="p-4 flex flex-col gap-2 active:bg-zinc-800/20 transition-colors"
+                  >
+                    <div className="flex justify-between items-start gap-2">
+                      <span className={cn("font-bold text-sm line-clamp-2", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
+                        {sale.nome}
+                      </span>
+                      <span className="text-emerald-400 font-bold text-sm whitespace-nowrap">
+                        {formatCurrency(sale.valor)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                        theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50" : "bg-zinc-100 text-zinc-600"
+                      )}>
+                        {sale.tipo}
+                      </span>
+                      <span className="text-zinc-500 text-[10px] font-medium">
+                        {new Date(sale.data).toLocaleDateString('pt-BR')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          ) : (
+          :
             <div className="flex flex-col gap-4 p-4">
               {/* Resumo de Envios */}
               <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-2 scrollbar-hide">
-                <button className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
-                  theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900"
-                )}>
+                <button 
+                  onClick={() => setMlSalesSubTab('pending')}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                    mlSalesSubTab === 'pending' 
+                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  )}
+                >
                   Envios pendentes
-                  <span className="bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'ready_to_print' || s.shipping_status === 'pending').length}
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                    mlSalesSubTab === 'pending' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                  )}>
+                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'ready_to_print').length}
                   </span>
                 </button>
-                <button className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
-                  theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50"
-                )}>
+
+                <button 
+                  onClick={() => setMlSalesSubTab('waiting')}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                    mlSalesSubTab === 'waiting' 
+                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  )}
+                >
+                  Aguardando
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                    mlSalesSubTab === 'waiting' ? "bg-amber-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                  )}>
+                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'pending').length}
+                  </span>
+                </button>
+
+                {metrics.ultimasVendas.some((s: any) => s.has_dispute) && (
+                  <button 
+                    onClick={() => setMlSalesSubTab('dispute')}
+                    className={cn(
+                      "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                      mlSalesSubTab === 'dispute' 
+                        ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                        : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                    )}
+                  >
+                    Mediações
+                    <span className={cn(
+                      "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                      mlSalesSubTab === 'dispute' ? "bg-red-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                    )}>
+                      {metrics.ultimasVendas.filter((s: any) => s.has_dispute).length}
+                    </span>
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => setMlSalesSubTab('shipped')}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                    mlSalesSubTab === 'shipped' 
+                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  )}
+                >
                   Em trânsito
-                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")}>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                    mlSalesSubTab === 'shipped' ? "bg-violet-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                  )}>
                     {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'shipped').length}
                   </span>
                 </button>
-                <button className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
-                  theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50"
-                )}>
+                <button 
+                  onClick={() => setMlSalesSubTab('delivered')}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                    mlSalesSubTab === 'delivered' 
+                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  )}
+                >
                   Finalizadas
-                  <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full", theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-200 text-zinc-600")}>
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                    mlSalesSubTab === 'delivered' ? "bg-emerald-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                  )}>
                     {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'delivered').length}
+                  </span>
+                </button>
+                <button 
+                  onClick={() => setMlSalesSubTab('all')}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                    mlSalesSubTab === 'all' 
+                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  )}
+                >
+                  Todas
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                    mlSalesSubTab === 'all' ? "bg-zinc-600 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                  )}>
+                    {metrics.ultimasVendas.length}
                   </span>
                 </button>
               </div>
 
-              {metrics.ultimasVendas.map((sale: any) => {
+              {filteredSales.map((sale: any) => {
                 const getShippingStatusInfo = (sale: any) => {
+                  if (sale.has_dispute) {
+                    return {
+                      title: 'Mediação em curso',
+                      titleColor: 'text-red-500',
+                      description: 'Responda à mediação para prosseguir com a venda.',
+                      buttonText: 'Responder mediação',
+                      buttonAction: 'dispute'
+                    };
+                  }
                   if (sale.shipping_status === 'ready_to_print') {
                     return {
                       title: 'Etiqueta pronta para imprimir',
@@ -1218,13 +1371,14 @@ const DashboardView = ({
                   </div>
                 </div>
               )})}
-              {metrics.ultimasVendas.length === 0 && (
-                <div className="text-center py-8 text-zinc-500">
-                  Nenhuma venda encontrada no período.
+              {filteredSales.length === 0 && (
+                <div className="text-center py-12 px-4 border-2 border-dashed border-zinc-800 rounded-2xl">
+                  <Package className="mx-auto text-zinc-700 mb-3 opacity-20" size={40} />
+                  <p className="text-zinc-500 font-medium">Nenhuma encomenda nesta categoria.</p>
                 </div>
               )}
             </div>
-          )}
+          }
         </div>
 
         {/* Últimos Itens / Anúncios Recentes ML */}
@@ -1298,7 +1452,6 @@ const DashboardView = ({
               </tbody>
             </table>
           </div>
-        </div>
       </div>
 
       {/* Modal de Transações por Tipo */}
@@ -1423,24 +1576,12 @@ const DashboardView = ({
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
               )}
             >
-              <div className="p-6 border-b border-zinc-800/50 flex items-center justify-between bg-zinc-900/50">
-                <div>
+              <div className="p-6 border-b border-zinc-800/50 flex flex-col gap-4 bg-zinc-900/50">
+                <div className="flex items-center justify-between">
                   <h3 className="text-xl font-bold text-white flex items-center gap-3">
                     <Package className="text-amber-500" />
-                    Todos os Anúncios Mercado Livre
+                    Anúncios Ativos
                   </h3>
-                  <p className="text-zinc-500 text-sm mt-1">
-                    Listagem completa de anúncios ativos
-                  </p>
-                </div>
-                <div className="flex items-center gap-4">
-                  <input 
-                    type="text"
-                    placeholder="Buscar anúncio..."
-                    value={mlSearchTerm}
-                    onChange={(e) => { setMlSearchTerm(e.target.value); setMlCurrentPage(1); }}
-                    className="px-4 py-2 rounded-xl bg-zinc-800 text-white text-sm border border-zinc-700 focus:outline-none focus:border-amber-500"
-                  />
                   <button 
                     onClick={() => setShowAllMlAds(false)}
                     className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 transition-colors"
@@ -1448,6 +1589,13 @@ const DashboardView = ({
                     <X size={24} />
                   </button>
                 </div>
+                <input 
+                  type="text"
+                  placeholder="Buscar peça ou moto..."
+                  value={mlSearchTerm}
+                  onChange={(e) => { setMlSearchTerm(e.target.value); setMlCurrentPage(1); }}
+                  className="w-full px-4 py-3 rounded-xl bg-zinc-800 text-white text-sm border border-zinc-700 focus:outline-none focus:border-amber-500"
+                />
               </div>
 
               <div className="flex-1 overflow-auto p-0">
@@ -1457,7 +1605,44 @@ const DashboardView = ({
                     <p className="text-zinc-500 font-bold animate-pulse">Buscando anúncios...</p>
                   </div>
                 ) : (
-                  <table className="w-full text-left text-sm border-collapse">
+                  <>
+                    {/* Mobile View */}
+                    <div className="md:hidden p-4 space-y-3">
+                      {paginatedMlListings.map((item) => {
+                        // Heuristic: extract moto name from title
+                        // Assuming title format: "Peça Moto" or "Peça (Moto)"
+                        const title = item.titulo || item.id;
+                        const parts = title.split(/\s\(/)[0].split(/\s/);
+                        const motoName = parts.slice(-2).join(' ');
+                        const pieceName = parts.slice(0, -2).join(' ') || title;
+                        
+                        return (
+                          <div 
+                            key={item.id}
+                            onClick={() => window.open(item.link, '_blank')}
+                            className={cn(
+                              "p-3 rounded-2xl border flex items-center gap-3 transition-colors cursor-pointer",
+                              theme === 'dark' ? "bg-zinc-800/40 border-zinc-700 hover:bg-zinc-800" : "bg-white border-zinc-200 hover:bg-zinc-50"
+                            )}
+                          >
+                            <img src={item.thumbnail} className="w-16 h-16 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="font-bold text-sm truncate">{pieceName}</span>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-emerald-500 font-black text-sm">
+                                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.preco) || 0)}
+                                </span>
+                                <span className="text-[10px] bg-zinc-700 text-zinc-300 px-2 py-0.5 rounded-full font-medium">
+                                  {motoName}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Desktop View */}
+                    <table className="hidden md:table w-full text-left text-sm border-collapse">
                     <thead className="sticky top-0 z-10">
                       <tr className={cn(
                         "text-[10px] uppercase font-bold tracking-wider",
@@ -1514,6 +1699,7 @@ const DashboardView = ({
                       ))}
                     </tbody>
                   </table>
+                  </>
                 )}
               </div>
               
@@ -1540,8 +1726,9 @@ const DashboardView = ({
           </div>
         )}
       </AnimatePresence>
-    </>
-  );
+    </div>
+  </>
+);
 };
 
 const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void }) => {
@@ -1835,6 +2022,17 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     }
   };
 
+  useEffect(() => {
+    const checkMobile = () => {
+      if (window.innerWidth < 768) {
+        setViewMode('card');
+      }
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   if (loading && items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
@@ -1896,12 +2094,12 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     <div className="space-y-4">
       {/* Toolbar */}
       <div className={cn(
-        "border p-4 rounded-2xl flex flex-wrap items-center gap-4 transition-all duration-300",
+        "border p-4 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center gap-4 transition-all duration-300",
         theme === 'dark' 
           ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
           : "bg-white border-zinc-200 shadow-sm"
       )}>
-        <div className="flex-1 min-w-[300px] relative">
+        <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
           <input 
             type="text" 
@@ -1909,7 +2107,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className={cn(
-              "w-full border rounded-xl py-2 pl-10 pr-4 text-sm outline-none transition-all duration-200",
+              "w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none transition-all duration-200",
               theme === 'dark' 
                 ? "bg-zinc-950/50 border-zinc-800 text-zinc-200 focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/10" 
                 : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
@@ -1917,7 +2115,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
           />
         </div>
 
-        <div className="flex items-center gap-4 flex-wrap">
+        <div className="grid grid-cols-2 lg:flex items-center gap-3">
           <div className="flex flex-col gap-1">
             <span className="text-[10px] uppercase font-bold text-zinc-500 ml-1 tracking-wider">Categoria</span>
             <select 
@@ -1955,92 +2153,86 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
               ))}
             </select>
           </div>
+        </div>
 
-          <label className="flex items-center gap-2 cursor-pointer group mt-4">
-            <div className={cn(
-              "w-5 h-5 rounded border flex items-center justify-center transition-all duration-200",
-              onlyWithStock 
-                ? "bg-violet-600 border-violet-600 shadow-[0_0_10px_rgba(139,92,246,0.3)]" 
-                : theme === 'dark' ? "border-zinc-700 group-hover:border-zinc-500" : "border-zinc-300 group-hover:border-zinc-400"
-            )} onClick={() => setOnlyWithStock(!onlyWithStock)}>
-              {onlyWithStock && <Check className="text-white" size={14} />}
-            </div>
-            <span className={cn(
-              "text-xs font-bold uppercase tracking-wider transition-colors",
-              theme === 'dark' ? "text-zinc-500 group-hover:text-zinc-300" : "text-zinc-500"
-            )}>Com estoque</span>
-          </label>
+        <div className="flex flex-wrap items-center gap-2 justify-between">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setOnlyWithStock(!onlyWithStock)}>
+              <div className={cn(
+                "w-4 h-4 rounded border flex items-center justify-center transition-all",
+                onlyWithStock 
+                  ? "bg-violet-600 border-violet-600" 
+                  : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
+              )}>
+                {onlyWithStock && <Check className="text-white" size={10} />}
+              </div>
+              <span className="text-[10px] font-bold uppercase text-zinc-500">Estoque</span>
+            </label>
 
-          <label className="flex items-center gap-2 cursor-pointer group mt-4">
-            <div className={cn(
-              "w-5 h-5 rounded border flex items-center justify-center transition-all duration-200",
-              showWithPhotoFirst 
-                ? "bg-violet-600 border-violet-600 shadow-[0_0_10px_rgba(139,92,246,0.3)]" 
-                : theme === 'dark' ? "border-zinc-700 group-hover:border-zinc-500" : "border-zinc-300 group-hover:border-zinc-400"
-            )} onClick={() => setShowWithPhotoFirst(!showWithPhotoFirst)}>
-              {showWithPhotoFirst && <Check className="text-white" size={14} />}
-            </div>
-            <span className={cn(
-              "text-xs font-bold uppercase tracking-wider transition-colors",
-              theme === 'dark' ? "text-zinc-500 group-hover:text-zinc-300" : "text-zinc-500"
-            )}>Com foto primeiro</span>
-          </label>
-
-          <button 
-            onClick={clearFilters}
-            className={cn(
-              "px-4 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition-all mt-4",
-              theme === 'dark' ? "text-zinc-500 hover:text-white hover:bg-zinc-800/50" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
-            )}
-          >
-            Limpar Filtros
-          </button>
-
-          <div className="flex items-center gap-1 border rounded-xl p-1 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 mt-4">
-            <button 
-              onClick={() => setViewMode('table')}
-              className={cn(
-                "p-1.5 rounded-lg transition-all",
-                viewMode === 'table' 
-                  ? "bg-violet-600 text-white shadow-sm" 
-                  : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-              )}
-            >
-              <TableIcon size={16} />
-            </button>
-            <button 
-              onClick={() => setViewMode('card')}
-              className={cn(
-                "p-1.5 rounded-lg transition-all",
-                viewMode === 'card' 
-                  ? "bg-violet-600 text-white shadow-sm" 
-                  : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-              )}
-            >
-              <LayoutGrid size={16} />
-            </button>
+            <label className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setShowWithPhotoFirst(!showWithPhotoFirst)}>
+              <div className={cn(
+                "w-4 h-4 rounded border flex items-center justify-center transition-all",
+                showWithPhotoFirst 
+                  ? "bg-violet-600 border-violet-600" 
+                  : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
+              )}>
+                {showWithPhotoFirst && <Check className="text-white" size={10} />}
+              </div>
+              <span className="text-[10px] font-bold uppercase text-zinc-500">Fotos</span>
+            </label>
           </div>
 
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={clearFilters}
+              className="text-[10px] font-bold uppercase text-zinc-500 hover:text-zinc-300"
+            >
+              Limpar
+            </button>
+
+            <div className="flex items-center gap-0.5 border rounded-lg p-0.5 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
+              <button 
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  "p-1 rounded-md transition-all",
+                  viewMode === 'table' ? "bg-violet-600 text-white" : "text-zinc-500"
+                )}
+              >
+                <TableIcon size={14} />
+              </button>
+              <button 
+                onClick={() => setViewMode('card')}
+                className={cn(
+                  "p-1 rounded-md transition-all",
+                  viewMode === 'card' ? "bg-violet-600 text-white" : "text-zinc-500"
+                )}
+              >
+                <LayoutGrid size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
           <button 
             onClick={handleManualRefresh}
             disabled={loading || isRefreshing}
             className={cn(
-              "p-2 rounded-xl transition-all mt-4 border",
+              "p-2 rounded-lg transition-all border",
               theme === 'dark' 
-                ? "text-zinc-400 border-zinc-800/50 hover:text-white hover:bg-zinc-800/50" 
-                : "text-zinc-500 border-zinc-200 hover:text-zinc-900 hover:bg-zinc-100"
+                ? "text-zinc-400 border-zinc-800/50 hover:bg-zinc-800" 
+                : "text-zinc-500 border-zinc-200 hover:bg-zinc-100"
             )}
-            title="Atualizar estoque"
           >
-            <RefreshCw size={18} className={cn((loading || isRefreshing) && "animate-spin")} />
+            <RefreshCw size={16} className={cn((loading || isRefreshing) && "animate-spin")} />
           </button>
 
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="px-6 py-2 bg-violet-600 text-white rounded-xl hover:bg-violet-500 transition-all shadow-[0_8px_20px_rgba(139,92,246,0.3)] flex items-center gap-2 mt-4 font-bold tracking-tight"
+            className="flex-1 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-500 transition-all flex items-center justify-center gap-1.5 font-bold text-sm"
           >
-            <Plus size={18} />
-            Novo Item
+            <Plus size={16} />
+            Novo
           </button>
         </div>
       </div>
@@ -2139,17 +2331,17 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                   "transition-colors",
                   theme === 'dark' ? "bg-zinc-800/30" : "bg-zinc-50"
                 )}>
-                  <th className="px-6 py-4 w-10">
+                  <th className="px-3 py-2 w-10">
                     <div 
                       className={cn(
-                        "w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all duration-200",
+                        "w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all",
                         selectedIds.length === paginatedItems.length && paginatedItems.length > 0
-                          ? "bg-violet-600 border-violet-600 shadow-[0_0_8px_rgba(139,92,246,0.3)]" 
+                          ? "bg-violet-600 border-violet-600" 
                           : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
                       )}
                       onClick={toggleSelectAll}
                     >
-                      {selectedIds.length === paginatedItems.length && paginatedItems.length > 0 && <Check className="text-white" size={14} />}
+                      {selectedIds.length === paginatedItems.length && paginatedItems.length > 0 && <Check className="text-white" size={10} />}
                     </div>
                   </th>
                   {columns.map(col => (
@@ -2157,14 +2349,14 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                       key={col.key} 
                       onClick={() => handleSort(col.key)}
                       className={cn(
-                        "px-6 py-4 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-all duration-200 group",
+                        "px-3 py-2 text-[9px] font-bold uppercase tracking-wider cursor-pointer transition-all group",
                         theme === 'dark' ? "text-zinc-500 hover:bg-zinc-800/40" : "text-zinc-500 hover:bg-zinc-100",
                         sortConfig.key === col.key && (theme === 'dark' ? "text-violet-400 bg-violet-500/5" : "text-violet-600 bg-violet-50")
                       )}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         {col.label}
-                        <div className="flex flex-col text-[8px] leading-[4px] opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex flex-col text-[6px] leading-[3px] opacity-0 group-hover:opacity-100 transition-opacity">
                           <span className={cn(sortConfig.key === col.key && sortConfig.direction === 'asc' ? "text-violet-400" : "text-zinc-600")}>▲</span>
                           <span className={cn(sortConfig.key === col.key && sortConfig.direction === 'desc' ? "text-violet-400" : "text-zinc-600")}>▼</span>
                         </div>
@@ -2190,62 +2382,58 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                         : theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
                     )}
                   >
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-2">
                       <div 
                         className={cn(
-                          "w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all duration-200",
+                          "w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all",
                           selectedIds.includes(item.id) 
-                            ? "bg-violet-600 border-violet-600 shadow-[0_0_8px_rgba(139,92,246,0.3)] opacity-100" 
+                            ? "bg-violet-600 border-violet-600 opacity-100" 
                             : cn(
                                 "opacity-0 group-hover:opacity-100",
-                                theme === 'dark' ? "border-zinc-700 hover:border-zinc-500" : "border-zinc-300 hover:border-zinc-400"
+                                theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
                               )
                         )}
                         onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}
                       >
-                        {selectedIds.includes(item.id) && <Check className="text-white" size={14} />}
+                        {selectedIds.includes(item.id) && <Check className="text-white" size={10} />}
                       </div>
                     </td>
                     {columns.map(col => (
                       <td key={`${item.id}-${col.key}`} className={cn(
-                        "px-6 py-4 text-sm transition-colors",
+                        "px-3 py-2 text-xs transition-colors",
                         theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
                       )}>
                         {col.key === 'valor' ? (
-                          <span className={cn(
-                            "font-bold transition-colors text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]",
-                          )}>{formatCurrency(item[col.key])}</span>
+                          <span className="font-bold text-emerald-500">{formatCurrency(item[col.key])}</span>
                         ) : col.key === 'criado_em' ? (
-                          <span className="text-xs text-zinc-500 font-medium">{formatDate(item[col.key])}</span>
+                          <span className="text-[10px] text-zinc-500">{formatDate(item[col.key])}</span>
                         ) : col.key === 'ml_link' && item[col.key] ? (
                           <a 
                             href={item[col.key]} 
                             target="_blank" 
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="p-2 rounded-lg bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 transition-colors inline-block"
+                            className="p-1 rounded bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 inline-block"
                           >
-                            <ExternalLink size={16} />
+                            <ExternalLink size={12} />
                           </a>
                         ) : col.key === 'imagem' && item[col.key] ? (
                           <div className={cn(
-                            "w-10 h-10 rounded-lg overflow-hidden border transition-colors relative",
+                            "w-8 h-8 rounded-lg overflow-hidden border relative",
                             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
                           )}>
-                            <>
-                              <img 
-                                src={item[col.key]} 
-                                alt={item.nome} 
-                                className="w-full h-full object-cover" 
-                                referrerPolicy="no-referrer" 
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display = 'none';
-                                }}
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
-                                <Package size={16} className="text-zinc-400 opacity-50" />
-                              </div>
-                            </>
+                            <img 
+                              src={item[col.key]} 
+                              alt={item.nome} 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer" 
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).style.display = 'none';
+                              }}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+                              <Package size={12} className="text-zinc-400 opacity-50" />
+                            </div>
                           </div>
                         ) : col.key === 'categoria' ? (
                           <span className={cn(
@@ -2289,7 +2477,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             </table>
           </div>
         ) : (
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 bg-zinc-50/50 dark:bg-zinc-900/20">
+          <div className="p-3 md:p-6 grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 bg-zinc-50/50 dark:bg-zinc-900/20">
             {loading && items.length === 0 ? (
               Array(8).fill(0).map((_, i) => (
                 <div key={i} className={cn("h-64 rounded-2xl animate-pulse", theme === 'dark' ? "bg-zinc-800/50" : "bg-zinc-200/50")} />
@@ -2366,78 +2554,52 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                     </div>
                   )}
                   
-                  {/* Status Badge */}
-                  <div className="absolute bottom-3 left-3 flex gap-2">
-                    <span className={cn(
-                      "px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-lg backdrop-blur-md",
-                      item.estoque > 0 
-                        ? "bg-emerald-500/90 text-white" 
-                        : "bg-rose-500/90 text-white"
-                    )}>
-                      {item.estoque > 0 ? `${item.estoque} EM ESTOQUE` : 'ESGOTADO'}
-                    </span>
-                  </div>
+                {/* Status Badge */}
+                <div className="absolute top-3 left-3 flex gap-2">
+                  <span className={cn(
+                    "px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-md backdrop-blur-md",
+                    item.estoque > 0 
+                      ? "bg-emerald-500/90 text-white" 
+                      : "bg-rose-500/90 text-white"
+                  )}>
+                    {item.estoque > 0 ? `${item.estoque} UN` : 'ESGOTADO'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Content Section */}
+              <div className="p-3 md:p-4 flex flex-col flex-1">
+                <h4 className={cn(
+                  "font-bold text-sm md:text-base leading-tight line-clamp-2 mb-2",
+                  theme === 'dark' ? "text-zinc-100" : "text-zinc-900"
+                )}>
+                  {item.nome}
+                </h4>
+                
+                <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                  <span className={cn(
+                    "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                    theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
+                  )}>
+                    {item.categoria}
+                  </span>
+                  <span className={cn(
+                    "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
+                    theme === 'dark' ? "bg-violet-500/20 text-violet-400" : "bg-violet-100 text-violet-600"
+                  )}>
+                    {item.moto}
+                  </span>
                 </div>
 
-                {/* Content Section */}
-                <div className="p-4 flex flex-col flex-1">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <h4 className={cn(
-                      "font-bold text-base leading-tight line-clamp-2",
-                      theme === 'dark' ? "text-zinc-100" : "text-zinc-900"
-                    )}>
-                      {item.nome}
-                    </h4>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className={cn(
-                      "text-xs font-medium px-2 py-0.5 rounded-md",
-                      theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
-                    )}>
-                      {item.rk_id}
-                    </span>
-                    <span className={cn(
-                      "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md",
-                      theme === 'dark' ? "bg-violet-500/20 text-violet-400" : "bg-violet-100 text-violet-600"
-                    )}>
-                      {item.categoria}
-                    </span>
-                  </div>
+                <div className="mt-auto pt-3 border-t border-zinc-800/20 flex items-center justify-between">
+                  <span className="font-black text-emerald-500 text-sm">
+                    {formatCurrency(item.valor)}
+                  </span>
+                  <span className="text-[10px] text-zinc-500 font-mono">
+                    {item.rk_id}
+                  </span>
+                </div>
 
-                  <div className="mt-auto space-y-2">
-                    <div className={cn(
-                      "flex items-center justify-between text-sm p-2 rounded-lg",
-                      theme === 'dark' ? "bg-zinc-900/50" : "bg-zinc-50"
-                    )}>
-                      <span className="text-zinc-500">Moto</span>
-                      <span className={cn("font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>
-                        {item.moto || '-'}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-end justify-between pt-2">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Valor</span>
-                        <span className="text-lg font-black text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.2)]">
-                          {formatCurrency(item.valor)}
-                        </span>
-                      </div>
-                      
-                      {item.ml_link && (
-                        <a 
-                          href={item.ml_link} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="p-2 rounded-lg bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 transition-colors"
-                          title="Ver no Mercado Livre"
-                        >
-                          <ExternalLink size={16} />
-                        </a>
-                      )}
-                    </div>
-                  </div>
                 </div>
               </div>
             ))}
@@ -3224,7 +3386,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
         <Loader2 className="animate-spin text-violet-500" size={40} />
-        <p className="animate-pulse">Carregando vendas do Notion...</p>
+        <p className="animate-pulse">Sincronizando vendas...</p>
       </div>
     );
   }
@@ -3233,14 +3395,14 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     <div className="space-y-4">
       {/* Barra de Filtros */}
       <div className={cn(
-        "border p-6 rounded-2xl space-y-6 transition-all duration-300",
+        "border p-4 md:p-6 rounded-2xl space-y-4 md:space-y-6 transition-all duration-300",
         theme === 'dark' 
           ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
           : "bg-white border-zinc-200 shadow-sm"
       )}>
         {/* Busca e Atualizar */}
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex-1 min-w-[300px] relative">
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
             <input 
               type="text" 
@@ -3259,9 +3421,9 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
             />
           </div>
           
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Pagamento:</span>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 md:flex-none flex items-center gap-2 border rounded-xl px-3 py-2 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase whitespace-nowrap">Pagamento:</span>
               <select
                 value={paymentType}
                 onChange={(e) => {
@@ -3269,10 +3431,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "border rounded-xl py-2 px-3 text-xs outline-none transition-all cursor-pointer",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                  "bg-transparent text-xs outline-none transition-all cursor-pointer w-full",
+                  theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
                 )}
               >
                 {paymentTypes.map(type => (
@@ -3297,16 +3457,16 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
 
             <button 
               onClick={() => setIsModalOpen(true)}
-              className="bg-violet-600 hover:bg-violet-500 text-white px-6 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-[0_8px_20px_rgba(139,92,246,0.3)] font-bold tracking-tight"
+              className="flex-1 md:flex-none bg-violet-600 hover:bg-violet-500 text-white px-4 md:px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-[0_8px_20px_rgba(139,92,246,0.3)] font-bold tracking-tight"
             >
-              <ShoppingCart size={20} />
-              <span className="hidden sm:inline">Nova Venda</span>
+              <Plus size={20} />
+              <span className="whitespace-nowrap">Venda</span>
             </button>
           </div>
         </div>
 
         {/* Filtros Rápidos e Período */}
-        <div className="flex flex-wrap items-center justify-between gap-6 pt-2 border-t border-zinc-800/30">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-4 border-t border-zinc-800/30">
           <div className="flex flex-wrap items-center gap-2">
             {[
               { id: 'all', label: 'Tudo' },
@@ -3325,7 +3485,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border",
+                  "px-3 md:px-4 py-1.5 rounded-lg text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all border",
                   quickFilter === filter.id
                     ? "bg-violet-600 border-violet-500 text-white shadow-[0_8px_20px_rgba(139,92,246,0.3)]"
                     : theme === 'dark'
@@ -3338,8 +3498,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <div className="w-full sm:w-auto flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5">
               <Calendar size={14} className="text-zinc-500" />
               <input 
                 type="date"
@@ -3350,13 +3510,11 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "border rounded-lg py-1 px-2 text-xs outline-none transition-all",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                  "bg-transparent text-xs outline-none w-full",
+                  theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
                 )}
               />
-              <span className="text-zinc-500 text-xs font-bold uppercase tracking-wider">até</span>
+              <span className="text-zinc-500 text-xs">até</span>
               <input 
                 type="date"
                 value={endDate}
@@ -3366,80 +3524,71 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "border rounded-lg py-1 px-2 text-xs outline-none transition-all",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                  "bg-transparent text-xs outline-none w-full",
+                  theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
                 )}
               />
             </div>
-          </div>
-        </div>
 
-        {/* Indicadores e Limpar */}
-        {(searchTerm || quickFilter !== 'all' || startDate || endDate || paymentType !== 'Todos') && (
-          <div className="flex items-center justify-between pt-4 border-t border-zinc-800/30">
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-zinc-500 font-medium">
-                Mostrando <span className="text-violet-400 font-bold">{filteredItems.length}</span> vendas no período
-              </span>
-              <div className="w-px h-4 bg-zinc-800/50" />
-              <span className="text-zinc-500 font-medium">
-                Total filtrado: <span className="text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]">{formatCurrency(totalValue)}</span>
-              </span>
-            </div>
             <button 
               onClick={clearAllFilters}
-              className="flex items-center gap-2 text-xs text-zinc-500 hover:text-rose-400 font-bold uppercase tracking-wider transition-colors"
+              className={cn(
+                "w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border",
+                theme === 'dark'
+                  ? "bg-zinc-950 border-zinc-800/50 text-zinc-500 hover:text-zinc-200"
+                  : "bg-zinc-50 border-zinc-200 text-zinc-600 hover:text-zinc-900"
+              )}
             >
-              <X size={14} />
-              Limpar todos os filtros
+              Limpar
             </button>
           </div>
-        )}
+        </div>
       </div>
 
-      <div className={cn(
-        "border rounded-2xl overflow-hidden relative transition-all duration-300",
-        theme === 'dark' 
-          ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
-          : "bg-white border-zinc-200 shadow-sm"
-      )}>
+      {/* Tabela / Cards */}
+      <div className="space-y-4">
+        {/* Desktop Table */}
+        <div className={cn(
+          "hidden md:block border rounded-2xl overflow-hidden relative transition-all duration-300",
+          theme === 'dark' 
+            ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
+            : "bg-white border-zinc-200 shadow-sm"
+        )}>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[1000px]">
             <thead>
-              <tr className={cn(
-                "transition-colors",
-                theme === 'dark' ? "bg-zinc-800/30" : "bg-zinc-50"
-              )}>
-                <th className="px-6 py-4 w-10">
-                  <div 
-                    onClick={toggleSelectAll}
-                    className={cn(
-                      "w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all duration-200",
-                      selectedIds.length === paginatedItems.length && paginatedItems.length > 0
-                        ? "bg-violet-600 border-violet-600 shadow-[0_0_8px_rgba(139,92,246,0.3)]" 
-                        : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
-                    )}
-                  >
-                    {selectedIds.length === paginatedItems.length && paginatedItems.length > 0 && <Check className="text-white" size={14} />}
-                  </div>
-                </th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Peça</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Moto</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Valor</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Tipo</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Data</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">ID</th>
-                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500 text-right">Ações</th>
-              </tr>
+                <tr className={cn(
+                  "transition-colors",
+                  theme === 'dark' ? "bg-zinc-800/30" : "bg-zinc-50"
+                )}>
+                  <th className="px-6 py-4 w-10">
+                    <div 
+                      onClick={toggleSelectAll}
+                      className={cn(
+                        "w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all duration-200",
+                        selectedIds.length === paginatedItems.length && paginatedItems.length > 0
+                          ? "bg-violet-600 border-violet-600 shadow-[0_0_8px_rgba(139,92,246,0.3)]" 
+                          : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
+                      )}
+                    >
+                      {selectedIds.length === paginatedItems.length && paginatedItems.length > 0 && <Check className="text-white" size={14} />}
+                    </div>
+                  </th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Peça</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Moto</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500 text-emerald-500">Valor</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Tipo</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Data</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">ID</th>
+                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500 text-right">Ações</th>
+                </tr>
             </thead>
             <tbody className={cn(
               "divide-y transition-colors",
               theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100"
             )}>
               {loading && items.length === 0 ? (
-                Array(10).fill(0).map((_, i) => <SkeletonRow key={i} theme={theme} />)
+                Array(5).fill(0).map((_, i) => <SkeletonRow key={i} theme={theme} />)
               ) : paginatedItems.map((item) => (
                 <tr 
                   key={item.id} 
@@ -3460,11 +3609,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                       className={cn(
                         "w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all duration-200",
                         selectedIds.includes(item.id)
-                          ? "bg-violet-600 border-violet-600 shadow-[0_0_8px_rgba(139,92,246,0.3)] opacity-100" 
-                          : cn(
-                              "opacity-0 group-hover:opacity-100",
-                              theme === 'dark' ? "border-zinc-700 hover:border-zinc-500" : "border-zinc-300 hover:border-zinc-400"
-                            )
+                          ? "bg-violet-600 border-violet-600 shadow-[0_0_8px_rgba(139,92,246,0.3)]" 
+                          : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
                       )}
                     >
                       {selectedIds.includes(item.id) && <Check className="text-white" size={14} />}
@@ -3482,7 +3628,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   </td>
                   <td className="px-6 py-4 text-sm font-medium text-zinc-500">{item.moto}</td>
                   <td className="px-6 py-4">
-                    <span className="text-sm font-bold text-violet-400 drop-shadow-[0_0_8px_rgba(139,92,246,0.2)]">
+                    <span className="text-sm font-bold text-emerald-500">
                       {formatCurrency(item.valor)}
                     </span>
                   </td>
@@ -3534,35 +3680,133 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
             </tbody>
           </table>
         </div>
+      </div>
 
-        <div className={cn(
-          "p-4 border-t flex items-center justify-between transition-colors",
-          theme === 'dark' ? "bg-zinc-900/30 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
-        )}>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Total: {filteredItems.length} vendas</span>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
+        {/* Mobile Cards */}
+        <div className="grid grid-cols-1 gap-4 md:hidden">
+          {loading && items.length === 0 ? (
+            Array(3).fill(0).map((_, i) => (
+              <div key={i} className={cn(
+                "p-4 rounded-2xl border animate-pulse",
+                theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-white border-zinc-200"
+              )}>
+                <div className="flex justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-zinc-800" />
+                    <div className="space-y-2">
+                      <div className="w-24 h-4 bg-zinc-800 rounded" />
+                      <div className="w-16 h-3 bg-zinc-800 rounded" />
+                    </div>
+                  </div>
+                  <div className="w-20 h-6 bg-zinc-800 rounded" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="h-8 bg-zinc-800 rounded" />
+                  <div className="h-8 bg-zinc-800 rounded" />
+                </div>
+              </div>
+            ))
+          ) : paginatedItems.map((item) => (
+            <div 
+              key={item.id}
+              onClick={() => onSelectItem(item)}
               className={cn(
-                "p-1.5 border rounded-lg disabled:opacity-30 transition-all",
-                theme === 'dark' ? "border-zinc-800 hover:bg-zinc-800" : "border-zinc-200 hover:bg-zinc-100"
+                "p-4 rounded-2xl border transition-all active:scale-[0.98]",
+                theme === 'dark' 
+                  ? "bg-zinc-900/40 border-zinc-800/50" 
+                  : "bg-white border-zinc-200 shadow-sm"
               )}
             >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="text-xs font-bold text-zinc-400">Página {currentPage} de {totalPages}</span>
-            <button 
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages || totalPages === 0}
-              className={cn(
-                "p-1.5 border rounded-lg disabled:opacity-30 transition-all",
-                theme === 'dark' ? "border-zinc-800 hover:bg-zinc-800" : "border-zinc-200 hover:bg-zinc-100"
-              )}
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-3">
+                  {item.imagem && (
+                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-800/50">
+                      <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    </div>
+                  )}
+                  <div className="flex flex-col">
+                    <span className={cn("font-bold text-base", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>{item.nome}</span>
+                    <span className="text-[10px] text-zinc-500 uppercase">{item.numero_id}</span>
+                  </div>
+                </div>
+                <span className="text-lg font-bold text-emerald-500">{formatCurrency(item.valor)}</span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-y-2 text-xs mb-4">
+                <div className="flex flex-col">
+                  <span className="text-zinc-500 uppercase font-bold text-[9px]">Moto</span>
+                  <span className={theme === 'dark' ? "text-zinc-300" : "text-zinc-700"}>{item.moto}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-zinc-500 uppercase font-bold text-[9px]">Pagamento</span>
+                  <span className={theme === 'dark' ? "text-zinc-300" : "text-zinc-700"}>{item.tipo || 'Pix'}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-zinc-500 uppercase font-bold text-[9px]">Data</span>
+                  <span className={theme === 'dark' ? "text-zinc-300" : "text-zinc-700"}>{formatDate(item.data)}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-zinc-500 uppercase font-bold text-[9px]">ID</span>
+                  <span className="font-mono">{item.id.substring(0, 8)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-zinc-800/30">
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditSale(item);
+                  }}
+                  className="flex-1 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl flex items-center justify-center gap-2 text-xs font-bold"
+                >
+                  <Edit size={14} />
+                  Editar
+                </button>
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setItemToDelete(item.id);
+                    setIsDeleteConfirmOpen(true);
+                  }}
+                  className="flex-1 py-2 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center gap-2 text-xs font-bold"
+                >
+                  <Trash2 size={14} />
+                  Excluir
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Pagination */}
+      <div className={cn(
+        "p-4 border rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 transition-colors",
+        theme === 'dark' ? "bg-zinc-900/30 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
+      )}>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">Total: {filteredItems.length} vendas</span>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className={cn(
+              "p-2 border rounded-xl disabled:opacity-30 transition-all",
+              theme === 'dark' ? "border-zinc-800 hover:bg-zinc-800" : "border-zinc-200 hover:bg-zinc-100"
+            )}
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <span className="text-xs font-bold text-zinc-400">Página {currentPage} de {totalPages}</span>
+          <button 
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages || totalPages === 0}
+            className={cn(
+              "p-2 border rounded-xl disabled:opacity-30 transition-all",
+              theme === 'dark' ? "border-zinc-800 hover:bg-zinc-800" : "border-zinc-200 hover:bg-zinc-100"
+            )}
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
       </div>
 
@@ -4221,6 +4465,17 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   const [valorMinFilter, setValorMinFilter] = useState('');
   const [valorMaxFilter, setValorMaxFilter] = useState('');
   const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) {
+        setViewMode('card');
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const closeModals = () => {
     setIsModalOpen(false);
@@ -5232,7 +5487,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Status</label>
-                    <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")}>
+                    <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className={dropdownClass(theme)}>
                       <option value="">Selecione...</option>
                       <option value="Disponível">Disponível</option>
                       <option value="Em estoque">Em estoque</option>
@@ -5456,7 +5711,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Status</label>
-                    <select value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})} className={cn("w-full border rounded-xl py-2 px-4 text-sm", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200")}>
+                    <select value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})} className={dropdownClass(theme)}>
                       <option value="">Selecione...</option>
                       <option value="Disponível">Disponível</option>
                       <option value="Em estoque">Em estoque</option>
@@ -6289,12 +6544,25 @@ function AppContent() {
         ? "bg-[radial-gradient(ellipse_at_top,_#1a1b1f,_#09090b)] text-zinc-100" 
         : "bg-zinc-50 text-zinc-900"
     )}>
+      {/* Sidebar Backdrop for Mobile */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar */}
       <aside className={cn(
-        "fixed lg:sticky top-0 h-screen inset-y-0 left-0 z-50 transition-all duration-300 ease-in-out border-r",
+        "fixed md:sticky top-0 h-screen inset-y-0 left-0 z-50 transition-all duration-300 ease-in-out border-r hidden md:flex",
         theme === 'dark' ? "bg-zinc-950/50 border-zinc-800/50 backdrop-blur-xl" : "bg-white border-zinc-200 shadow-xl",
-        isSidebarOpen ? "w-64" : "w-20",
-        !isSidebarOpen && "lg:w-20"
+        isSidebarOpen ? "w-64 translate-x-0" : "w-20 -translate-x-full md:translate-x-0",
+        !isSidebarOpen && "md:w-20"
       )}>
         <div className={cn(
           "h-full flex flex-col p-4",
@@ -6407,13 +6675,13 @@ function AppContent() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 pb-16 md:pb-0">
         {/* Header */}
         <header className={cn(
-          "h-16 border-b backdrop-blur-md flex items-center justify-between px-6 sticky top-0 z-40 transition-colors",
+          "h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 transition-colors",
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
         )}>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className={cn(
@@ -6424,14 +6692,14 @@ function AppContent() {
               <Menu size={20} />
             </button>
             <h2 className={cn(
-              "text-lg font-semibold capitalize transition-colors",
+              "text-base md:text-lg font-semibold capitalize transition-colors truncate max-w-[120px] md:max-w-none",
               theme === 'dark' ? "text-white" : "text-zinc-900"
             )}>{activeTab}</h2>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
             <div className={cn(
-              "hidden md:flex items-center gap-2 border px-3 py-1.5 rounded-lg transition-colors focus-within:border-violet-500",
+              "hidden lg:flex items-center gap-2 border px-3 py-1.5 rounded-lg transition-colors focus-within:border-violet-500",
               theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400" : "bg-zinc-100 border-zinc-200 text-zinc-600"
             )}>
               <Search size={16} />
@@ -6464,7 +6732,7 @@ function AppContent() {
         </header>
 
         {/* Content Area */}
-        <div className="p-6 overflow-y-auto">
+        <div className="p-4 md:p-6 overflow-y-auto">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -6523,6 +6791,7 @@ function AppContent() {
           </AnimatePresence>
         </div>
       </main>
+      <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
       <FloatingAIChat theme={theme} />
       
       {/* Modal de Detalhes Global */}
