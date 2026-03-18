@@ -75,6 +75,61 @@ import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
 import { io } from 'socket.io-client';
 
+const modelosMotos = [
+  "CB300R", "XRE 300", "CG 150", "FALCON 400", "CG 160", "CG 125", 
+  "BIZ 125", "ADV", "BROS 160", "BIZ C100", "CB TWISTER 250", "DREAM 100",
+  "BROS 150", "POP 110i", "XRE 190", "CB 300R", "TWISTER 250", "CB 500F",
+  "POP 100", "CG 150", "CG 125", "CG 160", "START 125", "START 150",
+  "TITAN 125", "TITAN 150", "TITAN 160", "FAN 125", "FAN 150", "FAN 160",
+  "YBR", "FACTOR", "FAZER 250", "MT-03", "MT-09", "CROSSER", "XTZ 125E",
+  "XMAX", "FAZER 250", "YBR 125", "YBR 150", "FACTOR 125", "FACTOR 150",
+  "LANDER 250", "XT 660", "XTZ 125", "XTZ 150",
+  "STRADA 200", "50CC", "XY 50 QJET", "ITALIKA", "125E",
+  "CB 300", "XRE 300", "CG 150", "CG 125", "CG 160", "BIZ 125", "BIZ 100",
+  "BROS 150", "BROS 160", "POP 100", "POP 110", "TWISTER 250", "FALCON 400",
+  "FAZER 250", "YBR 125", "FACTOR 125", "XTZ 125", "CROSSER 150"
+];
+const modelosUnicos = [...new Set(modelosMotos)];
+
+function normalizarTexto(texto: string) {
+  return texto
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim();
+}
+
+function extrairModeloMoto(textoPeca: string) {
+  if (!textoPeca || textoPeca.length < 3) return '';
+  const textoNormalizado = normalizarTexto(textoPeca);
+  for (const modelo of modelosUnicos) {
+    const modeloNormalizado = normalizarTexto(modelo);
+    if (textoNormalizado.includes(modeloNormalizado)) return modelo;
+  }
+  for (const modelo of modelosUnicos) {
+    const modeloNormalizado = normalizarTexto(modelo);
+    const palavrasModelo = modeloNormalizado.split(' ');
+    if (palavrasModelo.length >= 2) {
+      let encontrouTodas = true;
+      let posicao = 0;
+      for (const palavra of palavrasModelo) {
+        const index = textoNormalizado.indexOf(palavra, posicao);
+        if (index === -1) { encontrouTodas = false; break; }
+        posicao = index + palavra.length;
+      }
+      if (encontrouTodas) return modelo;
+    }
+  }
+  const padraoNumerico = textoPeca.match(/\b(50|100|110|125|150|160|190|200|250|300|400|500|600|660|900|1000)\b/i);
+  if (padraoNumerico) {
+    const numero = padraoNumerico[0];
+    for (const modelo of modelosUnicos) {
+      if (modelo.includes(numero)) return modelo;
+    }
+  }
+  return '';
+}
+
 const dropdownClass = (theme: string) => cn(
   "w-full border rounded-xl py-2 px-4 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
   theme === 'dark' 
@@ -1738,6 +1793,39 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
   
+  const handleInventoryInlineEdit = (itemId: string, field: string) => {
+    setEditingCell({ itemId, field });
+  };
+
+  const handleInventoryInlineSave = async (itemId: string, field: string, value: string) => {
+    setEditingCell(null);
+    
+    const itemToUpdate = items.find(s => s.id === itemId);
+    if (!itemToUpdate || itemToUpdate[field as keyof typeof itemToUpdate] === value) return;
+
+    const updatedData = { [field]: field === 'valor' ? Number(value) : value };
+    
+    // Optimistic update
+    setInventory(prev => prev.map(item => item.id === itemId ? { ...item, ...updatedData } : item));
+
+    try {
+      const response = await fetch(`/api/inventory/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData)
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao atualizar item');
+      }
+      refreshData();
+    } catch (err: any) {
+      alert(err.message);
+      refreshData();
+    }
+  };
+  
   // Selection state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
@@ -1760,6 +1848,8 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [editingCell, setEditingCell] = useState<{ itemId: string, field: string } | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -1776,7 +1866,8 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     estoque: '1',
     ano: '',
     descricao: '',
-    ml_link: ''
+    ml_link: '',
+    imagem: ''
   });
 
   const handleManualRefresh = async () => {
@@ -1967,20 +2058,30 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     };
 
     try {
-      const response = await fetch('/api/inventory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) throw new Error('Erro ao salvar item');
-      
-      const newItem = await response.json();
-      
-      // Update state locally to avoid slow full refetch
-      setInventory(prev => [newItem, ...prev]);
+      if (editingItem) {
+        // Update
+        const response = await fetch(`/api/inventory/${editingItem.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Erro ao atualizar item');
+        const updatedItem = await response.json();
+        setInventory(prev => prev.map(item => item.id === editingItem.id ? updatedItem : item));
+      } else {
+        // Create
+        const response = await fetch('/api/inventory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Erro ao salvar item');
+        const newItem = await response.json();
+        setInventory(prev => [newItem, ...prev]);
+      }
       
       setIsModalOpen(false);
+      setEditingItem(null);
       setFormData({
         nome: '',
         categoria: '',
@@ -1991,7 +2092,8 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
         estoque: '1',
         ano: '',
         descricao: '',
-        ml_link: ''
+        ml_link: '',
+        imagem: ''
       });
     } catch (err: any) {
       alert(err.message);
@@ -2020,6 +2122,24 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
       setError(err.message);
       refreshData();
     }
+  };
+
+  const openEditModal = (item: any) => {
+    setEditingItem(item);
+    setFormData({
+      nome: item.nome || '',
+      categoria: item.categoria || '',
+      novaCategoria: '',
+      moto: item.moto || '',
+      outraMoto: '',
+      valor: item.valor ? item.valor.toString() : '',
+      estoque: item.estoque ? item.estoque.toString() : '1',
+      ano: item.ano || '',
+      descricao: item.descricao || '',
+      ml_link: item.ml_link || '',
+      imagem: item.imagem || ''
+    });
+    setIsModalOpen(true);
   };
 
   useEffect(() => {
@@ -2155,59 +2275,45 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 justify-between">
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setOnlyWithStock(!onlyWithStock)}>
-              <div className={cn(
-                "w-4 h-4 rounded border flex items-center justify-center transition-all",
-                onlyWithStock 
-                  ? "bg-violet-600 border-violet-600" 
-                  : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
-              )}>
-                {onlyWithStock && <Check className="text-white" size={10} />}
-              </div>
-              <span className="text-[10px] font-bold uppercase text-zinc-500">Estoque</span>
-            </label>
-
-            <label className="flex items-center gap-1.5 cursor-pointer group" onClick={() => setShowWithPhotoFirst(!showWithPhotoFirst)}>
-              <div className={cn(
-                "w-4 h-4 rounded border flex items-center justify-center transition-all",
-                showWithPhotoFirst 
-                  ? "bg-violet-600 border-violet-600" 
-                  : theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
-              )}>
-                {showWithPhotoFirst && <Check className="text-white" size={10} />}
-              </div>
-              <span className="text-[10px] font-bold uppercase text-zinc-500">Fotos</span>
-            </label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={clearFilters}
-              className="text-[10px] font-bold uppercase text-zinc-500 hover:text-zinc-300"
-            >
-              Limpar
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 mb-6 shadow-sm">
+          <div className="flex flex-wrap gap-4 items-center">
+            <div className="flex-1 min-w-[280px] relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Buscar por peça, ID ou descrição..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-full text-sm outline-none focus:ring-2 focus:ring-violet-500/50"
+              />
+            </div>
+            
+            <button className="flex items-center gap-2 px-6 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full font-bold text-sm text-zinc-900 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
+              <Filter size={18} /> Filtros
             </button>
-
-            <div className="flex items-center gap-0.5 border rounded-lg p-0.5 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
+            
+            <select 
+              value={sortConfig.key}
+              onChange={(e) => setSortConfig({ key: e.target.value, direction: 'desc' })}
+              className="px-4 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full font-bold text-sm text-zinc-900 dark:text-zinc-200 outline-none"
+            >
+              <option value="criado_em">Mais recentes</option>
+              <option value="valor">Preço</option>
+              <option value="nome">Nome</option>
+            </select>
+            
+            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-full border border-zinc-200 dark:border-zinc-700">
               <button 
                 onClick={() => setViewMode('table')}
-                className={cn(
-                  "p-1 rounded-md transition-all",
-                  viewMode === 'table' ? "bg-violet-600 text-white" : "text-zinc-500"
-                )}
+                className={cn("p-2 rounded-full transition-all", viewMode === 'table' ? "bg-white dark:bg-zinc-700 shadow-sm" : "text-zinc-500")}
               >
-                <TableIcon size={14} />
+                <TableIcon size={18} />
               </button>
               <button 
                 onClick={() => setViewMode('card')}
-                className={cn(
-                  "p-1 rounded-md transition-all",
-                  viewMode === 'card' ? "bg-violet-600 text-white" : "text-zinc-500"
-                )}
+                className={cn("p-2 rounded-full transition-all", viewMode === 'card' ? "bg-white dark:bg-zinc-700 shadow-sm" : "text-zinc-500")}
               >
-                <LayoutGrid size={14} />
+                <LayoutGrid size={18} />
               </button>
             </div>
           </div>
@@ -2313,13 +2419,17 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
           "p-6 border-b flex items-center justify-between transition-colors",
           theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
         )}>
-          <h3 className={cn(
-            "text-lg font-bold tracking-tight transition-colors",
-            theme === 'dark' ? "text-white" : "text-zinc-900"
-          )}>Estoque em Tempo Real</h3>
-          <div className="flex items-center gap-2 text-xs text-zinc-500 font-bold uppercase tracking-wider">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-            {filteredAndSortedItems.length} itens encontrados
+          <div className="flex items-center gap-2">
+            <h3 className={cn(
+              "text-lg font-bold tracking-tight transition-colors",
+              theme === 'dark' ? "text-white" : "text-zinc-900"
+            )}>📦 Catálogo de Peças</h3>
+            <span className={cn(
+              "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+              theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+            )}>
+              {filteredAndSortedItems.length} itens
+            </span>
           </div>
         </div>
         
@@ -2402,8 +2512,19 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                       <td key={`${item.id}-${col.key}`} className={cn(
                         "px-3 py-2 text-xs transition-colors",
                         theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
-                      )}>
-                        {col.key === 'valor' ? (
+                      )} onDoubleClick={() => handleInventoryInlineEdit(item.id, col.key)}>
+                        {editingCell?.itemId === item.id && editingCell?.field === col.key ? (
+                          <input 
+                            defaultValue={item[col.key]}
+                            onBlur={(e) => handleInventoryInlineSave(item.id, col.key, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleInventoryInlineSave(item.id, col.key, e.currentTarget.value);
+                              if (e.key === 'Escape') setEditingCell(null);
+                            }}
+                            autoFocus
+                            className="w-full bg-transparent border-b border-violet-500 outline-none"
+                          />
+                        ) : col.key === 'valor' ? (
                           <span className="font-bold text-emerald-500">{formatCurrency(item[col.key])}</span>
                         ) : col.key === 'criado_em' ? (
                           <span className="text-[10px] text-zinc-500">{formatDate(item[col.key])}</span>
@@ -2451,6 +2572,19 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                           </span>
                         ) : col.key === 'actions' ? (
                           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(item);
+                              }}
+                              className={cn(
+                                "p-2 rounded-lg transition-all",
+                                theme === 'dark' ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "text-zinc-400 hover:text-violet-600 hover:bg-violet-50"
+                              )}
+                              title="Editar item"
+                            >
+                              <Edit2 size={16} />
+                            </button>
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2705,11 +2839,11 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                   "text-xl font-bold flex items-center gap-2 transition-colors",
                   theme === 'dark' ? "text-white" : "text-zinc-900"
                 )}>
-                  <Plus className="text-violet-500" />
-                  Novo Item no Estoque
+                  {editingItem ? <Edit2 className="text-violet-500" /> : <Plus className="text-violet-500" />}
+                  {editingItem ? 'Editar Item' : 'Novo Item no Estoque'}
                 </h3>
                 <button 
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setEditingItem(null); }}
                   className={cn(
                     "p-2 rounded-full transition-colors",
                     theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"
@@ -2721,6 +2855,19 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
 
               <form onSubmit={handleSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">URL da Imagem</label>
+                    <input 
+                      type="url"
+                      value={formData.imagem}
+                      onChange={(e) => setFormData({...formData, imagem: e.target.value})}
+                      placeholder="https://..."
+                      className={cn(
+                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                      )}
+                    />
+                  </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome da Peça *</label>
                     <input 
@@ -3081,6 +3228,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingCell, setEditingCell] = useState<{ itemId: string, field: string } | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isBulkDeleteConfirmOpen, setIsBulkDeleteConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -3187,6 +3335,40 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
       data: sale.data ? new Date(sale.data).toISOString().split('T')[0] : ''
     });
     setIsEditModalOpen(true);
+  };
+
+  const handleInlineEdit = (itemId: string, field: string) => {
+    setEditingCell({ itemId, field });
+  };
+
+  const handleSaleInlineSave = async (itemId: string, field: string, value: string) => {
+    setEditingCell(null);
+    
+    const itemToUpdate = items.find(s => s.id === itemId);
+    if (!itemToUpdate || itemToUpdate[field as keyof typeof itemToUpdate] === value) return;
+
+    const updatedData = { [field]: field === 'valor' ? Number(value) : value };
+    
+    // Optimistic update
+    setSales(prev => prev.map(item => item.id === itemId ? { ...item, ...updatedData } : item));
+
+    try {
+      const response = await fetch(`/api/sales/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData)
+      });
+      
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.error || 'Falha ao atualizar venda');
+      }
+      // Refresh to ensure consistency
+      refreshData();
+    } catch (err: any) {
+      alert(err.message);
+      refreshData();
+    }
   };
 
   const handleUpdateSale = async (e: React.FormEvent) => {
@@ -3616,21 +3798,48 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                       {selectedIds.includes(item.id) && <Check className="text-white" size={14} />}
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4" onDoubleClick={() => handleInlineEdit(item.id, 'nome')}>
                     <div className="flex items-center gap-3">
                       {item.imagem && (
                         <div className="w-8 h-8 rounded-lg overflow-hidden border border-zinc-800/50">
                           <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         </div>
                       )}
-                      <span className={cn("text-sm font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>{item.nome}</span>
+                      {editingCell?.itemId === item.id && editingCell?.field === 'nome' ? (
+                        <input 
+                          defaultValue={item.nome}
+                          onBlur={(e) => handleSaleInlineSave(item.id, 'nome', e.target.value)}
+                          autoFocus
+                          className="w-full bg-transparent border-b border-violet-500 outline-none"
+                        />
+                      ) : (
+                        <span className={cn("text-sm font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>{item.nome}</span>
+                      )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm font-medium text-zinc-500">{item.moto}</td>
-                  <td className="px-6 py-4">
-                    <span className="text-sm font-bold text-emerald-500">
-                      {formatCurrency(item.valor)}
-                    </span>
+                  <td className="px-6 py-4 text-sm font-medium text-zinc-500" onDoubleClick={() => handleInlineEdit(item.id, 'moto')}>
+                    {editingCell?.itemId === item.id && editingCell?.field === 'moto' ? (
+                      <input 
+                        defaultValue={item.moto}
+                        onBlur={(e) => handleSaleInlineSave(item.id, 'moto', e.target.value)}
+                        autoFocus
+                        className="w-full bg-transparent border-b border-violet-500 outline-none"
+                      />
+                    ) : item.moto}
+                  </td>
+                  <td className="px-6 py-4" onDoubleClick={() => handleInlineEdit(item.id, 'valor')}>
+                    {editingCell?.itemId === item.id && editingCell?.field === 'valor' ? (
+                      <input 
+                        defaultValue={item.valor}
+                        onBlur={(e) => handleSaleInlineSave(item.id, 'valor', e.target.value)}
+                        autoFocus
+                        className="w-full bg-transparent border-b border-violet-500 outline-none"
+                      />
+                    ) : (
+                      <span className="text-sm font-bold text-emerald-500">
+                        {formatCurrency(item.valor)}
+                      </span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm">
                     {item.tipo && (
@@ -3842,12 +4051,27 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
 
               <form onSubmit={handleSaveSale} className="space-y-5">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Peça Vendida</label>
+                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nova Movimentação</label>
                   <input 
                     required
                     type="text" 
                     value={formData.nome}
-                    onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                    onChange={(e) => {
+                      const novoNome = e.target.value;
+                      setFormData(prev => {
+                        const novoEstado = {...prev, nome: novoNome};
+                        // Lógica de extração automática
+                        if (novoNome.length < 3) {
+                          novoEstado.moto = '';
+                        } else {
+                          const modelo = extrairModeloMoto(novoNome);
+                          if (modelo) {
+                            novoEstado.moto = modelo;
+                          }
+                        }
+                        return novoEstado;
+                      });
+                    }}
                     placeholder="Ex: Motor Honda CB 300"
                     className={cn(
                       "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
@@ -3879,7 +4103,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                       step="0.01"
                       value={formData.valor}
                       onChange={(e) => setFormData({...formData, valor: e.target.value})}
-                      placeholder="0,00"
+                      placeholder="R$ 0,00"
                       className={cn(
                         "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
                         theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
@@ -3891,20 +4115,21 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Pagamento</label>
-                    <select
+                    <CustomDropdown
+                      theme={theme}
                       value={formData.tipo}
-                      onChange={(e) => setFormData({...formData, tipo: e.target.value})}
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    >
-                      <option value="Pix">Pix</option>
-                      <option value="Cartão">Cartão</option>
-                      <option value="Dinheiro">Dinheiro</option>
-                      <option value="Mercado Livre">Mercado Livre</option>
-                      <option value="Transferência">Transferência</option>
-                    </select>
+                      onChange={(val) => setFormData({...formData, tipo: val})}
+                      options={[
+                        { value: 'CRÉDITO', label: 'CRÉDITO' },
+                        { value: 'DÉBITO', label: 'DÉBITO' },
+                        { value: 'DINHEIRO', label: 'DINHEIRO' },
+                        { value: 'MARCELO', label: 'MARCELO' },
+                        { value: 'PENDÊNCIA', label: 'PENDÊNCIA' },
+                        { value: 'PIX', label: 'PIX' },
+                        { value: 'VENDA MERCADO LIVRE', label: 'VENDA MERCADO LIVRE' },
+                        { value: 'SAÍDA', label: 'SAÍDA' },
+                      ]}
+                    />
                   </div>
 
                   <div className="space-y-1">
@@ -4028,20 +4253,21 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Pagamento</label>
-                    <select
+                    <CustomDropdown
+                      theme={theme}
                       value={editFormData.tipo}
-                      onChange={(e) => setEditFormData({...editFormData, tipo: e.target.value})}
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    >
-                      <option value="Pix">Pix</option>
-                      <option value="Cartão">Cartão</option>
-                      <option value="Dinheiro">Dinheiro</option>
-                      <option value="Mercado Livre">Mercado Livre</option>
-                      <option value="Transferência">Transferência</option>
-                    </select>
+                      onChange={(val) => setEditFormData({...editFormData, tipo: val})}
+                      options={[
+                        { value: 'CRÉDITO', label: 'CRÉDITO' },
+                        { value: 'DÉBITO', label: 'DÉBITO' },
+                        { value: 'DINHEIRO', label: 'DINHEIRO' },
+                        { value: 'MARCELO', label: 'MARCELO' },
+                        { value: 'PENDÊNCIA', label: 'PENDÊNCIA' },
+                        { value: 'PIX', label: 'PIX' },
+                        { value: 'VENDA MERCADO LIVRE', label: 'VENDA MERCADO LIVRE' },
+                        { value: 'SAÍDA', label: 'SAÍDA' },
+                      ]}
+                    />
                   </div>
 
                   <div className="space-y-1">
@@ -5487,13 +5713,17 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Status</label>
-                    <select value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})} className={dropdownClass(theme)}>
-                      <option value="">Selecione...</option>
-                      <option value="Disponível">Disponível</option>
-                      <option value="Em estoque">Em estoque</option>
-                      <option value="Desmontada">Desmontada</option>
-                      <option value="Vendida">Vendida</option>
-                    </select>
+                    <CustomDropdown
+                      theme={theme}
+                      value={formData.status}
+                      onChange={(val) => setFormData({...formData, status: val})}
+                      options={[
+                        { value: 'Disponível', label: 'Disponível' },
+                        { value: 'Em estoque', label: 'Em estoque' },
+                        { value: 'Desmontada', label: 'Desmontada' },
+                        { value: 'Vendida', label: 'Vendida' },
+                      ]}
+                    />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome NF</label>

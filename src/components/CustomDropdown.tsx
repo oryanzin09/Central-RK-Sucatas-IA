@@ -37,19 +37,19 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ options, value, 
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          "w-full flex items-center justify-between border rounded-xl py-2 px-4 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
+          "w-full flex items-center justify-between border rounded-xl py-2.5 px-4 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
           theme === 'dark' 
             ? "bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-700" 
             : "bg-white border-zinc-200 text-zinc-900 hover:border-zinc-300"
         )}
       >
-        <span>{selectedOption?.label || 'Selecione...'}</span>
-        <ChevronDown size={16} className={cn("transition-transform", isOpen ? "rotate-180" : "")} />
+        <span className="truncate">{selectedOption?.label || 'Selecione...'}</span>
+        <ChevronDown size={16} className={cn("transition-transform text-zinc-500", isOpen ? "rotate-180" : "")} />
       </button>
 
       {isOpen && (
         <div className={cn(
-          "absolute top-full left-0 w-full mt-2 rounded-xl border shadow-lg z-50 overflow-hidden",
+          "absolute top-full left-0 w-full mt-1.5 rounded-xl border shadow-xl z-50 overflow-y-auto max-h-60 py-1",
           theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
         )}>
           {options.map((option) => (
@@ -61,15 +61,18 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ options, value, 
                 setIsOpen(false);
               }}
               className={cn(
-                "w-full text-left px-4 py-2 text-sm transition-colors",
+                "w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between",
                 value === option.value
-                  ? "bg-violet-600 text-white"
+                  ? theme === 'dark' ? "bg-violet-600/20 text-violet-400" : "bg-violet-50 text-violet-600"
                   : theme === 'dark'
                     ? "text-zinc-300 hover:bg-zinc-800"
                     : "text-zinc-700 hover:bg-zinc-100"
               )}
             >
               {option.label}
+              {value === option.value && (
+                <div className={cn("w-2 h-2 rounded-full", theme === 'dark' ? "bg-violet-400" : "bg-violet-600")} />
+              )}
             </button>
           ))}
         </div>
