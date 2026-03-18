@@ -14,9 +14,12 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('30d');
 
-  const fetchData = async () => {
+  const fetchData = async (forceRefresh = false) => {
     setLoading(true);
     try {
+      if (forceRefresh) {
+        await mlApiFetch('/api/ml/cache/clear', { method: 'POST' });
+      }
       console.log(`🔍 Buscando dados do período: ${period}`);
       const result = await mlApiFetch(`/api/ml/dashboard?period=${period}`);
       console.log('📦 Resposta da API:', result);
@@ -58,22 +61,36 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
 
   return (
     <div className="space-y-6">
-      {/* Seletor de período */}
-      <div className="flex justify-end gap-2">
-        {['7d', '30d', '90d'].map(p => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={cn(
-              "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
-              period === p
-                ? "bg-violet-600 text-white"
-                : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-200 text-zinc-600 hover:text-zinc-900"
-            )}
-          >
-            {p === '7d' ? '7 dias' : p === '30d' ? '30 dias' : '90 dias'}
-          </button>
-        ))}
+      {/* Seletor de período e Sincronizar */}
+      <div className="flex justify-between items-center">
+        <button
+          onClick={() => fetchData(true)}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105 active:scale-95",
+            theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-200 text-zinc-600 hover:text-zinc-900"
+          )}
+          title="Sincronizar com Mercado Livre (Limpar Cache)"
+        >
+          <RefreshCw size={16} className={loading ? "animate-spin" : ""} />
+          <span>Sincronizar</span>
+        </button>
+
+        <div className="flex gap-2">
+          {['7d', '30d', '90d'].map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+                period === p
+                  ? "bg-violet-600 text-white"
+                  : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-200 text-zinc-600 hover:text-zinc-900"
+              )}
+            >
+              {p === '7d' ? '7 dias' : p === '30d' ? '30 dias' : '90 dias'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Cards de métricas */}
@@ -112,19 +129,96 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
         />
       </div>
 
-      {/* Gráficos placeholder - você pode adicionar dados reais depois */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Gráficos Reais */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={cn(
-          "border p-6 rounded-2xl h-[300px] flex items-center justify-center",
+          "lg:col-span-2 border p-6 rounded-2xl h-[400px] flex flex-col",
           theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
         )}>
-          <p className="text-zinc-500">Gráfico de vendas em breve</p>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className={cn("font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>Desempenho de Vendas</h3>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-violet-500"></div>
+              <span className="text-xs text-zinc-500">Faturamento Diário</span>
+            </div>
+          </div>
+          <div className="flex-1 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={data?.chartData || []}>
+                <defs>
+                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? "#27272a" : "#e4e4e7"} />
+                <XAxis 
+                  dataKey="label" 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fill: '#71717a' }}
+                  dy={10}
+                />
+                <YAxis 
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 10, fill: '#71717a' }}
+                  tickFormatter={(value) => `R$ ${value}`}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: theme === 'dark' ? '#18181b' : '#ffffff',
+                    borderColor: theme === 'dark' ? '#27272a' : '#e4e4e7',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    color: theme === 'dark' ? '#f4f4f5' : '#18181b'
+                  }}
+                  formatter={(value: number) => [formatCurrency(value), 'Vendas']}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="vendas" 
+                  stroke="#8b5cf6" 
+                  strokeWidth={3}
+                  fillOpacity={1} 
+                  fill="url(#colorSales)" 
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
         <div className={cn(
-          "border p-6 rounded-2xl h-[300px] flex items-center justify-center",
+          "border p-6 rounded-2xl flex flex-col",
           theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
         )}>
-          <p className="text-zinc-500">Distribuição por status</p>
+          <h3 className={cn("font-bold mb-6", theme === 'dark' ? "text-white" : "text-zinc-900")}>Vendas Recentes</h3>
+          <div className="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+            {data?.recentSales?.map((sale: any) => (
+              <div key={sale.id} className="flex items-center gap-3 group">
+                <div className="w-10 h-10 rounded-lg bg-zinc-800 overflow-hidden border border-zinc-700 flex-shrink-0">
+                  <img src={sale.thumbnail} alt="" className="w-full h-full object-cover" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={cn("text-xs font-bold truncate", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>{sale.cliente}</p>
+                  <p className="text-[10px] text-zinc-500 truncate">{sale.itens}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-bold text-emerald-500">{formatCurrency(sale.valor)}</p>
+                  <p className="text-[9px] text-zinc-500">{new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}</p>
+                </div>
+              </div>
+            ))}
+            {(!data?.recentSales || data.recentSales.length === 0) && (
+              <div className="flex flex-col items-center justify-center h-full text-zinc-500 italic text-sm py-10">
+                <ShoppingCart size={32} className="opacity-10 mb-2" />
+                <p>Nenhuma venda recente</p>
+              </div>
+            )}
+          </div>
+          <button className="w-full mt-4 py-2 text-xs font-bold text-zinc-500 hover:text-violet-500 transition-colors border-t border-zinc-800/50 pt-4">
+            Ver todas as vendas
+          </button>
         </div>
       </div>
 

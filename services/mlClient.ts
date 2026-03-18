@@ -143,8 +143,39 @@ class MLClient {
       await this.ensureUserId();
 
       console.log(`🔍 Buscando anúncios (status: ${status}, sort: ${sort}, limit: ${limit}, offset: ${offset})...`);
+      
+      // Se o limite for maior que 50, precisamos fazer múltiplas requisições
+      if (limit > 50) {
+        let allResults: string[] = [];
+        let currentOffset = offset;
+        let total = 0;
+        
+        while (allResults.length < limit) {
+          const currentLimit = Math.min(50, limit - allResults.length);
+          const response = await this.request(`/users/${this.userId}/items/search`, {
+            params: {
+              status: status === 'all' ? undefined : status,
+              sort,
+              limit: currentLimit,
+              offset: currentOffset
+            }
+          });
+          
+          total = response.paging?.total || 0;
+          if (!response.results || response.results.length === 0) break;
+          
+          allResults = [...allResults, ...response.results];
+          currentOffset += response.results.length;
+          
+          if (allResults.length >= total) break;
+        }
+        
+        return { total, results: allResults };
+      }
+
+      // Requisição simples para limite <= 50
       const params: any = {
-        limit: Math.min(limit, 50),
+        limit: limit,
         offset: offset,
         sort: sort
       };
@@ -281,6 +312,23 @@ class MLClient {
       return response;
     } catch (error) {
       console.error('Erro ao baixar etiqueta:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Atualiza um anúncio
+   */
+  async updateListing(itemId: string, data: any) {
+    try {
+      console.log(`📝 Atualizando anúncio ${itemId}...`);
+      const response = await this.request(`/items/${itemId}`, {
+        method: 'PUT',
+        data
+      });
+      return response;
+    } catch (error) {
+      console.error('Erro ao atualizar anúncio:', error);
       throw error;
     }
   }

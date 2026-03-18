@@ -69,27 +69,15 @@ import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
 import { FloatingAIChat } from './components/FloatingAIChat';
 import { CustomDropdown } from './components/CustomDropdown';
+import { CATEGORIAS_OFICIAIS, MOTOS_OFICIAIS, PAGAMENTOS_OFICIAIS } from './constants/lists';
 import { MobileBottomNav } from './components/MobileBottomNav';
 import { FreteView } from './components/FreteView';
 import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
 import { io } from 'socket.io-client';
 
-const modelosMotos = [
-  "CB300R", "XRE 300", "CG 150", "FALCON 400", "CG 160", "CG 125", 
-  "BIZ 125", "ADV", "BROS 160", "BIZ C100", "CB TWISTER 250", "DREAM 100",
-  "BROS 150", "POP 110i", "XRE 190", "CB 300R", "TWISTER 250", "CB 500F",
-  "POP 100", "CG 150", "CG 125", "CG 160", "START 125", "START 150",
-  "TITAN 125", "TITAN 150", "TITAN 160", "FAN 125", "FAN 150", "FAN 160",
-  "YBR", "FACTOR", "FAZER 250", "MT-03", "MT-09", "CROSSER", "XTZ 125E",
-  "XMAX", "FAZER 250", "YBR 125", "YBR 150", "FACTOR 125", "FACTOR 150",
-  "LANDER 250", "XT 660", "XTZ 125", "XTZ 150",
-  "STRADA 200", "50CC", "XY 50 QJET", "ITALIKA", "125E",
-  "CB 300", "XRE 300", "CG 150", "CG 125", "CG 160", "BIZ 125", "BIZ 100",
-  "BROS 150", "BROS 160", "POP 100", "POP 110", "TWISTER 250", "FALCON 400",
-  "FAZER 250", "YBR 125", "FACTOR 125", "XTZ 125", "CROSSER 150"
-];
-const modelosUnicos = [...new Set(modelosMotos)];
+const modelosMotos = MOTOS_OFICIAIS;
+const modelosUnicos = MOTOS_OFICIAIS;
 
 function normalizarTexto(texto: string) {
   return texto
@@ -126,6 +114,16 @@ function extrairModeloMoto(textoPeca: string) {
     for (const modelo of modelosUnicos) {
       if (modelo.includes(numero)) return modelo;
     }
+  }
+  return '';
+}
+
+function extrairCategoria(textoPeca: string) {
+  if (!textoPeca || textoPeca.length < 3) return '';
+  const textoNormalizado = normalizarTexto(textoPeca);
+  for (const categoria of CATEGORIAS_OFICIAIS) {
+    const categoriaNormalizada = normalizarTexto(categoria);
+    if (textoNormalizado.includes(categoriaNormalizada)) return categoria;
   }
   return '';
 }
@@ -1518,7 +1516,7 @@ const DashboardView = ({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className={cn(
-                "w-full max-w-4xl max-h-[80vh] overflow-hidden rounded-3xl border shadow-2xl flex flex-col",
+                "w-full max-w-4xl max-h-[80vh] overflow-visible rounded-3xl border shadow-2xl flex flex-col",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
               )}
             >
@@ -1627,7 +1625,7 @@ const DashboardView = ({
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               className={cn(
-                "w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl border shadow-2xl flex flex-col",
+                "w-full max-w-5xl max-h-[90vh] overflow-visible rounded-3xl border shadow-2xl flex flex-col",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
               )}
             >
@@ -2212,134 +2210,130 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
+      {/* Toolbar Harmonizada e Profissional */}
       <div className={cn(
-        "border p-4 rounded-2xl flex flex-col md:flex-row items-stretch md:items-center gap-4 transition-all duration-300",
+        "relative z-50 p-2 rounded-[2rem] flex flex-col lg:flex-row items-center gap-3 transition-all duration-300 shadow-2xl backdrop-blur-md border",
         theme === 'dark' 
-          ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
-          : "bg-white border-zinc-200 shadow-sm"
+          ? "bg-zinc-900/60 border-zinc-800/50 shadow-black/40" 
+          : "bg-white/80 border-zinc-200/60 shadow-zinc-200/50"
       )}>
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+        {/* Busca Principal */}
+        <div className="w-full lg:flex-1 relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={20} />
           <input 
             type="text" 
-            placeholder="🔍 Buscar peça, moto ou ID..." 
+            placeholder="Buscar por peça, moto ou ID..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className={cn(
-              "w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none transition-all duration-200",
+              "w-full rounded-[1.5rem] py-3.5 pl-12 pr-4 text-sm font-medium outline-none transition-all duration-300 border",
               theme === 'dark' 
-                ? "bg-zinc-950/50 border-zinc-800 text-zinc-200 focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/10" 
-                : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                ? "bg-zinc-950/40 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/5" 
+                : "bg-zinc-50/50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
             )}
           />
         </div>
 
-        <div className="grid grid-cols-2 lg:flex items-center gap-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-bold text-zinc-500 ml-1 tracking-wider">Categoria</span>
-            <select 
+        {/* Filtros e Controles */}
+        <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
+          {/* Categoria */}
+          <div className="flex-1 lg:flex-none">
+            <CustomDropdown
+              theme={theme}
               value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className={cn(
-                "border rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-violet-500/50 transition-all duration-200",
-                theme === 'dark' 
-                  ? "bg-zinc-950/50 border-zinc-800 text-zinc-200" 
-                  : "bg-white border-zinc-200 text-zinc-700"
-              )}
-            >
-              <option value="Todas">Todas</option>
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
+              onChange={setSelectedCategory}
+              options={[
+                { value: 'Todas', label: 'Categorias' },
+                ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat }))
+              ]}
+              className="w-full lg:w-48"
+            />
           </div>
 
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] uppercase font-bold text-zinc-500 ml-1 tracking-wider">Moto</span>
-            <select 
+          {/* Moto */}
+          <div className="flex-1 lg:flex-none">
+            <CustomDropdown
+              theme={theme}
               value={selectedMoto}
-              onChange={(e) => setSelectedMoto(e.target.value)}
-              className={cn(
-                "border rounded-xl py-2 px-3 text-sm focus:outline-none focus:border-violet-500/50 transition-all duration-200",
-                theme === 'dark' 
-                  ? "bg-zinc-950/50 border-zinc-800 text-zinc-200" 
-                  : "bg-white border-zinc-200 text-zinc-700"
-              )}
-            >
-              <option value="Todas">Todas</option>
-              {motos.map(moto => (
-                <option key={moto} value={moto}>{moto}</option>
-              ))}
-            </select>
+              onChange={setSelectedMoto}
+              options={[
+                { value: 'Todas', label: 'Motos' },
+                ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto }))
+              ]}
+              className="w-full lg:w-48"
+            />
           </div>
-        </div>
 
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 mb-6 shadow-sm">
-          <div className="flex flex-wrap gap-4 items-center">
-            <div className="flex-1 min-w-[280px] relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Buscar por peça, ID ou descrição..." 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-full text-sm outline-none focus:ring-2 focus:ring-violet-500/50"
-              />
-            </div>
-            
-            <button className="flex items-center gap-2 px-6 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full font-bold text-sm text-zinc-900 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
-              <Filter size={18} /> Filtros
-            </button>
-            
-            <select 
+          {/* Ordenação */}
+          <div className="hidden lg:block">
+            <CustomDropdown
+              theme={theme}
               value={sortConfig.key}
-              onChange={(e) => setSortConfig({ key: e.target.value, direction: 'desc' })}
-              className="px-4 py-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-full font-bold text-sm text-zinc-900 dark:text-zinc-200 outline-none"
-            >
-              <option value="criado_em">Mais recentes</option>
-              <option value="valor">Preço</option>
-              <option value="nome">Nome</option>
-            </select>
-            
-            <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 p-1 rounded-full border border-zinc-200 dark:border-zinc-700">
+              onChange={(val) => setSortConfig({ key: val, direction: 'desc' })}
+              options={[
+                { value: 'criado_em', label: 'Recentes' },
+                { value: 'valor', label: 'Preço' },
+                { value: 'nome', label: 'Nome' },
+                { value: 'estoque', label: 'Estoque' }
+              ]}
+              className="w-40"
+            />
+          </div>
+
+          {/* Divisor Vertical */}
+          <div className="hidden lg:block w-px h-8 bg-zinc-800/50 mx-1" />
+
+          {/* Controles de Visualização e Ações */}
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "flex p-1 rounded-2xl border",
+              theme === 'dark' ? "bg-zinc-950/40 border-zinc-800" : "bg-zinc-50/50 border-zinc-200"
+            )}>
               <button 
                 onClick={() => setViewMode('table')}
-                className={cn("p-2 rounded-full transition-all", viewMode === 'table' ? "bg-white dark:bg-zinc-700 shadow-sm" : "text-zinc-500")}
+                className={cn(
+                  "p-2 rounded-xl transition-all",
+                  viewMode === 'table' 
+                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20" 
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
               >
                 <TableIcon size={18} />
               </button>
               <button 
                 onClick={() => setViewMode('card')}
-                className={cn("p-2 rounded-full transition-all", viewMode === 'card' ? "bg-white dark:bg-zinc-700 shadow-sm" : "text-zinc-500")}
+                className={cn(
+                  "p-2 rounded-xl transition-all",
+                  viewMode === 'card' 
+                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20" 
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
               >
                 <LayoutGrid size={18} />
               </button>
             </div>
+
+            <button 
+              onClick={handleManualRefresh}
+              disabled={loading || isRefreshing}
+              className={cn(
+                "p-3 rounded-2xl transition-all border group",
+                theme === 'dark' 
+                  ? "bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/30" 
+                  : "bg-zinc-50/50 border-zinc-200 text-zinc-500 hover:text-violet-600 hover:border-violet-500/30"
+              )}
+            >
+              <RefreshCw size={18} className={cn((loading || isRefreshing) && "animate-spin")} />
+            </button>
+
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-violet-600 text-white rounded-2xl hover:bg-violet-500 active:scale-95 transition-all shadow-lg shadow-violet-600/20 font-bold text-sm"
+            >
+              <Plus size={18} />
+              <span className="hidden sm:inline">Novo Item</span>
+            </button>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={handleManualRefresh}
-            disabled={loading || isRefreshing}
-            className={cn(
-              "p-2 rounded-lg transition-all border",
-              theme === 'dark' 
-                ? "text-zinc-400 border-zinc-800/50 hover:bg-zinc-800" 
-                : "text-zinc-500 border-zinc-200 hover:bg-zinc-100"
-            )}
-          >
-            <RefreshCw size={16} className={cn((loading || isRefreshing) && "animate-spin")} />
-          </button>
-
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex-1 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-500 transition-all flex items-center justify-center gap-1.5 font-bold text-sm"
-          >
-            <Plus size={16} />
-            Novo
-          </button>
         </div>
       </div>
 
@@ -2402,7 +2396,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
 
       {/* Table Container */}
       <div className={cn(
-        "border rounded-2xl overflow-hidden relative transition-all duration-300",
+        "border rounded-2xl overflow-visible relative transition-all duration-300",
         theme === 'dark' 
           ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
           : "bg-white border-zinc-200 shadow-sm"
@@ -2784,21 +2778,20 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             </button>
           </div>
 
-          <select 
-            value={itemsPerPage}
-            onChange={(e) => {
-              setItemsPerPage(Number(e.target.value));
+          <CustomDropdown
+            theme={theme}
+            value={itemsPerPage.toString()}
+            onChange={(val) => {
+              setItemsPerPage(Number(val));
               setCurrentPage(1);
             }}
-            className={cn(
-              "border rounded-lg py-1.5 px-3 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-              theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-300" : "bg-white border-zinc-300 text-zinc-600"
-            )}
-          >
-            <option value={25}>25 por página</option>
-            <option value={50}>50 por página</option>
-            <option value={100}>100 por página</option>
-          </select>
+            options={[
+              { value: '25', label: '25 por página' },
+              { value: '50', label: '50 por página' },
+              { value: '100', label: '100 por página' },
+            ]}
+            className="w-40"
+          />
         </div>
 
         {filteredAndSortedItems.length === 0 && (
@@ -2827,7 +2820,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className={cn(
-                "relative w-full max-w-2xl border rounded-3xl shadow-2xl overflow-hidden transition-colors",
+                "relative w-full max-w-2xl border rounded-3xl shadow-2xl overflow-visible transition-colors",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
               )}
             >
@@ -2874,7 +2867,23 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                       required
                       type="text"
                       value={formData.nome}
-                      onChange={(e) => setFormData({...formData, nome: e.target.value})}
+                      onChange={(e) => {
+                        const novoNome = e.target.value;
+                        setFormData(prev => {
+                          const novoEstado = {...prev, nome: novoNome};
+                          if (novoNome.length < 3) {
+                            novoEstado.moto = '';
+                            novoEstado.categoria = '';
+                          } else {
+                            const modelo = extrairModeloMoto(novoNome);
+                            if (modelo) novoEstado.moto = modelo;
+                            
+                            const categoria = extrairCategoria(novoNome);
+                            if (categoria) novoEstado.categoria = categoria;
+                          }
+                          return novoEstado;
+                        });
+                      }}
                       placeholder="Ex: Relé de Partida"
                       className={cn(
                         "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
@@ -2885,20 +2894,16 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
 
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Categoria</label>
-                    <select 
+                    <CustomDropdown
+                      theme={theme}
                       value={formData.categoria}
-                      onChange={(e) => setFormData({...formData, categoria: e.target.value})}
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    >
-                      <option value="">Selecione...</option>
-                      {categories.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                      <option value="nova">+ Nova Categoria</option>
-                    </select>
+                      onChange={(val) => setFormData({...formData, categoria: val})}
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat })),
+                        { value: 'nova', label: '+ Nova Categoria' }
+                      ]}
+                    />
                     {formData.categoria === 'nova' && (
                       <input 
                         type="text"
@@ -2915,20 +2920,16 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
 
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Moto</label>
-                    <select 
+                    <CustomDropdown
+                      theme={theme}
                       value={formData.moto}
-                      onChange={(e) => setFormData({...formData, moto: e.target.value})}
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    >
-                      <option value="">Selecione...</option>
-                      {motos.map(moto => (
-                        <option key={moto} value={moto}>{moto}</option>
-                      ))}
-                      <option value="outra">+ Outra</option>
-                    </select>
+                      onChange={(val) => setFormData({...formData, moto: val})}
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto })),
+                        { value: 'outra', label: '+ Outra' }
+                      ]}
+                    />
                     {formData.moto === 'outra' && (
                       <input 
                         type="text"
@@ -3604,23 +3605,18 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
           </div>
           
           <div className="flex items-center gap-2">
-            <div className="flex-1 md:flex-none flex items-center gap-2 border rounded-xl px-3 py-2 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
+            <div className="flex-1 md:flex-none flex items-center gap-2 border rounded-xl px-3 py-1 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
               <span className="text-[10px] font-bold text-zinc-500 uppercase whitespace-nowrap">Pagamento:</span>
-              <select
+              <CustomDropdown
+                theme={theme}
                 value={paymentType}
-                onChange={(e) => {
-                  setPaymentType(e.target.value);
+                onChange={(val) => {
+                  setPaymentType(val);
                   setCurrentPage(1);
                 }}
-                className={cn(
-                  "bg-transparent text-xs outline-none transition-all cursor-pointer w-full",
-                  theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
-                )}
-              >
-                {paymentTypes.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
+                options={paymentTypes.map(type => ({ value: type, label: type }))}
+                className="w-full md:w-40"
+              />
             </div>
 
             <button 
@@ -4063,10 +4059,15 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                         // Lógica de extração automática
                         if (novoNome.length < 3) {
                           novoEstado.moto = '';
+                          novoEstado.categoria = '';
                         } else {
                           const modelo = extrairModeloMoto(novoNome);
                           if (modelo) {
                             novoEstado.moto = modelo;
+                          }
+                          const categoria = extrairCategoria(novoNome);
+                          if (categoria) {
+                            novoEstado.categoria = categoria;
                           }
                         }
                         return novoEstado;
@@ -4120,12 +4121,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                       value={formData.tipo}
                       onChange={(val) => setFormData({...formData, tipo: val})}
                       options={[
-                        { value: 'CRÉDITO', label: 'CRÉDITO' },
-                        { value: 'DÉBITO', label: 'DÉBITO' },
-                        { value: 'DINHEIRO', label: 'DINHEIRO' },
-                        { value: 'MARCELO', label: 'MARCELO' },
-                        { value: 'PENDÊNCIA', label: 'PENDÊNCIA' },
-                        { value: 'PIX', label: 'PIX' },
+                        { value: '', label: 'Selecione...' },
+                        ...PAGAMENTOS_OFICIAIS.map(p => ({ value: p, label: p })),
                         { value: 'VENDA MERCADO LIVRE', label: 'VENDA MERCADO LIVRE' },
                         { value: 'SAÍDA', label: 'SAÍDA' },
                       ]}
@@ -4258,12 +4255,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                       value={editFormData.tipo}
                       onChange={(val) => setEditFormData({...editFormData, tipo: val})}
                       options={[
-                        { value: 'CRÉDITO', label: 'CRÉDITO' },
-                        { value: 'DÉBITO', label: 'DÉBITO' },
-                        { value: 'DINHEIRO', label: 'DINHEIRO' },
-                        { value: 'MARCELO', label: 'MARCELO' },
-                        { value: 'PENDÊNCIA', label: 'PENDÊNCIA' },
-                        { value: 'PIX', label: 'PIX' },
+                        { value: '', label: 'Selecione...' },
+                        ...PAGAMENTOS_OFICIAIS.map(p => ({ value: p, label: p })),
                         { value: 'VENDA MERCADO LIVRE', label: 'VENDA MERCADO LIVRE' },
                         { value: 'SAÍDA', label: 'SAÍDA' },
                       ]}
@@ -5146,44 +5139,34 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-zinc-500 uppercase">Marca:</span>
-              <select
+              <CustomDropdown
+                theme={theme}
                 value={brandFilter}
-                onChange={(e) => {
-                  setBrandFilter(e.target.value);
+                onChange={(val) => {
+                  setBrandFilter(val);
                   setCurrentPage(1);
                 }}
-                className={cn(
-                  "border rounded-xl py-2 px-3 text-xs outline-none transition-all cursor-pointer",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-                )}
-              >
-                {brands.map(brand => (
-                  <option key={brand} value={brand}>{brand}</option>
-                ))}
-              </select>
+                options={brands.map(brand => ({ value: brand, label: brand }))}
+                className="w-32"
+              />
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-zinc-500 uppercase">Ordenar por:</span>
-              <select
+              <CustomDropdown
+                theme={theme}
                 value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value)}
-                className={cn(
-                  "border rounded-xl py-2 px-3 text-xs outline-none transition-all cursor-pointer",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-                )}
-              >
-                <option value="Data de Criação">Data de Criação</option>
-                <option value="Nome">Nome</option>
-                <option value="Cilindrada">Cilindrada</option>
-                <option value="Ano">Ano</option>
-                <option value="Valor">Valor</option>
-                <option value="Lote">Lote</option>
-              </select>
+                onChange={(val) => setSortOrder(val)}
+                options={[
+                  { value: "Data de Criação", label: "Data de Criação" },
+                  { value: "Nome", label: "Nome" },
+                  { value: "Cilindrada", label: "Cilindrada" },
+                  { value: "Ano", label: "Ano" },
+                  { value: "Valor", label: "Valor" },
+                  { value: "Lote", label: "Lote" },
+                ]}
+                className="w-40"
+              />
             </div>
 
             <div className="flex items-center gap-1 border rounded-xl p-1 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
@@ -5238,44 +5221,30 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-zinc-500 uppercase">Status:</span>
-              <select
+              <CustomDropdown
+                theme={theme}
                 value={statusFilter}
-                onChange={(e) => {
-                  setStatusFilter(e.target.value);
+                onChange={(val) => {
+                  setStatusFilter(val);
                   setCurrentPage(1);
                 }}
-                className={cn(
-                  "border rounded-xl py-2 px-3 text-xs outline-none transition-all cursor-pointer",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-                )}
-              >
-                {statuses.map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+                options={statuses.map(s => ({ value: s, label: s }))}
+                className="w-32"
+              />
             </div>
 
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold text-zinc-500 uppercase">Cilindrada:</span>
-              <select
+              <CustomDropdown
+                theme={theme}
                 value={cilindradaFilter}
-                onChange={(e) => {
-                  setCilindradaFilter(e.target.value);
+                onChange={(val) => {
+                  setCilindradaFilter(val);
                   setCurrentPage(1);
                 }}
-                className={cn(
-                  "border rounded-xl py-2 px-3 text-xs outline-none transition-all cursor-pointer",
-                  theme === 'dark' 
-                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-                )}
-              >
-                {cilindradas.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
+                options={cilindradas.map(c => ({ value: c, label: c }))}
+                className="w-32"
+              />
             </div>
           </div>
 
@@ -5359,7 +5328,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
 
       {viewMode === 'table' ? (
         <div className={cn(
-          "border rounded-2xl overflow-hidden relative transition-all duration-300",
+          "border rounded-2xl overflow-visible relative transition-all duration-300",
           theme === 'dark' 
             ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
             : "bg-white border-zinc-200 shadow-sm"
@@ -5511,18 +5480,18 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                     </td>
                     <td className="px-6 py-4">
                       {editingRowId === item.id ? (
-                        <select 
+                        <CustomDropdown
+                          theme={theme}
                           value={inlineEditData.status} 
-                          onChange={(e) => setInlineEditData({...inlineEditData, status: e.target.value})}
-                          onKeyDown={handleInlineKeyDown}
-                          className={cn("w-full bg-transparent border-b border-violet-500 outline-none px-1 text-[10px] font-bold uppercase")}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <option value="Disponível">Disponível</option>
-                          <option value="Em estoque">Em estoque</option>
-                          <option value="Desmontada">Desmontada</option>
-                          <option value="Vendida">Vendida</option>
-                        </select>
+                          onChange={(val) => setInlineEditData({...inlineEditData, status: val})}
+                          options={[
+                            { value: 'Disponível', label: 'Disponível' },
+                            { value: 'Em estoque', label: 'Em estoque' },
+                            { value: 'Desmontada', label: 'Desmontada' },
+                            { value: 'Vendida', label: 'Vendida' },
+                          ]}
+                          className="w-full"
+                        />
                       ) : (
                         <span className={cn(
                           "px-2 py-1 rounded-md text-[10px] font-bold uppercase whitespace-normal break-words max-w-[120px] inline-block",
@@ -5652,7 +5621,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               className={cn(
-                "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-hidden",
+                "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-visible",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 text-white" : "bg-white border-zinc-200 text-zinc-900"
               )}
             >
@@ -5880,7 +5849,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               className={cn(
-                "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-hidden",
+                "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-visible",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 text-white" : "bg-white border-zinc-200 text-zinc-900"
               )}
             >
@@ -5941,13 +5910,17 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Status</label>
-                    <select value={editFormData.status} onChange={(e) => setEditFormData({...editFormData, status: e.target.value})} className={dropdownClass(theme)}>
-                      <option value="">Selecione...</option>
-                      <option value="Disponível">Disponível</option>
-                      <option value="Em estoque">Em estoque</option>
-                      <option value="Desmontada">Desmontada</option>
-                      <option value="Vendida">Vendida</option>
-                    </select>
+                    <CustomDropdown
+                      theme={theme}
+                      value={editFormData.status}
+                      onChange={(val) => setEditFormData({...editFormData, status: val})}
+                      options={[
+                        { value: 'Disponível', label: 'Disponível' },
+                        { value: 'Em estoque', label: 'Em estoque' },
+                        { value: 'Desmontada', label: 'Desmontada' },
+                        { value: 'Vendida', label: 'Vendida' },
+                      ]}
+                    />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome NF</label>
@@ -6192,7 +6165,7 @@ const DetailModal = ({ item, onClose, theme }: { item: any, onClose: () => void,
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
         className={cn(
-          "w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-3xl border shadow-2xl flex flex-col",
+          "w-full max-w-2xl max-h-[90vh] overflow-visible rounded-3xl border shadow-2xl flex flex-col",
           theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
         )}
       >
@@ -6849,19 +6822,19 @@ function AppContent() {
               theme={theme}
             />
             <SidebarItem 
+              icon={Truck} 
+              label={isSidebarOpen ? "Frete" : ""} 
+              active={activeTab === 'frete'} 
+              onClick={() => setActiveTab('frete')} 
+              theme={theme}
+            />
+            <SidebarItem 
               icon={MessageSquare} 
               label={isSidebarOpen ? "Atendimento" : ""} 
               active={activeTab === 'atendimento'} 
               onClick={() => setActiveTab('atendimento')} 
               theme={theme}
               badge={unreadCount > 0 ? unreadCount : undefined}
-            />
-            <SidebarItem 
-              icon={Truck} 
-              label={isSidebarOpen ? "Frete" : ""} 
-              active={activeTab === 'frete'} 
-              onClick={() => setActiveTab('frete')} 
-              theme={theme}
             />
           </nav>
 

@@ -170,17 +170,30 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
     
     setIsLoggingOut(true);
     try {
-      /*
       const response = await fetch('/api/whatsapp/logout', { method: 'POST' });
       const data = await response.json();
       if (data.success) {
-        // O socket vai emitir o novo QR em breve
+        addLog('🚪 Logout realizado com sucesso');
       }
-      */
     } catch (error) {
       console.error('Erro ao deslogar:', error);
     } finally {
       setIsLoggingOut(false);
+    }
+  };
+
+  const handleReconnect = async () => {
+    setIsRefreshing(true);
+    try {
+      const response = await fetch('/api/whatsapp/reconnect', { method: 'POST' });
+      const data = await response.json();
+      if (data.success) {
+        addLog('🔄 Reconexão manual iniciada...');
+      }
+    } catch (error) {
+      console.error('Erro ao reconectar:', error);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 1000);
     }
   };
 
@@ -195,13 +208,10 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
     if (!window.confirm("Deseja excluir esta mensagem do sistema?")) return;
     
     try {
-      /*
       const res = await fetch(`/api/whatsapp/messages/${id}`, { method: 'DELETE' });
       if (res.ok) {
         addLog(`🗑️ Mensagem deletada localmente`);
-        // A atualização virá via socket (whatsapp-conversations)
       }
-      */
     } catch (error) {
       console.error('Erro ao excluir mensagem local:', error);
     }
@@ -212,16 +222,13 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
     if (!window.confirm("Deseja excluir esta mensagem do WhatsApp (Apagar para todos)?")) return;
     
     try {
-      /*
       const res = await fetch(`/api/whatsapp/messages/${id}/remote`, { method: 'DELETE' });
       if (res.ok) {
         addLog(`🗑️ Mensagem deletada remotamente`);
-        // A atualização virá via socket (whatsapp-conversations)
       } else {
         const data = await res.json();
         alert("Erro ao excluir do WhatsApp: " + data.error);
       }
-      */
     } catch (error) {
       console.error('Erro ao excluir mensagem remota:', error);
     }
@@ -232,7 +239,6 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
     if (!window.confirm("Deseja excluir toda a conversa com este contato? Esta ação não pode ser desfeita.")) return;
     
     try {
-      /*
       const res = await fetch(`/api/whatsapp/conversations/${number}`, { method: 'DELETE' });
       if (res.ok) {
         addLog(`🗑️ Conversa com ${number} excluída`);
@@ -241,7 +247,6 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
           setConversationMessages([]);
         }
       }
-      */
     } catch (error) {
       console.error('Erro ao excluir conversa:', error);
     }
@@ -272,7 +277,6 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
     setSending(true);
     setSendError(null);
     try {
-      /*
       const response = await fetch('/api/whatsapp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -296,7 +300,6 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
         setSendError(data.error || 'Erro ao enviar mensagem');
         addLog(`❌ Erro ao enviar: ${data.error}`);
       }
-      */
     } catch (error: any) {
       setSendError('Erro de conexão ao tentar enviar');
       console.error('Erro ao enviar resposta:', error);
@@ -375,6 +378,18 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                 title="Ver Logs de Conexão"
               >
                 <Clock size={14} />
+              </button>
+              <button 
+                onClick={handleReconnect}
+                disabled={isRefreshing}
+                className={cn(
+                  "p-1.5 rounded-lg transition-colors",
+                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500" : "hover:bg-zinc-100 text-zinc-400",
+                  isRefreshing && "animate-spin"
+                )}
+                title="Forçar Reconexão"
+              >
+                <Smartphone size={14} />
               </button>
               <button 
                 onClick={handleRefresh}

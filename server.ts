@@ -32,8 +32,12 @@ const serverStartTime = new Date().toISOString();
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
 const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 10; // 10 minutos
-const DATA_CACHE_TTL = 1000 * 60; // 60 segundos para dados
+const DATA_CACHE_TTL = 1000 * 60 * 15; // 15 minutos para dados (RK Sucatas: carregamento rápido)
 const fetchLocks: Record<string, Promise<any> | null> = {};
+
+// Cache para detalhes de itens do Mercado Livre para evitar re-fetch constante
+const mlItemCache = new Map<string, { data: any, timestamp: number }>();
+const ML_CACHE_TTL = 1000 * 60 * 30; // 30 minutos
 
 function invalidateCache(databaseId?: string) {
   if (databaseId) {
@@ -269,23 +273,60 @@ async function startServer() {
         // Use all listings for recent listings to show the newest ones regardless of status
         if (allListings.results && allListings.results.length > 0) {
           try {
-            const ids = allListings.results.slice(0, 20).join(',');
-            const itemsResponse = await mlClient.request('/items', {
-              params: { ids, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,sold_quantity' }
+            const recentIds = allListings.results.slice(0, 20);
+            const itemsToFetch: string[] = [];
+            const results: any[] = [];
+
+            recentIds.forEach((id: string) => {
+              const cached = mlItemCache.get(id);
+              if (cached && (Date.now() - cached.timestamp < ML_CACHE_TTL)) {
+                results.push(cached.data);
+              } else {
+                itemsToFetch.push(id);
+              }
             });
+
+            if (itemsToFetch.length > 0) {
+              const ids = itemsToFetch.join(',');
+              const itemsResponse = await mlClient.request('/items', {
+                params: { ids, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,available_quantity,sold_quantity' }
+              });
+              
+              itemsResponse.forEach((item: any) => {
+                const body = item.body;
+                if (!body) return;
+                const formatted = {
+                  id: body.id,
+                  titulo: body.title,
+                  preco: body.price,
+                  thumbnail: body.thumbnail,
+                  status: body.status,
+                  link: body.permalink,
+                  estoque: body.available_quantity,
+                  vendidos: body.sold_quantity,
+                  criado_em: body.date_created,
+                  fotos: body.pictures?.map((p: any) => p.url) || []
+                };
+                mlItemCache.set(formatted.id, { data: formatted, timestamp: Date.now() });
+                results.push(formatted);
+              });
+            }
             
-            recentListings = itemsResponse.map((item: any) => {
-              const body = item.body;
-              if (!body) return null;
-              const highResImage = body.pictures && body.pictures.length > 0 
-                ? body.pictures[0].secure_url || body.pictures[0].url 
-                : body.thumbnail;
+            recentListings = results.map((item: any) => {
+              const highResImage = item.fotos && item.fotos.length > 0 
+                ? item.fotos[0] 
+                : item.thumbnail;
                 
               return {
-                ...body,
-                thumbnail: highResImage
+                id: item.id,
+                title: item.titulo,
+                price: item.preco,
+                thumbnail: highResImage,
+                status: item.status,
+                permalink: item.link,
+                date_created: item.criado_em
               };
-            }).filter((b: any) => b)
+            })
               .sort((a: any, b: any) => new Date(b.date_created).getTime() - new Date(a.date_created).getTime())
               .slice(0, 5);
           } catch (err) {
@@ -448,12 +489,43 @@ async function startServer() {
       
       const result = await mlClient.getQuestions(status as string, Number(limit));
       
-      // Buscar detalhes dos itens para cada pergunta de forma resiliente
+      // Buscar detalhes dos itens para cada pergunta de forma resiliente usando cache
       const enrichedQuestions = await Promise.all(
         (result.questions || []).map(async (q: any) => {
           try {
-            // Se falhar ao buscar o item, ainda retornamos a pergunta com dados básicos
+            // Verificar cache primeiro
+            const cached = mlItemCache.get(q.item_id);
+            if (cached && (Date.now() - cached.timestamp < ML_CACHE_TTL)) {
+              return { 
+                ...q, 
+                item_title: cached.data.titulo, 
+                item_thumbnail: cached.data.thumbnail,
+                item_price: cached.data.preco
+              };
+            }
+
+            // Se não estiver no cache, buscar no ML
             const item = await mlClient.request(`/items/${q.item_id}`);
+            const itemData = {
+              id: item.id,
+              titulo: item.title,
+              preco: item.price,
+              thumbnail: item.thumbnail
+            };
+            
+            // Salvar no cache (formato simplificado para o cache de itens)
+            mlItemCache.set(item.id, { 
+              data: {
+                ...itemData,
+                status: item.status,
+                link: item.permalink,
+                estoque: item.available_quantity,
+                vendidos: item.sold_quantity,
+                criado_em: item.date_created
+              }, 
+              timestamp: Date.now() 
+            });
+
             return { 
               ...q, 
               item_title: item.title, 
@@ -497,51 +569,135 @@ async function startServer() {
     }
   });
 
+  // Limpar cache do Mercado Livre
+  app.post('/api/ml/cache/clear', (req, res) => {
+    mlItemCache.clear();
+    console.log('🧹 Cache do Mercado Livre limpo manualmente');
+    res.json({ success: true, message: 'Cache limpo com sucesso' });
+  });
+
   // Anúncios ativos - Listar com detalhes
   app.get('/api/ml/listings', async (req, res) => {
     try {
-      const { status = 'active', limit = 50, offset = 0 } = req.query;
-      const listings = await mlClient.getListings(status as any, 'date_desc', parseInt(limit as string), parseInt(offset as string));
+      const { status = 'active', limit = 50, offset = 0, category, moto } = req.query;
+      
+      console.log(`🔍 Buscando anúncios ML: status=${status}, limit=${limit}, offset=${offset}`);
+      
+      // Buscamos os IDs para o status (limitado a um número razoável, ex: 1000)
+      const listings = await mlClient.getListings(status as any, 'date_desc', 1000, 0);
       
       if (listings.results && listings.results.length > 0) {
-        // O Mercado Livre permite buscar até 20 itens por vez no endpoint /items
-        const results = [];
-        const batchSize = 20;
+        const allDetails: any[] = [];
+        const idsToFetch: string[] = [];
         
-        for (let i = 0; i < listings.results.length; i += batchSize) {
-          const batchIds = listings.results.slice(i, i + batchSize).join(',');
-          const itemsResponse = await mlClient.request('/items', {
-            params: { ids: batchIds, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,available_quantity,sold_quantity' }
-          });
+        // Verificar o que já temos no cache
+        listings.results.forEach((id: string) => {
+          const cached = mlItemCache.get(id);
+          if (cached && (Date.now() - cached.timestamp < ML_CACHE_TTL)) {
+            allDetails.push(cached.data);
+          } else {
+            idsToFetch.push(id);
+          }
+        });
+
+        if (idsToFetch.length > 0) {
+          console.log(`📡 Buscando detalhes de ${idsToFetch.length} itens no ML...`);
+          const batchSize = 20;
+          const batches = [];
           
-          const formattedBatch = itemsResponse.map((item: any) => {
-            const body = item.body;
-            return {
-              id: body.id,
-              titulo: body.title,
-              preco: body.price,
-              thumbnail: body.thumbnail,
-              status: body.status,
-              link: body.permalink,
-              estoque: body.available_quantity,
-              vendidos: body.sold_quantity,
-              criado_em: body.date_created,
-              fotos: body.pictures?.map((p: any) => p.url) || []
-            };
-          });
-          results.push(...formattedBatch);
+          for (let i = 0; i < idsToFetch.length; i += batchSize) {
+            batches.push(idsToFetch.slice(i, i + batchSize).join(','));
+          }
+          
+          // Buscar lotes em paralelo (máximo 5 por vez para não sobrecarregar)
+          const fetchBatch = async (batchIds: string) => {
+            try {
+              const itemsResponse = await mlClient.request('/items', {
+                params: { ids: batchIds, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,available_quantity,sold_quantity' }
+              });
+              
+              return itemsResponse.map((item: any) => {
+                const body = item.body;
+                if (!body) return null;
+                const formatted = {
+                  id: body.id,
+                  titulo: body.title,
+                  preco: body.price,
+                  thumbnail: body.thumbnail,
+                  status: body.status,
+                  link: body.permalink,
+                  estoque: body.available_quantity,
+                  vendidos: body.sold_quantity,
+                  criado_em: body.date_created,
+                  fotos: body.pictures?.map((p: any) => p.url) || []
+                };
+                
+                // Salvar no cache
+                mlItemCache.set(formatted.id, { data: formatted, timestamp: Date.now() });
+                return formatted;
+              }).filter(Boolean);
+            } catch (err) {
+              console.error(`❌ Erro ao buscar lote de itens ML:`, err);
+              return [];
+            }
+          };
+
+          // Executar batches em paralelo com limite de concorrência
+          const results = await Promise.all(batches.map(batch => fetchBatch(batch)));
+          results.forEach(batchResult => allDetails.push(...batchResult));
         }
+        
+        // Reordenar para manter a ordem original dos IDs (que vieram ordenados por data)
+        const sortedDetails = listings.results
+          .map((id: string) => allDetails.find(d => d.id === id))
+          .filter(Boolean);
+
+        // Aplicar filtros de busca (categoria e moto do Notion)
+        let filteredResults = sortedDetails;
+        
+        if (category && category !== 'all') {
+          const catStr = String(category).toLowerCase();
+          filteredResults = filteredResults.filter(item => 
+            item.titulo.toLowerCase().includes(catStr)
+          );
+        }
+        
+        if (moto && moto !== 'all') {
+          const motoStr = String(moto).toLowerCase();
+          filteredResults = filteredResults.filter(item => 
+            item.titulo.toLowerCase().includes(motoStr)
+          );
+        }
+        
+        const totalFiltered = filteredResults.length;
+        const paginatedResults = filteredResults.slice(Number(offset), Number(offset) + Number(limit));
         
         res.json({ 
           success: true, 
-          data: results,
-          total: listings.total || results.length
+          data: paginatedResults,
+          total: totalFiltered
         });
       } else {
         res.json({ success: true, data: [], total: 0 });
       }
     } catch (error: any) {
       console.error('❌ Erro ao buscar anúncios ML:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Atualizar anúncio
+  app.put('/api/ml/listings/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+      
+      console.log(`📝 Recebida solicitação de atualização para o anúncio ${id}:`, updateData);
+      const result = await mlClient.updateListing(id, updateData);
+      
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      console.error(`❌ Erro ao atualizar anúncio ${req.params.id}:`, error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -1048,6 +1204,40 @@ async function startServer() {
     }
   });
 
+  // Buscar categorias do Notion
+  app.get("/api/notion/categories", async (req, res) => {
+    try {
+      const dbData = await getCachedDbStructure(DATABASE_ID);
+      const dbProps = dbData.properties;
+      
+      // Encontrar a propriedade de categoria
+      let catProp = Object.entries(dbProps).find(([key, prop]: [string, any]) => 
+        key.toLowerCase().includes('categoria') || key.toLowerCase().includes('cat')
+      );
+      
+      if (catProp && (catProp[1] as any).type === 'multi_select') {
+        const options = (catProp[1] as any).multi_select.options.map((opt: any) => opt.name);
+        res.json({ success: true, data: options.sort() });
+      } else {
+        res.json({ success: true, data: [] });
+      }
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Buscar motos do Notion
+  app.get("/api/notion/motos", async (req, res) => {
+    try {
+      const allMotos = await fetchAllFromNotion(MOTOS_DATABASE_ID);
+      const formattedMotos = allMotos.map(formatMotosItem);
+      const motoNames = Array.from(new Set(formattedMotos.map((m: any) => m.nome))).filter(Boolean);
+      res.json({ success: true, data: motoNames.sort() });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   app.post("/api/inventory", async (req, res) => {
     try {
       const { nome, categoria, moto, valor, estoque, ano, descricao, ml_link } = req.body;
@@ -1174,6 +1364,7 @@ async function startServer() {
         console.error(`❌ Falha ao excluir ${failed.length} itens`);
       }
 
+      invalidateCache(DATABASE_ID);
       res.json({ success: true, deletedCount: ids.length - failed.length, failedCount: failed.length });
     } catch (error: any) {
       console.error("Bulk Delete Error:", error);
@@ -1199,6 +1390,7 @@ async function startServer() {
         throw new Error(`Notion API error: ${error}`);
       }
 
+      invalidateCache(DATABASE_ID);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Delete Item Error:", error);
@@ -1255,6 +1447,7 @@ async function startServer() {
       });
 
       await Promise.all(updatePromises);
+      invalidateCache(DATABASE_ID);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Bulk Update Stock Error:", error);
@@ -1304,6 +1497,7 @@ async function startServer() {
       });
 
       await Promise.all(updatePromises);
+      invalidateCache(DATABASE_ID);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Bulk Update Category Error:", error);
@@ -1905,10 +2099,7 @@ async function startServer() {
       const result = await response.json();
       console.log('✅ Moto criada com sucesso');
       
-      // Invalida o cache para que a nova moto apareça na próxima listagem
-      if (notionDataCache[MOTOS_DATABASE_ID]) {
-        delete notionDataCache[MOTOS_DATABASE_ID];
-      }
+      invalidateCache(MOTOS_DATABASE_ID);
       
       res.json({ success: true, data: formatMotosItem(result) });
     } catch (error: any) {
@@ -2036,10 +2227,7 @@ async function startServer() {
       const result = await response.json();
       console.log('✅ Resposta do Notion:', result);
       
-      // Invalida o cache
-      if (notionDataCache[MOTOS_DATABASE_ID]) {
-        delete notionDataCache[MOTOS_DATABASE_ID];
-      }
+      invalidateCache(MOTOS_DATABASE_ID);
       
       res.json({ success: true, data: formatMotosItem(result) });
       
@@ -2067,10 +2255,7 @@ async function startServer() {
         throw new Error(`Notion API error: ${error}`);
       }
 
-      // Invalida o cache
-      if (notionDataCache[MOTOS_DATABASE_ID]) {
-        delete notionDataCache[MOTOS_DATABASE_ID];
-      }
+      invalidateCache(MOTOS_DATABASE_ID);
 
       res.json({ success: true });
     } catch (error: any) {
@@ -2099,6 +2284,7 @@ async function startServer() {
       );
 
       await Promise.all(deletePromises);
+      invalidateCache(MOTOS_DATABASE_ID);
       res.json({ success: true });
     } catch (error: any) {
       console.error("Bulk Delete Motos Error:", error);
@@ -2747,6 +2933,17 @@ async function startServer() {
       res.json({ success: true });
     } catch (error: any) {
       console.error("Erro ao deslogar WhatsApp:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post("/api/whatsapp/reconnect", async (req, res) => {
+    try {
+      addLog('🔄 Solicitando reconexão manual...');
+      isReconnecting = false; // Reset flag to allow new connection
+      connectToWhatsApp();
+      res.json({ success: true, message: 'Reconexão iniciada' });
+    } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
     }
   });

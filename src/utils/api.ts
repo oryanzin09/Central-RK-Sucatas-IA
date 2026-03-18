@@ -1,6 +1,6 @@
 const VITE_API_URL = import.meta.env.VITE_API_URL || '';
 
-export async function mlApiFetch(endpoint: string) {
+export async function mlApiFetch(endpoint: string, options: RequestInit = {}) {
   // Garantir que não haja barras duplas se VITE_API_URL terminar com barra e endpoint começar com barra
   const baseUrl = VITE_API_URL.endsWith('/') ? VITE_API_URL.slice(0, -1) : VITE_API_URL;
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -8,8 +8,10 @@ export async function mlApiFetch(endpoint: string) {
 
   try {
     const response = await fetch(url, {
+      ...options,
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...options.headers
       }
     });
     
