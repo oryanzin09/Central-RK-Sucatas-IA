@@ -57,7 +57,16 @@ export const MLSales = ({ theme }: { theme: string }) => {
     if (sale.has_dispute) {
       return { label: 'Mediação', color: 'bg-red-500/20 text-red-400', icon: AlertCircle, description: 'Responda à mediação para prosseguir.' };
     }
-    switch (sale.shipping_status) {
+    
+    const shippingStatus = String(sale.shipping_status || '');
+    const status = String(sale.status || '');
+    
+    // Handle reprint status explicitly
+    if (shippingStatus.includes('reprint') || status.includes('REIMPRIMIR') || shippingStatus.includes('REIMPRIMIR')) {
+      return { label: 'Reimprimir Etiqueta', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'A etiqueta precisa ser impressa novamente.' };
+    }
+
+    switch (shippingStatus) {
       case 'ready_to_print':
         return { label: 'Etiqueta pronta', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'Você deve despachar o pacote hoje ou amanhã.' };
       case 'pending':
@@ -72,15 +81,39 @@ export const MLSales = ({ theme }: { theme: string }) => {
   };
 
   const tabs = [
-    { id: 'pending', label: 'Pendentes', status: ['ready_to_print', 'pending'], filter: (s: any) => !s.has_dispute && ['ready_to_print', 'pending'].includes(s.shipping_status) },
-    { id: 'dispute', label: 'Mediações', status: [], filter: (s: any) => s.has_dispute },
-    { id: 'shipped', label: 'Em trânsito', status: ['shipped'], filter: (s: any) => s.shipping_status === 'shipped' },
-    { id: 'delivered', label: 'Finalizadas', status: ['delivered'], filter: (s: any) => s.shipping_status === 'delivered' },
+    { 
+      id: 'pending', 
+      label: 'Envios pendentes', 
+      filter: (s: any) => {
+        const isCancelled = s.is_cancelled || s.status === 'cancelled' || s.shipping_status === 'cancelled' || s.shipping_status === 'not_delivered_returning_to_sender';
+        const isShipped = ['shipped', 'delivered'].includes(s.shipping_status) || String(s.shipping_status).startsWith('shipped_') || String(s.shipping_status).startsWith('delivered_');
+        
+        // Include ready_to_ship statuses
+        const isReadyToShip = String(s.shipping_status).startsWith('ready_to_ship');
+        
+        const isPending = isReadyToShip && !isCancelled && !isShipped;
+
+        if (isPending) {
+          console.log('Sale included in pending:', s.id, s.shipping_status, s.status);
+        } else {
+          console.log('Sale excluded from pending:', s.id, s.shipping_status, s.status);
+        }
+        
+        return isPending;
+      }
+    },
+    { id: 'dispute', label: 'Aguardando', filter: (s: any) => s.has_dispute },
+    { id: 'shipped', label: 'Em trânsito', filter: (s: any) => s.shipping_status === 'shipped' },
+    { id: 'delivered', label: 'Finalizadas', filter: (s: any) => s.shipping_status === 'delivered' },
   ];
 
   const filteredSales = sales.filter(s => {
     const currentTab = tabs.find(t => t.id === activeTab);
-    return currentTab?.filter(s);
+    const isMatch = currentTab?.filter(s);
+    if (activeTab === 'pending' && !isMatch) {
+      console.log('Sale filtered out from pending:', s.id, 'Status:', s.shipping_status, 'Status2:', s.status, 'Dispute:', s.has_dispute, 'Cancelled:', s.is_cancelled);
+    }
+    return isMatch;
   });
 
   if (loading) {
@@ -166,7 +199,9 @@ export const MLSales = ({ theme }: { theme: string }) => {
                             <statusInfo.icon size={10} />
                             {statusInfo.label}
                           </span>
-                          <span className="text-xs text-zinc-500 font-medium">R$ {sale.valor?.toFixed(2).replace('.', ',')}</span>
+                          <span className="text-xs text-zinc-500 font-medium">
+                            R$ {Number(sale.valor || 0).toFixed(2).replace('.', ',')}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -180,7 +215,7 @@ export const MLSales = ({ theme }: { theme: string }) => {
                           Responder mediação
                         </button>
                       )}
-                      {sale.shipping_status === 'ready_to_print' && !sale.has_dispute && (
+                      {(sale.shipping_status === 'ready_to_print' || String(sale.shipping_status).includes('reprint') || String(sale.status).includes('REIMPRIMIR')) && !sale.has_dispute && (
                         <button
                           onClick={() => printLabel(sale.shipping_id)}
                           className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"

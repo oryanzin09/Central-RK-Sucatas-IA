@@ -41,11 +41,13 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
     fetchData();
   }, [period]);
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: any) => {
+    const num = Number(value);
+    if (isNaN(num)) return 'R$ 0,00';
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(value || 0);
+    }).format(num);
   };
 
   const cn = (...classes: any[]) => classes.filter(Boolean).join(' ');
@@ -297,7 +299,9 @@ const MetricCard = ({ icon: Icon, label, value, subValue, color, theme }: any) =
         <Icon className="text-white" size={24} />
       </div>
       <p className={cn("text-xs uppercase font-medium", theme === 'dark' ? "text-zinc-500" : "text-zinc-500")}>{label}</p>
-      <p className={cn("text-2xl font-bold mt-1", theme === 'dark' ? "text-white" : "text-zinc-900")}>{value}</p>
+      <p className={cn("text-2xl font-bold mt-1", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+        {typeof value === 'number' && isNaN(value) ? "0" : (value || "0")}
+      </p>
       <p className={cn("text-xs mt-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>{subValue}</p>
     </div>
   );

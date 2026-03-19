@@ -52,13 +52,14 @@ class MLClient {
       console.log(`📡 Chamando API ML: ${endpoint}`);
       const response = await axios({
         url: `${this.baseURL}${endpoint}`,
+        timeout: 10000,
+        ...options,
         headers: {
           'Authorization': `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        timeout: 10000,
-        ...options
+          'Accept': 'application/json',
+          ...(options.headers || {})
+        }
       });
       return response.data;
     } catch (error: any) {

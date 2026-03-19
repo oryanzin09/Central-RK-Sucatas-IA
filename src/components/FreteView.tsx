@@ -151,9 +151,9 @@ export const FreteView = ({ theme }: { theme: 'light' | 'dark' }) => {
             <div>
               <div className={cn("text-xs font-bold uppercase tracking-wider mb-3", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Volume</div>
               <div className={cn("font-semibold text-lg", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-                {largura} x {altura} x {comprimento} cm
+                {largura || 0} x {altura || 0} x {comprimento || 0} cm
               </div>
-              <div className={cn("text-sm", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>{peso} kg</div>
+              <div className={cn("text-sm", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>{peso || 0} kg</div>
             </div>
             <div>
               <div className={cn("text-xs font-bold uppercase tracking-wider mb-3", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Seguro</div>

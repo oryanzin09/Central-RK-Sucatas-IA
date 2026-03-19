@@ -49,7 +49,16 @@ import {
   ShoppingBag,
   Eye,
   EyeOff,
-  Truck
+  Truck,
+  Tag,
+  Activity,
+  CreditCard,
+  FileText,
+  MapPin,
+  Hash,
+  TrendingDown,
+  Copy,
+  ArrowDownAZ
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -121,9 +130,12 @@ function extrairModeloMoto(textoPeca: string) {
 function extrairCategoria(textoPeca: string) {
   if (!textoPeca || textoPeca.length < 3) return '';
   const textoNormalizado = normalizarTexto(textoPeca);
-  for (const categoria of CATEGORIAS_OFICIAIS) {
+  // Ordena por tamanho decrescente para pegar o termo mais específico primeiro
+  const categoriasOrdenadas = [...CATEGORIAS_OFICIAIS].sort((a, b) => b.length - a.length);
+  for (const categoria of categoriasOrdenadas) {
     const categoriaNormalizada = normalizarTexto(categoria);
-    if (textoNormalizado.includes(categoriaNormalizada)) return categoria;
+    // Se o texto da peça contém a categoria OU a categoria contém o texto da peça (ex: "escapamento" -> "Escapamentos")
+    if (textoNormalizado.includes(categoriaNormalizada) || categoriaNormalizada.includes(textoNormalizado)) return categoria;
   }
   return '';
 }
@@ -437,48 +449,124 @@ const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onC
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   
+  const formatValue = (val: any) => {
+    if (typeof val === 'string' && val.includes('R$')) return val;
+    const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d,-]/g, '').replace(',', '.'));
+    if (isNaN(num)) return val;
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    }).format(num);
+  };
+
+  const displayValue = formatValue(value);
+  const displayTrend = (trend === null || trend === undefined || isNaN(Number(trend))) ? null : Number(trend);
+
   return (
-    <div 
+    <motion.div 
+      whileHover={{ y: -2, scale: 1.01 }}
+      whileTap={{ scale: 0.98 }}
       onClick={onClick}
       className={cn(
-        "border rounded-xl p-5 transition-all duration-300 relative overflow-hidden group flex flex-col gap-3",
-        onClick && "cursor-pointer",
+        "group relative border p-4 sm:p-5 rounded-2xl transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between h-full",
         theme === 'dark' 
-          ? "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50" 
-          : "bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50"
+          ? "bg-zinc-900/40 border-zinc-800/50 shadow-lg hover:border-violet-500/30" 
+          : "bg-white border-zinc-200 shadow-sm hover:shadow-md"
       )}
     >
-      <div className="flex items-center justify-between relative z-10">
+      {/* Background Glow */}
+      <div className={cn(
+        "absolute -right-4 -top-4 w-20 h-20 rounded-full blur-3xl opacity-5 transition-opacity group-hover:opacity-15",
+        color || "bg-violet-500"
+      )} />
+
+      <div className="flex items-center justify-between mb-2 sm:mb-3">
         <div className={cn(
-          "p-2 rounded-lg backdrop-blur-md border",
-          theme === 'dark' ? "bg-zinc-800/50 border-zinc-700" : "bg-zinc-100/50 border-zinc-200",
-          color.replace('bg-', 'text-')
+          "p-2 rounded-xl transition-all duration-300",
+          theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 group-hover:text-white" : "bg-zinc-100 text-zinc-500 group-hover:text-zinc-900"
         )}>
-          <Icon size={20} />
+          <Icon size={16} strokeWidth={2.5} />
         </div>
-        {trend !== undefined && (
-          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-md", 
-            trend > 0 
-              ? "bg-emerald-500/10 text-emerald-500" 
-              : "bg-rose-500/10 text-rose-500"
+        {displayTrend !== null && (
+          <div className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider",
+            displayTrend > 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"
           )}>
-            {trend > 0 ? '+' : ''}{trend}%
-          </span>
+            {displayTrend > 0 ? <TrendingUp size={8} /> : <TrendingDown size={8} />}
+            {Math.abs(displayTrend)}%
+          </div>
         )}
       </div>
-      <div className="relative z-10">
-        <p className={cn("text-[10px] uppercase font-bold tracking-wider", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>{label}</p>
-        <h3 className={cn(
-          "text-xl font-bold mt-1 tracking-tight", 
-          theme === 'dark' ? "text-white" : "text-zinc-900"
-        )}>
-          {isSensitive && !showSensitiveInfo ? "••••••••" : value}
-        </h3>
-        {subValue && <p className="text-[10px] text-zinc-500 mt-1 font-medium">{subValue}</p>}
+
+      <div className="space-y-0.5">
+        <span className={cn("text-[8px] font-black uppercase tracking-[0.2em] opacity-60", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+          {label}
+        </span>
+        <div className="flex items-baseline gap-2">
+          <h3 className={cn(
+            "text-lg sm:text-xl font-black tracking-tighter transition-all duration-300",
+            theme === 'dark' ? "text-white" : "text-zinc-900",
+            isSensitive && !showSensitiveInfo && "blur-md select-none",
+            (label.includes('Valor') || label.includes('Vendas')) && "text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]",
+            label.includes('Saídas') && "text-rose-400 drop-shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+          )}>
+            {displayValue}
+          </h3>
+        </div>
+        {subValue && (
+          <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-wider truncate opacity-80">
+            {subValue}
+          </p>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 };
+
+const ChartCard = ({ label, data, theme, color, icon: Icon, className }: any) => (
+  <div className={cn(
+    "border rounded-2xl p-5 transition-all duration-300 relative overflow-hidden flex flex-col gap-3 h-full",
+    theme === 'dark' 
+      ? "bg-zinc-900/40 border-zinc-800/50 shadow-lg hover:border-violet-500/30" 
+      : "bg-white border-zinc-200 shadow-sm",
+    className
+  )}>
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2.5">
+        <div className={cn(
+          "p-2.5 rounded-xl",
+          theme === 'dark' ? "bg-zinc-800/50 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+        )}>
+          <Icon size={18} strokeWidth={2.5} />
+        </div>
+        <span className={cn("text-[9px] font-black uppercase tracking-[0.2em] opacity-60", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+          {label}
+        </span>
+      </div>
+    </div>
+    <div className="h-[70px] w-full mt-auto">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data}>
+          <defs>
+            <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={color || "#8b5cf6"} stopOpacity={0.3}/>
+              <stop offset="95%" stopColor={color || "#8b5cf6"} stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <Area 
+            type="monotone" 
+            dataKey="vendas" 
+            stroke={color || "#8b5cf6"} 
+            strokeWidth={2.5} 
+            fillOpacity={1} 
+            fill={`url(#gradient-${label})`} 
+            animationDuration={1500}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+);
 
 const DashboardView = ({ 
   theme, 
@@ -504,70 +592,125 @@ const DashboardView = ({
   mlCurrentPage,
   setMlCurrentPage,
   mlTotalPages,
-  paginatedMlListings
+  paginatedMlListings,
+  paymentFilter,
+  setPaymentFilter,
+  showPaymentFilter,
+  setShowPaymentFilter
 }: any) => {
   const { inventory, sales, loading, refreshData, showSensitiveInfo, setShowSensitiveInfo } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
   const [mlSalesSubTab, setMlSalesSubTab] = useState('pending');
 
-  const formatCurrency = (value: number) => {
+  const hoje = new Date();
+  const mesAtual = hoje.getMonth();
+  const anoAtual = hoje.getFullYear();
+
+  const formatCurrency = (value: any) => {
+    if (typeof value === 'string' && value.includes('R$')) return value;
+    const num = typeof value === 'number' ? value : parseFloat(String(value).replace(/[^\d,-]/g, '').replace(',', '.'));
+    if (isNaN(num)) return 'R$ 0,00';
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(num);
   };
 
   const metrics = useMemo(() => {
     if (source === 'mercadolivre' && mlData) {
       return {
-        valorTotalEstoque: 0, // ML não tem valor total de estoque fácil
-        totalItensEstoque: mlData.totalListings || 0,
-        activeListings: mlData.activeListings || 0,
-        valorVendasMes: mlData.monthlySales || 0,
-        totalVendasMes: mlData.totalSalesCount || 0,
-        ticketMedio: mlData.avgTicket || 0,
-        perguntasPendentes: mlData.pendingQuestions || 0,
+        valorTotalEstoque: 0,
+        totalItensEstoque: Number(mlData.totalListings) || 0,
+        activeListings: Number(mlData.activeListings) || 0,
+        valorVendasMes: Number(mlData.monthlySales) || 0,
+        totalVendasMes: Number(mlData.totalSalesCount) || 0,
+        ticketMedio: Number(mlData.avgTicket) || 0,
+        perguntasPendentes: Number(mlData.pendingQuestions) || 0,
         ultimosItens: mlData.recentListings || [],
         ultimasVendas: mlData.recentSales || []
       };
     }
 
-    const hoje = new Date();
-    const mesAtual = hoje.getMonth();
-    const anoAtual = hoje.getFullYear();
+    const parseDate = (dateStr: any) => {
+      if (!dateStr) return new Date(0);
+      let d = new Date(dateStr);
+      if (isNaN(d.getTime()) && typeof dateStr === 'string') {
+        if (dateStr.includes('/')) {
+          const [day, month, year] = dateStr.split('/').map(Number);
+          d = new Date(year, month - 1, day);
+        } else if (dateStr.includes('-')) {
+          const datePart = dateStr.split('T')[0];
+          const [y, m, day] = datePart.split('-').map(Number);
+          d = new Date(y, m - 1, day);
+        }
+      }
+      return d;
+    };
+
+    const parseValue = (val: any) => {
+      if (val === null || val === undefined) return 0;
+      if (typeof val === 'number') return val;
+      
+      let str = String(val).trim();
+      
+      // Remove R$ and spaces
+      str = str.replace(/R\$\s?/g, '');
+      
+      // Check if it has both dots and commas (e.g. 1.200,50)
+      if (str.includes('.') && str.includes(',')) {
+        // Remove dots (thousands separators) and replace comma with dot
+        str = str.replace(/\./g, '').replace(',', '.');
+      } else if (str.includes(',')) {
+        // Only has comma, assume it's decimal separator
+        str = str.replace(',', '.');
+      }
+      
+      // Remove any other non-digit/dot/minus characters
+      const cleaned = str.replace(/[^\d.-]/g, '');
+      const num = parseFloat(cleaned);
+      return isNaN(num) ? 0 : num;
+    };
 
     // Estoque
-    const valorTotalEstoque = inventory.reduce((sum, item) => sum + (item.valor * item.estoque), 0);
-    const totalItensEstoque = inventory.reduce((sum, item) => sum + item.estoque, 0);
-    const estoqueBaixo = inventory.filter(item => item.estoque <= 2);
-    const ultimosItens = [...inventory].sort((a, b) => new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime()).slice(0, 5);
+    const valorTotalEstoque = inventory.reduce((sum, item) => sum + parseValue(item.valor), 0);
+    const totalItensEstoque = inventory.length;
+    const estoqueBaixo = inventory.filter(item => (Number(item.estoque) || 0) <= 2);
+    const ultimosItens = [...inventory].sort((a, b) => {
+      const dateA = a.criado_em ? new Date(a.criado_em).getTime() : 0;
+      const dateB = b.criado_em ? new Date(b.criado_em).getTime() : 0;
+      return dateB - dateA;
+    }).slice(0, 5);
 
     // Vendas
     const vendasMes = sales.filter(item => {
-      let itemDate = new Date(item.data);
-      if (typeof item.data === 'string' && item.data.length === 10 && item.data.includes('-')) {
-        const [y, m, d] = item.data.split('-').map(Number);
-        itemDate = new Date(y, m - 1, d);
-      }
-      return itemDate.getMonth() === mesAtual && 
-             itemDate.getFullYear() === anoAtual &&
-             item.tipo !== 'SAÍDA';
+      const itemDate = parseDate(item.data);
+      const isCurrentMonth = itemDate.getMonth() === mesAtual && 
+                             itemDate.getFullYear() === anoAtual;
+      const isNotSaida = item.tipo !== 'SAÍDA';
+      return isCurrentMonth && isNotSaida;
     });
 
     const saidasMes = sales.filter(item => {
-      let itemDate = new Date(item.data);
-      if (typeof item.data === 'string' && item.data.length === 10 && item.data.includes('-')) {
-        const [y, m, d] = item.data.split('-').map(Number);
-        itemDate = new Date(y, m - 1, d);
-      }
-      return itemDate.getMonth() === mesAtual && 
-             itemDate.getFullYear() === anoAtual &&
-             item.tipo === 'SAÍDA';
+      const itemDate = parseDate(item.data);
+      const isCurrentMonth = itemDate.getMonth() === mesAtual && 
+                             itemDate.getFullYear() === anoAtual;
+      const isSaida = item.tipo === 'SAÍDA';
+      return isCurrentMonth && isSaida;
     });
 
-    const valorVendasMes = vendasMes.reduce((sum, v) => sum + v.valor, 0);
-    const valorSaidasMes = saidasMes.reduce((sum, v) => sum + v.valor, 0);
+    const valorVendasMes = vendasMes.reduce((sum, v) => sum + parseValue(v.valor), 0);
+    const valorSaidasMes = saidasMes.reduce((sum, v) => sum + parseValue(v.valor), 0);
     const ticketMedio = vendasMes.length > 0 ? valorVendasMes / vendasMes.length : 0;
+
+    console.log('📊 Dashboard Metrics Debug:', {
+      inventoryCount: inventory.length,
+      salesCount: sales.length,
+      vendasMesCount: vendasMes.length,
+      valorVendasMes,
+      valorTotalEstoque,
+      mesAtual,
+      anoAtual
+    });
 
     return {
       valorTotalEstoque,
@@ -579,18 +722,33 @@ const DashboardView = ({
       valorSaidasMes,
       totalSaidasMes: saidasMes.length,
       ticketMedio,
-      ultimasVendas: [...sales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+      ultimasVendas: [...sales].sort((a, b) => parseDate(b.data).getTime() - parseDate(a.data).getTime())
     };
-  }, [inventory, sales, mlData, source]);
+  }, [inventory, sales, mlData, source, mesAtual, anoAtual]);
+
+  const filteredLastSales = useMemo(() => {
+    if (paymentFilter === 'TODOS') return metrics.ultimasVendas;
+    return metrics.ultimasVendas.filter((sale: any) => sale.tipo === paymentFilter);
+  }, [metrics.ultimasVendas, paymentFilter]);
 
   const filteredSales = useMemo(() => {
     if (source === 'estoque') return metrics.ultimasVendas;
     return metrics.ultimasVendas.filter((sale: any) => {
-      if (mlSalesSubTab === 'pending') return !sale.has_dispute && sale.shipping_status === 'ready_to_print';
-      if (mlSalesSubTab === 'waiting') return !sale.has_dispute && sale.shipping_status === 'pending';
+      const isCancelled = sale.is_cancelled;
+      
+      if (mlSalesSubTab === 'pending') {
+        // Vendas pendentes: prontas para imprimir etiqueta, etiqueta já impressa ou aguardando NF
+        return !sale.has_dispute && !isCancelled && (
+          sale.shipping_status === 'ready_to_ship_ready_to_print' || 
+          sale.shipping_status === 'ready_to_ship_printed' || 
+          sale.shipping_status === 'ready_to_ship_invoice_pending'
+        );
+      }
+      if (mlSalesSubTab === 'waiting') return !sale.has_dispute && !isCancelled && (sale.shipping_status === 'pending' || sale.shipping_status === 'ready_to_ship');
       if (mlSalesSubTab === 'dispute') return sale.has_dispute;
-      if (mlSalesSubTab === 'shipped') return sale.shipping_status === 'shipped';
-      if (mlSalesSubTab === 'delivered') return sale.shipping_status === 'delivered';
+      if (mlSalesSubTab === 'shipped') return sale.shipping_status === 'shipped' && !isCancelled;
+      if (mlSalesSubTab === 'delivered') return sale.shipping_status === 'delivered' && !isCancelled;
+      if (mlSalesSubTab === 'cancelled') return isCancelled;
       if (mlSalesSubTab === 'all') return true;
       return false;
     });
@@ -616,19 +774,28 @@ const DashboardView = ({
       });
     }
 
-    sales.forEach(sale => {
-      let saleDateObj = new Date(sale.data);
-      if (typeof sale.data === 'string' && sale.data.length === 10 && sale.data.includes('-')) {
-        const [y, m, d] = sale.data.split('-').map(Number);
-        saleDateObj = new Date(y, m - 1, d);
+    const parseDate = (dateStr: any) => {
+      if (!dateStr) return new Date(0);
+      let d = new Date(dateStr);
+      if (isNaN(d.getTime()) && typeof dateStr === 'string' && dateStr.length >= 10) {
+        const datePart = dateStr.split('T')[0];
+        if (datePart.includes('-')) {
+          const [y, m, day] = datePart.split('-').map(Number);
+          d = new Date(y, m - 1, day);
+        }
       }
+      return d;
+    };
+
+    sales.forEach(sale => {
+      const saleDateObj = parseDate(sale.data);
       const saleDate = `${saleDateObj.getFullYear()}-${String(saleDateObj.getMonth() + 1).padStart(2, '0')}-${String(saleDateObj.getDate()).padStart(2, '0')}`;
       const day = days.find(d => d.date === saleDate);
       if (day) {
         if (sale.tipo === 'SAÍDA') {
-          day.saidas += sale.valor;
+          day.saidas += Number(sale.valor) || 0;
         } else {
-          day.vendas += sale.valor;
+          day.vendas += Number(sale.valor) || 0;
         }
       }
     });
@@ -669,12 +836,56 @@ const DashboardView = ({
       <div className="space-y-6">
       <div className="space-y-4 mb-6">
         {/* Linha 1: Título e Ações Principais */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h2 className={cn("text-3xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
             Dashboard <span className="text-violet-500">RK</span>
           </h2>
           
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filtro de Período (apenas ML) */}
+            {source === 'mercadolivre' && (
+              <div className="flex items-center gap-2 mr-2">
+                <CustomDropdown
+                  value={mlPeriod}
+                  onChange={setMlPeriod}
+                  theme={theme}
+                  options={[
+                    { value: '7d', label: 'Últimos 7 dias' },
+                    { value: '15d', label: 'Últimos 15 dias' },
+                    { value: '30d', label: 'Últimos 30 dias' },
+                    { value: '60d', label: 'Últimos 60 dias' },
+                    { value: 'custom', label: 'Data Específica' },
+                  ]}
+                  className="w-40"
+                />
+
+                {mlPeriod === 'custom' && (
+                  <div className="flex items-center gap-1 pr-2">
+                    <input
+                      type="date"
+                      value={mlCustomDate.start}
+                      onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
+                      className={cn(
+                        "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
+                        theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
+                      )}
+                    />
+                    <span className="text-zinc-500 text-xs font-bold">a</span>
+                    <input
+                      type="date"
+                      value={mlCustomDate.end}
+                      onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
+                      className={cn(
+                        "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
+                        theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
+                      )}
+                    />
+                  </div>
+                )}
+                {isMlDashboardLoading && <Loader2 className="animate-spin text-amber-500" size={16} />}
+              </div>
+            )}
+
             {/* Toggle de Fonte de Dados */}
             <div className={cn(
               "flex p-1 rounded-full border transition-all",
@@ -736,59 +947,15 @@ const DashboardView = ({
             </button>
           </div>
         </div>
-
-        {/* Linha 2: Filtro de Período (apenas ML) */}
-        {source === 'mercadolivre' && (
-          <div className="flex items-center gap-2">
-            <CustomDropdown
-              value={mlPeriod}
-              onChange={setMlPeriod}
-              theme={theme}
-              options={[
-                { value: '7d', label: 'Últimos 7 dias' },
-                { value: '15d', label: 'Últimos 15 dias' },
-                { value: '30d', label: 'Últimos 30 dias' },
-                { value: '60d', label: 'Últimos 60 dias' },
-                { value: 'custom', label: 'Data Específica' },
-              ]}
-              className="w-48"
-            />
-
-            {mlPeriod === 'custom' && (
-              <div className="flex items-center gap-1 pr-2">
-                <input
-                  type="date"
-                  value={mlCustomDate.start}
-                  onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
-                    theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
-                  )}
-                />
-                <span className="text-zinc-500 text-xs font-bold">a</span>
-                <input
-                  type="date"
-                  value={mlCustomDate.end}
-                  onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
-                  className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
-                    theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
-                  )}
-                />
-              </div>
-            )}
-            {isMlDashboardLoading && <Loader2 className="animate-spin text-amber-500 mr-2" size={16} />}
-          </div>
-        )}
       </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6 px-4 sm:px-0">
         {source === 'estoque' ? (
           <>
             <StatCard 
               icon={Package} 
               label="Valor do Estoque" 
-              value={formatCurrency(metrics.valorTotalEstoque)} 
+              value={metrics.valorTotalEstoque} 
               subValue={`${metrics.totalItensEstoque} itens em estoque`}
               color="bg-indigo-500" 
               theme={theme}
@@ -797,16 +964,76 @@ const DashboardView = ({
             <StatCard 
               icon={TrendingUp} 
               label="Vendas (Mês)" 
-              value={formatCurrency(metrics.valorVendasMes)} 
+              value={metrics.valorVendasMes} 
               subValue={`${metrics.totalVendasMes} vendas no mês`}
               color="bg-teal-500" 
               theme={theme}
               isSensitive={true}
             />
+            
+            {/* Gráfico Estiloso que ocupa o espaço de 2 cards */}
+            <div className={cn(
+              "col-span-2 border rounded-2xl p-5 transition-all duration-300 relative overflow-hidden flex flex-col h-full",
+              theme === 'dark' 
+                ? "bg-zinc-900/40 border-zinc-800/50 shadow-lg" 
+                : "bg-white border-zinc-200 shadow-sm"
+            )}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className={cn(
+                    "p-2 rounded-xl",
+                    theme === 'dark' ? "bg-zinc-800/50 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+                  )}>
+                    <BarChart3 size={16} strokeWidth={2.5} />
+                  </div>
+                  <span className={cn("text-[9px] font-black uppercase tracking-[0.2em] opacity-60", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+                    Desempenho Semanal
+                  </span>
+                </div>
+              </div>
+              <div className="flex-1 min-h-[120px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData.slice(-7)}>
+                    <defs>
+                      <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <Tooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className={cn(
+                              "p-2 rounded-lg border shadow-xl text-[10px] font-bold",
+                              theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-white" : "bg-white border-zinc-100 text-zinc-900"
+                            )}>
+                              <p className="opacity-60 mb-1">{payload[0].payload.label}</p>
+                              <p className="text-emerald-400">{formatCurrency(payload[0].value)}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="vendas" 
+                      stroke="#10b981" 
+                      strokeWidth={3} 
+                      fillOpacity={1} 
+                      fill="url(#colorVendas)" 
+                      animationDuration={1500}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
             <StatCard 
               icon={DollarSign} 
               label="Saídas (Mês)" 
-              value={formatCurrency(metrics.valorSaidasMes)} 
+              value={metrics.valorSaidasMes} 
               subValue="despesas operacionais"
               color="bg-rose-400" 
               theme={theme} 
@@ -815,7 +1042,7 @@ const DashboardView = ({
             <StatCard 
               icon={ShoppingCart} 
               label="Ticket Médio" 
-              value={formatCurrency(metrics.ticketMedio)} 
+              value={metrics.ticketMedio} 
               subValue="por venda realizada"
               color="bg-amber-400" 
               theme={theme} 
@@ -863,7 +1090,7 @@ const DashboardView = ({
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
         {/* Gráfico Principal */}
         <div className={cn(
           "lg:col-span-2 border p-6 rounded-2xl transition-all duration-300",
@@ -937,28 +1164,37 @@ const DashboardView = ({
           </div>
 
           {/* Mobile Simplified View */}
-          <div className="sm:hidden space-y-3">
-            {chartData.slice(-5).reverse().map((day: any, i: number) => (
-              <div key={i} className={cn(
-                "flex items-center justify-between p-3 rounded-xl border",
-                theme === 'dark' ? "bg-zinc-950/50 border-zinc-800" : "bg-zinc-50 border-zinc-200"
-              )}>
-                <div className="flex flex-col">
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase">{day.label}</span>
-                  <span className={cn("text-xs font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
-                    {source === 'estoque' ? "Resumo do dia" : "Vendas ML"}
-                  </span>
-                </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-sm font-bold text-emerald-500">+{formatCurrency(day.vendas)}</span>
-                  {source === 'estoque' && day.saidas > 0 && (
-                    <span className="text-[10px] font-bold text-rose-500">-{formatCurrency(day.saidas)}</span>
-                  )}
-                </div>
-              </div>
-            ))}
-            <p className="text-[10px] text-center text-zinc-500 font-bold uppercase tracking-widest pt-2">
-              Últimos 5 dias
+          <div className="sm:hidden h-[200px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData.slice(-15)}>
+                <defs>
+                  <linearGradient id="colorVendasMobile" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <Area 
+                  type="monotone" 
+                  dataKey="vendas" 
+                  stroke={source === 'estoque' ? "#8b5cf6" : "#10b981"} 
+                  strokeWidth={3} 
+                  fillOpacity={1} 
+                  fill="url(#colorVendasMobile)" 
+                  animationDuration={1000}
+                />
+                <Tooltip 
+                  formatter={(value: number) => [formatCurrency(value), ""]}
+                  contentStyle={{ 
+                    backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '10px'
+                  }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+            <p className="text-[8px] text-center text-zinc-500 font-black uppercase tracking-[0.3em] mt-2">
+              Fluxo dos últimos 15 dias
             </p>
           </div>
         </div>
@@ -1064,19 +1300,72 @@ const DashboardView = ({
         </div>
         {/* Últimas Vendas / Pedidos ML */}
         <div className={cn(
-          "border rounded-2xl overflow-hidden transition-all duration-300",
+          "lg:col-span-3 border rounded-2xl overflow-hidden transition-all duration-300 mt-6",
           theme === 'dark' 
             ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
             : "bg-white border-zinc-200 shadow-sm"
         )}>
           <div className={cn(
-            "p-4 border-b flex items-center justify-between",
+            "p-4 border-b flex items-center justify-between relative",
             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
           )}>
             <h3 className={cn("font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
               {source === 'estoque' ? "Últimas Vendas" : "Vendas (Mercado Livre)"}
             </h3>
-            <History size={16} className="text-zinc-500" />
+            
+            <div className="flex items-center gap-2">
+              {source === 'estoque' && (
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowPaymentFilter(!showPaymentFilter)}
+                    className={cn(
+                      "p-3 rounded-xl transition-all active:scale-95 border flex items-center justify-center min-w-[44px] min-h-[44px]",
+                      theme === 'dark' 
+                        ? "bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:text-white" 
+                        : "bg-zinc-100 border-zinc-200 text-zinc-600 hover:text-zinc-900",
+                      paymentFilter !== 'TODOS' && "border-violet-500/50 text-violet-500 bg-violet-500/10"
+                    )}
+                  >
+                    <Filter size={20} />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showPaymentFilter && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className={cn(
+                          "absolute right-0 mt-2 w-48 rounded-2xl border shadow-2xl z-50 p-2",
+                          theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+                        )}
+                      >
+                        {['TODOS', 'CRÉDITO', 'DÉBITO', 'DINHEIRO', 'MARCELO', 'PENDÊNCIA', 'PIX'].map((type) => (
+                          <button
+                            key={type}
+                            onClick={() => {
+                              setPaymentFilter(type);
+                              setShowPaymentFilter(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold transition-colors",
+                              paymentFilter === type
+                                ? "bg-violet-500 text-white"
+                                : theme === 'dark'
+                                  ? "text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                                  : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+                            )}
+                          >
+                            {type}
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+              <History size={16} className="text-zinc-500" />
+            </div>
           </div>
           
           {source === 'estoque' ?
@@ -1095,7 +1384,7 @@ const DashboardView = ({
                   </tr>
                 </thead>
                 <tbody className={cn("divide-y", theme === 'dark' ? "divide-zinc-800/30" : "divide-zinc-100")}>
-                  {metrics.ultimasVendas.slice(0, 5).map((sale: any) => (
+                  {filteredLastSales.slice(0, 5).map((sale: any) => (
                     <tr 
                       key={sale.id} 
                       onClick={() => onSelectItem(sale)}
@@ -1130,34 +1419,52 @@ const DashboardView = ({
               </table>
 
               {/* Mobile Cards */}
-              <div className="md:hidden flex flex-col divide-y divide-zinc-800/30">
-                {metrics.ultimasVendas.slice(0, 5).map((sale: any) => (
-                  <div 
-                    key={sale.id}
-                    onClick={() => onSelectItem(sale)}
-                    className="p-4 flex flex-col gap-2 active:bg-zinc-800/20 transition-colors"
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <span className={cn("font-bold text-sm line-clamp-2", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
-                        {sale.nome}
-                      </span>
-                      <span className="text-emerald-400 font-bold text-sm whitespace-nowrap">
-                        {formatCurrency(sale.valor)}
-                      </span>
+              <div className="md:hidden flex flex-col max-h-[500px] overflow-y-auto scrollbar-hide divide-y divide-zinc-800/10 px-8">
+                {filteredLastSales.slice(0, 10).map((sale: any) => {
+                  const isSaida = sale.tipo === 'SAÍDA';
+                  return (
+                    <div 
+                      key={sale.id}
+                      onClick={() => onSelectItem(sale)}
+                      className="py-3 flex flex-col gap-1.5 active:bg-zinc-800/20 transition-all duration-200 cursor-pointer"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex flex-col min-w-0">
+                          <span className={cn(
+                            "font-bold text-[13px] leading-tight truncate", 
+                            theme === 'dark' ? "text-zinc-300" : "text-zinc-700"
+                          )}>
+                            {sale.nome}
+                          </span>
+                          <span className={cn(
+                            "font-black text-base tracking-tight drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]",
+                            isSaida ? "text-rose-400" : "text-emerald-400"
+                          )}>
+                            {isSaida ? `- ${formatCurrency(sale.valor)}` : formatCurrency(sale.valor)}
+                          </span>
+                        </div>
+                        <span className="text-zinc-500 text-[8px] font-bold bg-zinc-800/30 px-1.5 py-0.5 rounded border border-zinc-800/30 shrink-0 mt-1">
+                          {new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm",
+                          isSaida 
+                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            : (theme === 'dark' ? "bg-zinc-800 text-zinc-500 border border-zinc-700" : "bg-zinc-100 text-zinc-400 border border-zinc-200")
+                        )}>
+                          {sale.tipo}
+                        </span>
+                        {sale.moto && (
+                          <span className="text-zinc-600 text-[8px] font-bold truncate max-w-[80px]">
+                            {sale.moto}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
-                        theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50" : "bg-zinc-100 text-zinc-600"
-                      )}>
-                        {sale.tipo}
-                      </span>
-                      <span className="text-zinc-500 text-[10px] font-medium">
-                        {new Date(sale.data).toLocaleDateString('pt-BR')}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           :
@@ -1178,7 +1485,7 @@ const DashboardView = ({
                     "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
                     mlSalesSubTab === 'pending' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
                   )}>
-                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'ready_to_print').length}
+                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'ready_to_ship' && s.shipping_status !== 'cancelled' && s.shipping_substatus !== 'cancelled' && s.shipping_substatus !== 'not_delivered').length}
                   </span>
                 </button>
 
@@ -1196,7 +1503,7 @@ const DashboardView = ({
                     "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
                     mlSalesSubTab === 'waiting' ? "bg-amber-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
                   )}>
-                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'pending').length}
+                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'pending' && s.shipping_status !== 'cancelled' && s.shipping_substatus !== 'cancelled' && s.shipping_substatus !== 'not_delivered').length}
                   </span>
                 </button>
 
@@ -1234,7 +1541,7 @@ const DashboardView = ({
                     "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
                     mlSalesSubTab === 'shipped' ? "bg-violet-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
                   )}>
-                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'shipped').length}
+                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'shipped' && s.shipping_status !== 'cancelled' && s.shipping_substatus !== 'cancelled' && s.shipping_substatus !== 'not_delivered').length}
                   </span>
                 </button>
                 <button 
@@ -1251,7 +1558,24 @@ const DashboardView = ({
                     "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
                     mlSalesSubTab === 'delivered' ? "bg-emerald-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
                   )}>
-                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'delivered').length}
+                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'delivered' && s.shipping_substatus !== 'cancelled' && s.shipping_substatus !== 'not_delivered').length}
+                  </span>
+                </button>
+                <button 
+                  onClick={() => setMlSalesSubTab('cancelled')}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
+                    mlSalesSubTab === 'cancelled' 
+                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
+                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
+                  )}
+                >
+                  Canceladas
+                  <span className={cn(
+                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
+                    mlSalesSubTab === 'cancelled' ? "bg-red-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
+                  )}>
+                    {metrics.ultimasVendas.filter((s: any) => s.shipping_status === 'cancelled' || s.shipping_substatus === 'cancelled' || s.shipping_substatus === 'not_delivered').length}
                   </span>
                 </button>
                 <button 
@@ -1275,6 +1599,15 @@ const DashboardView = ({
 
               {filteredSales.map((sale: any) => {
                 const getShippingStatusInfo = (sale: any) => {
+                  if (sale.shipping_status === 'cancelled' || sale.shipping_substatus === 'cancelled' || sale.shipping_substatus === 'not_delivered') {
+                    return {
+                      title: 'Cancelada',
+                      titleColor: 'text-red-500',
+                      description: 'A venda foi cancelada.',
+                      buttonText: 'Ver detalhes',
+                      buttonAction: 'view'
+                    };
+                  }
                   if (sale.has_dispute) {
                     return {
                       title: 'Mediação em curso',
@@ -1284,12 +1617,40 @@ const DashboardView = ({
                       buttonAction: 'dispute'
                     };
                   }
-                  if (sale.shipping_status === 'ready_to_print') {
+                  if (sale.shipping_status === 'ready_to_ship') {
+                    if (sale.shipping_substatus === 'ready_to_print') {
+                      return {
+                        title: 'Pronto para gerar etiqueta',
+                        titleColor: 'text-orange-500',
+                        description: 'Você deve despachar o pacote hoje ou amanhã em Correios.',
+                        buttonText: 'GERAR ETIQUETA',
+                        buttonAction: 'print'
+                      };
+                    }
+                    if (sale.shipping_substatus === 'printed') {
+                      return {
+                        title: 'Etiqueta já impressa',
+                        titleColor: 'text-blue-500',
+                        description: 'Aguardar coleta ou despachar o pacote.',
+                        buttonText: 'Reimprimir etiqueta',
+                        buttonAction: 'print'
+                      };
+                    }
+                    if (sale.shipping_substatus === 'invoice_pending') {
+                      return {
+                        title: 'Aguardando nota fiscal',
+                        titleColor: 'text-amber-500',
+                        description: 'Enviar XML da NF para liberar a etiqueta.',
+                        buttonText: 'Ver detalhes',
+                        buttonAction: 'view'
+                      };
+                    }
+                    // Default for ready_to_ship
                     return {
-                      title: 'Etiqueta pronta para imprimir',
+                      title: 'Pronto para envio',
                       titleColor: 'text-orange-500',
-                      description: 'Você deve despachar o pacote hoje ou amanhã em Correios.',
-                      buttonText: 'Imprimir etiqueta',
+                      description: 'Você deve despachar o pacote.',
+                      buttonText: 'GERAR ETIQUETA',
                       buttonAction: 'print'
                     };
                   }
@@ -1320,6 +1681,15 @@ const DashboardView = ({
                       buttonAction: 'view'
                     };
                   }
+                  if (sale.status === 'cancelled') {
+                    return {
+                      title: 'Cancelada',
+                      titleColor: 'text-red-500',
+                      description: 'A venda foi cancelada.',
+                      buttonText: 'Ver detalhes',
+                      buttonAction: 'view'
+                    };
+                  }
                   return {
                     title: sale.status === 'Pago' ? 'Pagamento aprovado' : sale.status,
                     titleColor: 'text-zinc-500',
@@ -1337,33 +1707,37 @@ const DashboardView = ({
                   theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
                 )}>
                   {/* Header do Card */}
-                  <div className="flex items-center justify-between border-b pb-3 border-zinc-800/50">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <span className="bg-amber-400 text-black text-[10px] font-black px-1.5 py-0.5 rounded">ML</span>
-                      <span className="text-xs text-zinc-400 font-medium">#{sale.id}</span>
-                      <span className="text-xs text-zinc-500">|</span>
-                      <span className="text-xs text-zinc-400">{new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      <div className="bg-amber-400 text-black text-[10px] font-black px-2 py-0.5 rounded-md shadow-sm">ML</div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-zinc-200">#{sale.id}</span>
+                        <span className="text-[10px] text-zinc-500">{new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
                     </div>
+                    
                     <div className="flex items-center gap-4">
-                      <div className="flex flex-col items-end">
-                        <span className={cn("text-sm font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>{sale.cliente}</span>
-                        <span className="text-[10px] text-zinc-500">{sale.nickname}</span>
+                      <div className="text-right">
+                        <div className={cn("text-sm font-semibold truncate max-w-[140px]", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
+                          {sale.cliente || sale.nickname}
+                        </div>
+                        <div className="text-[10px] text-zinc-500 truncate max-w-[140px]">{sale.nickname}</div>
                       </div>
                       <button 
                         onClick={() => window.open(`https://myaccount.mercadolivre.com.br/messaging/orders/${sale.id}`, '_blank')}
-                        className="text-blue-500 hover:text-blue-400 text-xs font-bold flex items-center gap-1"
+                        className="p-2 rounded-full hover:bg-zinc-800 transition-colors text-zinc-400 hover:text-blue-400"
+                        title="Mensagens"
                       >
-                        <MessageSquare size={12} />
-                        Mensagens
+                        <MessageSquare size={16} />
                       </button>
                     </div>
                   </div>
 
-                  {/* Ação Principal */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
+                  {/* Ação Principal e Detalhes */}
+                  <div className="flex items-center justify-between bg-black/20 p-3 rounded-lg border border-white/5">
+                    <div className="flex flex-col gap-0.5">
                       <span className={cn("font-bold text-sm", statusInfo.titleColor)}>{statusInfo.title}</span>
-                      <span className="text-zinc-500 text-xs">{statusInfo.description}</span>
+                      <span className="text-zinc-400 text-xs">{statusInfo.description}</span>
                     </div>
                     {statusInfo.buttonAction === 'print' ? (
                       <button 
@@ -1379,7 +1753,22 @@ const DashboardView = ({
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `etiqueta-${sale.shipping_id}.pdf`;
+                            
+                            const contentDisposition = res.headers.get('Content-Disposition');
+                            let filename = `etiqueta-${sale.shipping_id}.pdf`;
+                            if (contentDisposition) {
+                              const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                              if (filenameMatch && filenameMatch.length === 2) {
+                                filename = filenameMatch[1];
+                              } else {
+                                const filenameMatch2 = contentDisposition.match(/filename=([^;]+)/);
+                                if (filenameMatch2 && filenameMatch2.length === 2) {
+                                  filename = filenameMatch2[1];
+                                }
+                              }
+                            }
+                            
+                            a.download = filename;
                             document.body.appendChild(a);
                             a.click();
                             a.remove();
@@ -1411,11 +1800,14 @@ const DashboardView = ({
                     "flex items-center justify-between p-3 rounded-lg",
                     theme === 'dark' ? "bg-zinc-800/30" : "bg-zinc-50"
                   )}>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       {sale.thumbnail && (
-                        <img src={sale.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                        <img src={sale.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800 shrink-0" referrerPolicy="no-referrer" />
                       )}
-                      <span className={cn("text-sm font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>{sale.itens}</span>
+                      <span className={cn(
+                        "text-sm font-semibold truncate",
+                        theme === 'dark' ? "text-zinc-100" : "text-zinc-900"
+                      )} title={sale.itens}>{sale.itens}</span>
                     </div>
                     <div className="flex items-center gap-8">
                       <span className="text-zinc-500 text-sm">{formatCurrency(sale.valor)}</span>
@@ -1436,7 +1828,7 @@ const DashboardView = ({
 
         {/* Últimos Itens / Anúncios Recentes ML */}
         <div className={cn(
-          "border rounded-2xl overflow-hidden transition-all duration-300",
+          "lg:col-span-3 border rounded-2xl overflow-hidden transition-all duration-300 mt-6",
           theme === 'dark' 
             ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
             : "bg-white border-zinc-200 shadow-sm"
@@ -1451,7 +1843,8 @@ const DashboardView = ({
             <Package size={16} className="text-violet-500" />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            {/* Desktop Table */}
+            <table className="hidden md:table w-full text-left text-sm">
               <thead>
                 <tr className={cn(
                   "text-[10px] uppercase font-bold tracking-wider",
@@ -1504,6 +1897,51 @@ const DashboardView = ({
                 ))}
               </tbody>
             </table>
+
+            {/* Mobile Cards */}
+            <div className="md:hidden flex flex-col max-h-[500px] overflow-y-auto scrollbar-hide divide-y divide-zinc-800/10 px-8">
+              {metrics.ultimosItens.map((item: any) => (
+                <div 
+                  key={item.id}
+                  onClick={() => {
+                    if (source === 'estoque') onSelectItem(item);
+                    else if (item.permalink) window.open(item.permalink, '_blank');
+                  }}
+                  className="py-3 flex flex-col gap-2 active:bg-zinc-800/20 transition-all duration-200 cursor-pointer"
+                >
+                  <div className="flex items-start gap-3">
+                    {source === 'mercadolivre' && item.thumbnail && (
+                      <img src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800 shadow-sm shrink-0" referrerPolicy="no-referrer" />
+                    )}
+                    <div className="flex flex-col min-w-0">
+                      <span className={cn(
+                        "font-bold text-[13px] leading-tight truncate", 
+                        theme === 'dark' ? "text-zinc-300" : "text-zinc-700"
+                      )}>
+                        {source === 'mercadolivre' ? (item.titulo || item.id) : (item.nome || item.title)}
+                      </span>
+                      <span className="text-emerald-400 font-black text-base tracking-tight">
+                        {formatCurrency(source === 'mercadolivre' ? (item.preco || 0) : (item.valor || 0))}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm",
+                      theme === 'dark' ? "bg-violet-500/10 text-violet-400 border border-violet-500/20" : "bg-violet-100 text-violet-600 border border-violet-200"
+                    )}>
+                      Qtd: {source === 'mercadolivre' ? (item.estoque || item.vendidos || 0) : (item.estoque || 0)}
+                    </span>
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm ml-auto",
+                      theme === 'dark' ? "bg-zinc-800 text-zinc-500 border border-zinc-700" : "bg-zinc-100 text-zinc-400 border border-zinc-200"
+                    )}>
+                      {source === 'mercadolivre' ? (item.status === 'active' ? 'Ativo' : item.status) : (item.moto || item.status)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
       </div>
 
@@ -1784,7 +2222,11 @@ const DashboardView = ({
 );
 };
 
-const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void }) => {
+const InventoryView = ({ theme, onSelectItem, onRegisterActions }: { 
+  theme: 'light' | 'dark', 
+  onSelectItem: (item: any) => void,
+  onRegisterActions?: (actions: { edit: (item: any) => void, delete: (id: string) => void }) => void
+}) => {
   const { inventory: items, loading, setInventory, refreshData } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -2140,6 +2582,19 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     setIsModalOpen(true);
   };
 
+  // Register actions for global access (e.g. from DetailModal)
+  useEffect(() => {
+    if (onRegisterActions) {
+      onRegisterActions({
+        edit: openEditModal,
+        delete: (id: string) => {
+          setItemToDelete(id);
+          setIsDeleteConfirmOpen(true);
+        }
+      });
+    }
+  }, [onRegisterActions]);
+
   useEffect(() => {
     const checkMobile = () => {
       if (window.innerWidth < 768) {
@@ -2190,21 +2645,21 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     { key: 'actions', label: 'Ações' },
   ];
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: any) => {
+    const num = Number(value);
+    if (isNaN(num)) return 'R$ 0,00';
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(num);
   };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      month: '2-digit',
+      year: '2-digit'
     });
   };
 
@@ -2212,126 +2667,121 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
     <div className="space-y-4">
       {/* Toolbar Harmonizada e Profissional */}
       <div className={cn(
-        "relative z-50 p-2 rounded-[2rem] flex flex-col lg:flex-row items-center gap-3 transition-all duration-300 shadow-2xl backdrop-blur-md border",
+        "relative z-50 p-6 rounded-[2rem] flex flex-col gap-6 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
-          ? "bg-zinc-900/60 border-zinc-800/50 shadow-black/40" 
-          : "bg-white/80 border-zinc-200/60 shadow-zinc-200/50"
+          ? "bg-zinc-900 border-zinc-800 shadow-black/20" 
+          : "bg-white border-zinc-100 shadow-zinc-200/30"
       )}>
-        {/* Busca Principal */}
-        <div className="w-full lg:flex-1 relative group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={20} />
-          <input 
-            type="text" 
-            placeholder="Buscar por peça, moto ou ID..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className={cn(
-              "w-full rounded-[1.5rem] py-3.5 pl-12 pr-4 text-sm font-medium outline-none transition-all duration-300 border",
-              theme === 'dark' 
-                ? "bg-zinc-950/40 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/5" 
-                : "bg-zinc-50/50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
-            )}
-          />
+        {/* Top Row: Search and Primary Actions */}
+        <div className="flex flex-col md:flex-row items-center gap-4">
+          <div className="w-full md:flex-1 relative group">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-violet-500 transition-colors" size={20} />
+            <input 
+              type="text" 
+              placeholder="Buscar por peça, moto ou ID..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className={cn(
+                "w-full rounded-2xl py-4 pl-14 pr-6 text-base font-medium outline-none transition-all duration-300 border shadow-sm",
+                theme === 'dark' 
+                  ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/5" 
+                  : "bg-zinc-50 border-[#eef2f6] text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
+              )}
+            />
+          </div>
+
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <button 
+              onClick={handleManualRefresh}
+              disabled={loading || isRefreshing}
+              className={cn(
+                "p-4 rounded-2xl transition-all border group flex-1 md:flex-none flex items-center justify-center shadow-sm",
+                theme === 'dark' 
+                  ? "bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/30" 
+                  : "bg-white border-[#eef2f6] text-zinc-500 hover:text-violet-600 hover:border-violet-500/30"
+              )}
+            >
+              <RefreshCw size={20} className={cn((loading || isRefreshing) && "animate-spin")} />
+            </button>
+
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center justify-center gap-2 px-8 py-4 bg-violet-600 text-white rounded-2xl hover:bg-violet-500 active:scale-95 transition-all shadow-lg shadow-violet-600/20 font-bold text-sm uppercase tracking-wider flex-[2] md:flex-none"
+            >
+              <Plus size={20} />
+              <span>Novo Item</span>
+            </button>
+          </div>
         </div>
 
-        {/* Filtros e Controles */}
-        <div className="w-full lg:w-auto flex flex-wrap items-center gap-2">
-          {/* Categoria */}
-          <div className="flex-1 lg:flex-none">
+        {/* Bottom Row: Filters and View Toggles */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            
             <CustomDropdown
               theme={theme}
+              icon={<Filter size={16} />}
               value={selectedCategory}
               onChange={setSelectedCategory}
               options={[
                 { value: 'Todas', label: 'Categorias' },
                 ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat }))
               ]}
-              className="w-full lg:w-48"
+              className="w-full sm:w-40"
             />
-          </div>
-
-          {/* Moto */}
-          <div className="flex-1 lg:flex-none">
+            
             <CustomDropdown
               theme={theme}
+              icon={<Bike size={16} />}
               value={selectedMoto}
               onChange={setSelectedMoto}
               options={[
                 { value: 'Todas', label: 'Motos' },
                 ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto }))
               ]}
-              className="w-full lg:w-48"
+              className="w-full sm:w-40"
             />
-          </div>
 
-          {/* Ordenação */}
-          <div className="hidden lg:block">
             <CustomDropdown
               theme={theme}
+              icon={<ArrowDownAZ size={16} />}
               value={sortConfig.key}
               onChange={(val) => setSortConfig({ key: val, direction: 'desc' })}
               options={[
-                { value: 'criado_em', label: 'Recentes' },
-                { value: 'valor', label: 'Preço' },
-                { value: 'nome', label: 'Nome' },
-                { value: 'estoque', label: 'Estoque' }
+                { value: 'criado_em', label: 'Mais Recentes' },
+                { value: 'valor', label: 'Maior Preço' },
+                { value: 'nome', label: 'Nome (A-Z)' },
+                { value: 'estoque', label: 'Maior Estoque' }
               ]}
-              className="w-40"
+              className="w-full sm:w-44"
             />
           </div>
 
-          {/* Divisor Vertical */}
-          <div className="hidden lg:block w-px h-8 bg-zinc-800/50 mx-1" />
-
-          {/* Controles de Visualização e Ações */}
-          <div className="flex items-center gap-2">
-            <div className={cn(
-              "flex p-1 rounded-2xl border",
-              theme === 'dark' ? "bg-zinc-950/40 border-zinc-800" : "bg-zinc-50/50 border-zinc-200"
-            )}>
-              <button 
-                onClick={() => setViewMode('table')}
-                className={cn(
-                  "p-2 rounded-xl transition-all",
-                  viewMode === 'table' 
-                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20" 
-                    : "text-zinc-500 hover:text-zinc-300"
-                )}
-              >
-                <TableIcon size={18} />
-              </button>
-              <button 
-                onClick={() => setViewMode('card')}
-                className={cn(
-                  "p-2 rounded-xl transition-all",
-                  viewMode === 'card' 
-                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20" 
-                    : "text-zinc-500 hover:text-zinc-300"
-                )}
-              >
-                <LayoutGrid size={18} />
-              </button>
-            </div>
-
+          <div className={cn(
+            "hidden sm:flex p-1 rounded-xl border shadow-sm",
+            theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-zinc-50 border-[#eef2f6]"
+          )}>
             <button 
-              onClick={handleManualRefresh}
-              disabled={loading || isRefreshing}
+              onClick={() => setViewMode('table')}
               className={cn(
-                "p-3 rounded-2xl transition-all border group",
-                theme === 'dark' 
-                  ? "bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/30" 
-                  : "bg-zinc-50/50 border-zinc-200 text-zinc-500 hover:text-violet-600 hover:border-violet-500/30"
+                "p-2 rounded-lg transition-all",
+                viewMode === 'table' 
+                  ? "bg-white text-violet-600 shadow-sm border border-[#eef2f6]" 
+                  : "text-zinc-400 hover:text-zinc-600"
               )}
             >
-              <RefreshCw size={18} className={cn((loading || isRefreshing) && "animate-spin")} />
+              <TableIcon size={18} />
             </button>
-
             <button 
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-violet-600 text-white rounded-2xl hover:bg-violet-500 active:scale-95 transition-all shadow-lg shadow-violet-600/20 font-bold text-sm"
+              onClick={() => setViewMode('card')}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                viewMode === 'card' 
+                  ? "bg-white text-violet-600 shadow-sm border border-[#eef2f6]" 
+                  : "text-zinc-400 hover:text-zinc-600"
+              )}
             >
-              <Plus size={18} />
-              <span className="hidden sm:inline">Novo Item</span>
+              <LayoutGrid size={18} />
             </button>
           </div>
         </div>
@@ -2420,13 +2870,13 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             )}>📦 Catálogo de Peças</h3>
             <span className={cn(
               "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-              theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+              theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
             )}>
               {filteredAndSortedItems.length} itens
             </span>
           </div>
         </div>
-        
+
         {viewMode === 'table' ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[1200px]">
@@ -2595,7 +3045,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                             </button>
                           </div>
                         ) : (
-                          item[col.key] || <span className="text-zinc-600 italic">-</span>
+                          (typeof item[col.key] === 'number' && isNaN(item[col.key])) ? "0" : (item[col.key] || <span className="text-zinc-600 italic">-</span>)
                         )}
                       </td>
                     ))}
@@ -2605,7 +3055,7 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
             </table>
           </div>
         ) : (
-          <div className="p-3 md:p-6 grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 bg-zinc-50/50 dark:bg-zinc-900/20">
+          <div className="p-3 md:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 bg-zinc-50/50 dark:bg-zinc-900/20">
             {loading && items.length === 0 ? (
               Array(8).fill(0).map((_, i) => (
                 <div key={i} className={cn("h-64 rounded-2xl animate-pulse", theme === 'dark' ? "bg-zinc-800/50" : "bg-zinc-200/50")} />
@@ -2638,7 +3088,20 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                 </div>
 
                 {/* Actions Menu */}
-                <div className="absolute top-3 right-3 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-3 right-3 z-10 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(item);
+                    }}
+                    className={cn(
+                      "p-2 rounded-xl backdrop-blur-md transition-all shadow-lg",
+                      theme === 'dark' ? "bg-zinc-900/90 text-violet-400 hover:bg-violet-500 hover:text-white" : "bg-white/90 text-violet-600 hover:bg-violet-600 hover:text-white"
+                    )}
+                    title="Editar item"
+                  >
+                    <Edit2 size={14} />
+                  </button>
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2646,8 +3109,8 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                       setIsDeleteConfirmOpen(true);
                     }}
                     className={cn(
-                      "p-1.5 rounded-md backdrop-blur-md transition-all",
-                      theme === 'dark' ? "bg-zinc-900/80 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/20" : "bg-white/80 text-zinc-500 hover:text-rose-600 hover:bg-rose-50"
+                      "p-2 rounded-xl backdrop-blur-md transition-all shadow-lg",
+                      theme === 'dark' ? "bg-zinc-900/90 text-rose-400 hover:bg-rose-500 hover:text-white" : "bg-white/90 text-rose-600 hover:bg-rose-600 hover:text-white"
                     )}
                     title="Excluir item"
                   >
@@ -2655,9 +3118,9 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                   </button>
                 </div>
 
-                {/* Image Section */}
+                {/* Image Section - Hidden on Mobile for sleek list view */}
                 <div className={cn(
-                  "relative aspect-video w-full overflow-hidden border-b",
+                  "hidden sm:block relative aspect-video w-full overflow-hidden border-b",
                   theme === 'dark' ? "border-zinc-800/50 bg-zinc-950" : "border-zinc-100 bg-zinc-50"
                 )}>
                   {item.imagem ? (
@@ -2682,52 +3145,66 @@ const InventoryView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSel
                     </div>
                   )}
                   
-                {/* Status Badge */}
-                <div className="absolute top-3 left-3 flex gap-2">
-                  <span className={cn(
-                    "px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-md backdrop-blur-md",
-                    item.estoque > 0 
-                      ? "bg-emerald-500/90 text-white" 
-                      : "bg-rose-500/90 text-white"
-                  )}>
-                    {item.estoque > 0 ? `${item.estoque} UN` : 'ESGOTADO'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Content Section */}
-              <div className="p-3 md:p-4 flex flex-col flex-1">
-                <h4 className={cn(
-                  "font-bold text-sm md:text-base leading-tight line-clamp-2 mb-2",
-                  theme === 'dark' ? "text-zinc-100" : "text-zinc-900"
-                )}>
-                  {item.nome}
-                </h4>
-                
-                <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                  <span className={cn(
-                    "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
-                    theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
-                  )}>
-                    {item.categoria}
-                  </span>
-                  <span className={cn(
-                    "text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full",
-                    theme === 'dark' ? "bg-violet-500/20 text-violet-400" : "bg-violet-100 text-violet-600"
-                  )}>
-                    {item.moto}
-                  </span>
+                  {/* Status Badge */}
+                  <div className="absolute top-3 left-3 flex gap-2">
+                    <span className={cn(
+                      "px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider shadow-md backdrop-blur-md",
+                      item.estoque > 0 
+                        ? "bg-emerald-500/90 text-white" 
+                        : "bg-rose-500/90 text-white"
+                    )}>
+                      {item.estoque > 0 ? `${item.estoque} UN` : 'ESGOTADO'}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="mt-auto pt-3 border-t border-zinc-800/20 flex items-center justify-between">
-                  <span className="font-black text-emerald-500 text-sm">
-                    {formatCurrency(item.valor)}
-                  </span>
-                  <span className="text-[10px] text-zinc-500 font-mono">
-                    {item.rk_id}
-                  </span>
-                </div>
+                {/* Content Section */}
+                <div className="p-3 md:p-4 flex flex-col flex-1">
+                  <div className="flex justify-between items-start gap-2 mb-2">
+                    <h4 className={cn(
+                      "font-bold text-sm md:text-base leading-tight line-clamp-2",
+                      theme === 'dark' ? "text-zinc-100" : "text-zinc-900"
+                    )}>
+                      {item.nome}
+                    </h4>
+                    {/* Mobile only value display */}
+                    <span className="sm:hidden font-black text-emerald-500 text-sm whitespace-nowrap drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]">
+                      {formatCurrency(item.valor)}
+                    </span>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                    <span className={cn(
+                      "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                      theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-100"
+                    )}>
+                      {item.categoria}
+                    </span>
+                    <span className={cn(
+                      "text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                      theme === 'dark' ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-zinc-100 text-zinc-500 border-zinc-200"
+                    )}>
+                      {item.moto}
+                    </span>
+                    {/* Mobile only stock badge */}
+                    <span className={cn(
+                      "sm:hidden px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                      item.estoque > 0 
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                        : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                    )}>
+                      {item.estoque > 0 ? `${item.estoque} UN` : 'ESGOTADO'}
+                    </span>
+                  </div>
 
+                  <div className="hidden sm:flex mt-auto pt-3 border-t border-zinc-800/20 items-center justify-between">
+                    <span className="font-black text-emerald-500 text-sm">
+                      {formatCurrency(item.valor)}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      {item.rk_id}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -3549,11 +4026,13 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     setCurrentPage(1);
   };
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: any) => {
+    const num = Number(value);
+    if (isNaN(num)) return 'R$ 0,00';
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(num);
   };
 
   const formatDate = (dateString: string) => {
@@ -5092,11 +5571,13 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
 
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (value: any) => {
+    const num = Number(value);
+    if (isNaN(num)) return 'R$ 0,00';
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(num);
   };
 
   if (loading && items.length === 0) {
@@ -5464,7 +5945,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                           className={cn("w-full bg-transparent border-b border-violet-500 outline-none px-1")}
                           onClick={(e) => e.stopPropagation()}
                         />
-                      ) : item.ano}
+                      ) : (isNaN(Number(item.ano)) ? "0" : item.ano)}
                     </td>
                     <td className="px-6 py-4 text-sm text-zinc-500">
                       {editingRowId === item.id ? (
@@ -5476,7 +5957,7 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                           className={cn("w-full bg-transparent border-b border-violet-500 outline-none px-1")}
                           onClick={(e) => e.stopPropagation()}
                         />
-                      ) : item.lote}
+                      ) : (isNaN(Number(item.lote)) ? "0" : item.lote)}
                     </td>
                     <td className="px-6 py-4">
                       {editingRowId === item.id ? (
@@ -6137,185 +6618,298 @@ export default function App() {
 // DETAIL MODAL COMPONENT
 // =============================================================================
 
-const DetailModal = ({ item, onClose, theme }: { item: any, onClose: () => void, theme: 'light' | 'dark' }) => {
+const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: { 
+  item: any, 
+  onClose: () => void, 
+  theme: 'light' | 'dark',
+  onEdit?: (item: any) => void,
+  onDelete?: (id: string) => void
+}) => {
   if (!item) return null;
 
-  const formatCurrency = (value: number) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLink = () => {
+    const link = item.ml_link || item.permalink;
+    if (link) {
+      navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleWhatsAppShare = () => {
+    const text = `Olá! Tenho interesse nesta peça: *${item.nome || item.titulo}*\nValor: ${formatCurrency(item.valor || item.preco)}\nLink: ${item.ml_link || item.permalink || 'N/A'}`;
+    window.open(`https://wa.me/5511940141635?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const parseValue = (val: any) => {
+    if (val === null || val === undefined) return 0;
+    if (typeof val === 'number') return val;
+    
+    let str = String(val).trim();
+    
+    // Remove R$ and spaces
+    str = str.replace(/R\$\s?/g, '');
+    
+    // Check if it has both dots and commas (e.g. 1.200,50)
+    if (str.includes('.') && str.includes(',')) {
+      // Remove dots (thousands separators) and replace comma with dot
+      str = str.replace(/\./g, '').replace(',', '.');
+    } else if (str.includes(',')) {
+      // Only has comma, assume it's decimal separator
+      str = str.replace(',', '.');
+    }
+    
+    // Remove any other non-digit/dot/minus characters
+    const cleaned = str.replace(/[^\d.-]/g, '');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
+
+  const formatCurrency = (value: any) => {
+    if (typeof value === 'string' && value.includes('R$')) return value;
+    const num = parseValue(value);
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
-    }).format(value);
+    }).format(num);
   };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      return date.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: '2-digit'
+      });
+    } catch (e) {
+      return dateString;
+    }
   };
 
+  const isSale = item.tipo !== undefined && item.tipo !== null;
+  const itemValue = item.valor || item.preco || item.preco_venda || item.price || 0;
+  const itemName = item.nome || item.titulo || item.peca || item.title || 'Sem Nome';
+
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ opacity: 0, scale: 0.9, y: 40 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        exit={{ opacity: 0, scale: 0.9, y: 40 }}
         className={cn(
-          "w-full max-w-2xl max-h-[90vh] overflow-visible rounded-3xl border shadow-2xl flex flex-col",
-          theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+          "w-full max-w-lg max-h-[90vh] overflow-hidden rounded-[2.5rem] border shadow-2xl flex flex-col relative",
+          theme === 'dark' ? "bg-zinc-900/95 border-zinc-800/50" : "bg-white/98 border-zinc-200"
         )}
       >
-        {/* Header */}
-        <div className={cn(
-          "p-6 border-b flex items-center justify-between",
-          theme === 'dark' ? "bg-zinc-900/50 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
-        )}>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-violet-600/20 text-violet-500">
-              {item.tipo ? <ShoppingCart size={24} /> : <Package size={24} />}
-            </div>
-            <div>
-              <h3 className={cn("text-xl font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>{item.nome}</h3>
-              <p className="text-zinc-500 text-sm">{item.rk_id || 'Sem ID'}</p>
-            </div>
-          </div>
-          <button 
-            onClick={onClose} 
-            className={cn(
-              "p-2 rounded-full transition-colors",
-              theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"
+        {/* Close Button Floating */}
+        <button 
+          onClick={onClose} 
+          className={cn(
+            "absolute top-6 right-6 z-20 p-2.5 rounded-full transition-all active:scale-90 shadow-lg backdrop-blur-md",
+            theme === 'dark' ? "bg-zinc-800/80 text-zinc-400 hover:text-white" : "bg-white/80 text-zinc-500 hover:text-zinc-900"
+          )}
+        >
+          <X size={20} />
+        </button>
+
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
+          {/* Hero Section with Image */}
+          <div className="relative h-72 w-full bg-zinc-950/20 flex items-center justify-center overflow-hidden">
+            {(item.imagens && item.imagens.length > 0) ? (
+              <img src={item.imagens[0]} alt={itemName} className="w-full h-full object-contain p-6 relative z-10" referrerPolicy="no-referrer" />
+            ) : item.imagem ? (
+              <img src={item.imagem} alt={itemName} className="w-full h-full object-contain p-6 relative z-10" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-zinc-800 relative z-10">
+                {isSale ? <ShoppingBag size={100} strokeWidth={1} className="opacity-20" /> : <Package size={100} strokeWidth={1} className="opacity-20" />}
+              </div>
             )}
-          >
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-6 space-y-6">
-          {/* Image Section */}
-          {(item.imagens && item.imagens.length > 0) ? (
-            <div className="space-y-3">
-              <div className={cn(
-                "w-full aspect-video rounded-2xl overflow-hidden border bg-zinc-950/50",
-                theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
-              )}>
-                <img src={item.imagens[0]} alt={item.nome} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-              </div>
-              {item.imagens.length > 1 && (
-                <div className="grid grid-cols-5 gap-2">
-                  {item.imagens.slice(1).map((img: string, idx: number) => (
-                    <div key={idx} className={cn(
-                      "aspect-square rounded-lg overflow-hidden border bg-zinc-950/50",
-                      theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
-                    )}>
-                      <img src={img} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : item.imagem && (
-            <div className={cn(
-              "w-full aspect-video rounded-2xl overflow-hidden border bg-zinc-950/50",
-              theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
-            )}>
-              <img src={item.imagem} alt={item.nome} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-            </div>
-          )}
-
-          {/* Details Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <DetailItem label="Valor" value={formatCurrency(item.valor)} theme={theme} highlight />
-            {item.estoque !== undefined && <DetailItem label="Estoque" value={`${item.estoque} unidades`} theme={theme} />}
-            {item.tipo && <DetailItem label="Meio de Pagamento" value={item.tipo} theme={theme} />}
-            {item.moto && <DetailItem label="Moto Compatível" value={item.moto} theme={theme} />}
-            {item.marca && <DetailItem label="Marca" value={item.marca} theme={theme} />}
-            {item.modelo && <DetailItem label="Modelo" value={item.modelo} theme={theme} />}
-            {item.ano && <DetailItem label="Ano" value={item.ano} theme={theme} />}
-            {item.cilindrada && <DetailItem label="Cilindrada" value={`${item.cilindrada} cc`} theme={theme} />}
-            {item.lote && <DetailItem label="Lote" value={item.lote} theme={theme} />}
-            {item.status && <DetailItem label="Status" value={item.status} theme={theme} />}
-            {item.cor && <DetailItem label="Cor" value={item.cor} theme={theme} />}
-            {item.categoria && <DetailItem label="Categoria" value={item.categoria} theme={theme} />}
-            {item.data && <DetailItem label="Data da Transação" value={formatDate(item.data)} theme={theme} />}
-            {item.criado_em && <DetailItem label="Cadastrado em" value={formatDate(item.criado_em)} theme={theme} />}
+            
+            {/* Background Glow based on theme */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_70%)] from-violet-500/10 to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-zinc-900 to-transparent pointer-events-none z-10" />
           </div>
 
-          {/* Additional Info */}
-          {(item.nome_nf || item.pecas_retiradas) && (
-            <div className="grid grid-cols-1 gap-4">
-              {item.nome_nf && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold uppercase text-zinc-500 tracking-wider">Nome NF</h4>
-                  <div className={cn(
-                    "p-4 rounded-xl border text-sm leading-relaxed",
-                    theme === 'dark' ? "bg-zinc-950/50 border-zinc-800 text-zinc-300" : "bg-zinc-50 border-zinc-200 text-zinc-700"
-                  )}>
-                    {item.nome_nf}
-                  </div>
+          {/* Main Content */}
+          <div className="px-8 pb-8 -mt-10 relative z-20">
+            <div className="flex flex-col gap-1 mb-8">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-violet-500/20 text-violet-400 text-[10px] font-black uppercase tracking-widest rounded-full border border-violet-500/20 shadow-[0_0_10px_rgba(139,92,246,0.2)]">
+                    {item.categoria || (isSale ? 'Venda' : 'Peça')}
+                  </span>
+                  {(item.status || item.tipo) && (
+                    <span className={cn(
+                      "px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full border",
+                      (item.status === 'Disponível' || item.status === 'Ativo' || (isSale && item.tipo !== 'SAÍDA'))
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                    )}>
+                      {item.status || item.tipo}
+                    </span>
+                  )}
                 </div>
-              )}
-              {item.pecas_retiradas && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold uppercase text-zinc-500 tracking-wider">Peças Retiradas</h4>
-                  <div className={cn(
-                    "p-4 rounded-xl border text-sm leading-relaxed",
-                    theme === 'dark' ? "bg-zinc-950/50 border-zinc-800 text-zinc-300" : "bg-zinc-50 border-zinc-200 text-zinc-700"
-                  )}>
-                    {item.pecas_retiradas}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Description */}
-          {item.descricao && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold uppercase text-zinc-500 tracking-wider">Descrição / Observações</h4>
-              <div className={cn(
-                "p-4 rounded-xl border text-sm leading-relaxed",
-                theme === 'dark' ? "bg-zinc-950/50 border-zinc-800 text-zinc-300" : "bg-zinc-50 border-zinc-200 text-zinc-700"
-              )}>
-                {item.descricao}
+                <span className="text-zinc-500 text-[10px] font-mono font-bold bg-zinc-800/50 px-2 py-1 rounded-lg">#{item.rk_id || (item.id && String(item.id).slice(0,8)) || 'N/A'}</span>
+              </div>
+              
+              <h3 className={cn("text-2xl font-black leading-tight tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+                {itemName}
+              </h3>
+              
+              <div className="flex items-baseline gap-2 mt-3">
+                <span className={cn(
+                  "text-4xl font-black tracking-tighter",
+                  item.tipo === 'SAÍDA' 
+                    ? "text-rose-400 drop-shadow-[0_0_20px_rgba(244,63,94,0.6)]" 
+                    : "text-emerald-400 drop-shadow-[0_0_20px_rgba(52,211,153,0.6)]"
+                )}>
+                  {formatCurrency(itemValue)}
+                </span>
               </div>
             </div>
-          )}
 
-          {/* Links */}
-          {item.ml_link && (
-            <a 
-              href={item.ml_link} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 w-full py-3 bg-yellow-500 text-black font-bold rounded-xl hover:bg-yellow-400 transition-all shadow-lg shadow-yellow-500/20"
-            >
-              <ExternalLink size={18} />
-              Ver no Mercado Livre
-            </a>
-          )}
+            {/* Elegant Grid */}
+            <div className="grid grid-cols-2 gap-4 mb-8">
+              {!isSale && <DetailItem label="Estoque" value={item.estoque !== undefined ? item.estoque : 'N/A'} icon={Package} theme={theme} />}
+              <DetailItem label="Moto/Modelo" value={item.moto || item.modelo || 'N/A'} icon={Bike} theme={theme} />
+              {!isSale && <DetailItem label="Ano" value={item.ano || 'N/A'} icon={Calendar} theme={theme} />}
+              {isSale && <DetailItem label="Pagamento" value={item.forma_pagamento || item.tipo || 'N/A'} icon={CreditCard} theme={theme} />}
+            </div>
+
+            {/* Additional Info Grid */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className={cn(
+                "p-4 rounded-2xl border flex flex-col gap-1",
+                theme === 'dark' ? "bg-zinc-900/50 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
+              )}>
+                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">ID Notion</span>
+                <span className={cn("text-xs font-mono font-medium truncate", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+                  {item.id}
+                </span>
+              </div>
+              <div className={cn(
+                "p-4 rounded-2xl border flex flex-col gap-1",
+                theme === 'dark' ? "bg-zinc-900/50 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
+              )}>
+                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Criado em</span>
+                <span className={cn("text-xs font-medium", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+                  {formatDate(item.criado_em || item.data || item.date_created)}
+                </span>
+              </div>
+            </div>
+
+            {/* Description Section */}
+            {(item.descricao || item.pecas_retiradas || item.observacoes) && (
+              <div className="space-y-6 mb-8">
+                {(item.pecas_retiradas) && (
+                  <div className="p-5 rounded-3xl bg-zinc-800/20 border border-zinc-800/50 space-y-3">
+                    <h4 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em] flex items-center gap-2">
+                      <Wrench size={14} /> Peças Retiradas
+                    </h4>
+                    <p className={cn("text-sm leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
+                      {item.pecas_retiradas}
+                    </p>
+                  </div>
+                )}
+                {(item.descricao || item.observacoes) && (
+                  <div className="p-5 rounded-3xl bg-zinc-800/20 border border-zinc-800/50 space-y-3">
+                    <h4 className="text-[10px] font-black uppercase text-amber-400 tracking-[0.2em] flex items-center gap-2">
+                      <FileText size={14} /> Observações
+                    </h4>
+                    <p className={cn("text-sm leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
+                      {item.descricao || item.observacoes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              {onEdit && (
+                <button 
+                  onClick={() => {
+                    onEdit(item);
+                    onClose();
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all cursor-pointer hover:scale-[1.02] active:scale-95",
+                    theme === 'dark' 
+                      ? "bg-zinc-800/50 text-zinc-300 hover:bg-violet-600 hover:text-white border border-zinc-700/50 hover:border-violet-500" 
+                      : "bg-white text-zinc-600 hover:bg-violet-600 hover:text-white border border-zinc-200 shadow-sm hover:border-violet-500"
+                  )}
+                >
+                  <Edit2 size={16} /> Editar
+                </button>
+              )}
+              {onDelete && (
+                <button 
+                  onClick={() => {
+                    onDelete(item.id);
+                    onClose();
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all cursor-pointer hover:scale-[1.02] active:scale-95",
+                    theme === 'dark' 
+                      ? "bg-rose-500/10 text-rose-400 hover:bg-rose-600 hover:text-white border border-rose-500/20 hover:border-rose-500" 
+                      : "bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white border border-rose-100 shadow-sm hover:border-rose-500"
+                  )}
+                >
+                  <Trash2 size={16} /> Excluir
+                </button>
+              )}
+            </div>
+
+            {/* Action Button */}
+            {(item.ml_link || item.permalink) && (
+              <motion.a 
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                href={item.ml_link || item.permalink} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-3 w-full py-4 mt-2 bg-[#FFE600] text-[#2D3277] font-bold text-sm rounded-2xl hover:bg-[#F0D800] transition-colors shadow-md cursor-pointer"
+              >
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#2D3277]">
+                  <path d="M10.75 2.06a2.25 2.25 0 0 1 2.5 0l7.5 4.87a2.25 2.25 0 0 1 1.02 1.88v6.38a2.25 2.25 0 0 1-1.02 1.88l-7.5 4.87a2.25 2.25 0 0 1-2.5 0l-7.5-4.87A2.25 2.25 0 0 1 2.23 15.2V8.81a2.25 2.25 0 0 1 1.02-1.88l7.5-4.87ZM12 4.31l-6.27 4.07 6.27 4.08 6.27-4.08L12 4.31ZM4.48 10.3v4.9l6.27 4.08v-4.9l-6.27-4.08Zm15.04 0-6.27 4.08v4.9l6.27-4.08v-4.9Z"/>
+                </svg>
+                Ver no Mercado Livre
+              </motion.a>
+            )}
+          </div>
         </div>
       </motion.div>
     </div>
   );
 };
 
-const DetailItem = ({ label, value, theme, highlight }: { label: string, value: string | number, theme: 'light' | 'dark', highlight?: boolean }) => (
-  <div className={cn(
-    "p-4 rounded-2xl border transition-colors",
-    theme === 'dark' ? "bg-zinc-950/50 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
-  )}>
-    <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider mb-1">{label}</p>
-    <p className={cn(
-      "text-sm font-bold",
-      highlight ? "text-emerald-400" : theme === 'dark' ? "text-zinc-200" : "text-zinc-900"
-    )}>{value}</p>
-  </div>
-);
+const DetailItem = ({ label, value, theme, icon: Icon }: { label: string, value: any, theme: 'light' | 'dark', icon: any }) => {
+  const displayValue = (value === null || value === undefined || value === "") ? "-" : value;
+  
+  return (
+    <div className={cn(
+      "p-4 rounded-2xl border flex flex-col gap-1.5 transition-all",
+      theme === 'dark' ? "bg-zinc-800/30 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
+    )}>
+      <div className="flex items-center gap-2 text-zinc-500">
+        <Icon size={12} strokeWidth={2.5} />
+        <span className="text-[9px] uppercase font-black tracking-widest">{label}</span>
+      </div>
+      <span className={cn(
+        "text-xs font-bold truncate",
+        theme === 'dark' ? "text-zinc-200" : "text-zinc-900",
+        (label === 'Estoque' || label === 'Valor' || label === 'Preço') && "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]"
+      )}>
+        {displayValue}
+      </span>
+    </div>
+  );
+};
 
 // =============================================================================
 // MOTO CARD COMPONENT
@@ -6592,7 +7186,10 @@ function AppContent() {
     }
     return 'dashboard';
   });
+  const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
+  const [showPaymentFilter, setShowPaymentFilter] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
+  const [inventoryActions, setInventoryActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [mlDashboardData, setMlDashboardData] = useState<any>(null);
@@ -6970,9 +7567,17 @@ function AppContent() {
                   setMlCurrentPage={setMlCurrentPage}
                   mlTotalPages={mlTotalPages}
                   paginatedMlListings={paginatedMlListings}
+                  paymentFilter={paymentFilter}
+                  setPaymentFilter={setPaymentFilter}
+                  showPaymentFilter={showPaymentFilter}
+                  setShowPaymentFilter={setShowPaymentFilter}
                 />
               ) : activeTab === 'estoque' ? (
-                <InventoryView theme={theme} onSelectItem={setSelectedDetailItem} />
+                <InventoryView 
+                  theme={theme} 
+                  onSelectItem={setSelectedDetailItem} 
+                  onRegisterActions={setInventoryActions}
+                />
               ) : activeTab === 'vendas' ? (
                 <SalesView theme={theme} onSelectItem={setSelectedDetailItem} />
               ) : activeTab === 'motos' ? (
@@ -7004,6 +7609,8 @@ function AppContent() {
             item={selectedDetailItem} 
             theme={theme} 
             onClose={() => setSelectedDetailItem(null)} 
+            onEdit={activeTab === 'estoque' ? inventoryActions?.edit : undefined}
+            onDelete={activeTab === 'estoque' ? inventoryActions?.delete : undefined}
           />
         )}
       </AnimatePresence>

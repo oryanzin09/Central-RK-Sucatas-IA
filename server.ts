@@ -23,16 +23,16 @@ try {
 }
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN || "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";
-const DATABASE_ID = process.env.NOTION_DATABASE_ID || "2f4dfa25a52880c1b315f7e8953f5889";
-const MOTOS_DATABASE_ID = "317dfa25a528805f9663ff0e6ebf0318";
+const DATABASE_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ESTOQUE || "2f4dfa25a52880c1b315f7e8953f5889";
+const MOTOS_DATABASE_ID = process.env.NOTION_DB_MOTOS || "317dfa25a528805f9663ff0e6ebf0318";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
 
 // Cache para estrutura do banco de dados e resultados de query
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
 const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
-const CACHE_TTL = 1000 * 60 * 10; // 10 minutos
-const DATA_CACHE_TTL = 1000 * 60 * 15; // 15 minutos para dados (RK Sucatas: carregamento rápido)
+const CACHE_TTL = 1000 * 60 * 5; // 5 minutos
+const DATA_CACHE_TTL = 1000 * 60 * 2; // 2 minutos para dados (RK Sucatas: carregamento rápido)
 const fetchLocks: Record<string, Promise<any> | null> = {};
 
 // Cache para detalhes de itens do Mercado Livre para evitar re-fetch constante
@@ -191,7 +191,7 @@ async function startServer() {
     cors: { origin: "*" }
   });
 
-  const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+  const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "2fbdfa25a52880a587ebcca53c478342";
 
   app.use(express.json());
 
@@ -705,12 +705,47 @@ async function startServer() {
   // Listar vendas
   app.get('/api/ml/sales', async (req, res) => {
     try {
+      const trintaDiasAtras = new Date();
+      trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+      
       const ordersResponse = await mlClient.request(`/orders/search`, {
-        params: { seller: mlClient.userId, order: 'date_desc', limit: 50 }
+        params: { 
+          seller: await mlClient.ensureUserId(), 
+          'order.date_created.from': trintaDiasAtras.toISOString(),
+          sort: 'date_desc', 
+          limit: 50 
+        }
       });
       
+      const orders = ordersResponse.results || [];
+      const shippingIds = Array.from(new Set(orders.map((o: any) => o.shipping?.id).filter(Boolean)));
+      
+      const shipmentsMap = new Map();
+      if (shippingIds.length > 0) {
+        try {
+          // Fetch shipments individually in parallel to ensure x-format-new header works correctly
+          const shipmentPromises = shippingIds.map((id: any) => 
+            mlClient.request(`/shipments/${id}`, {
+              headers: { 'x-format-new': 'true' }
+            }).catch(err => {
+              console.error(`⚠️ Erro ao buscar envio ${id}:`, err.message);
+              return null;
+            })
+          );
+          
+          const shipments = await Promise.all(shipmentPromises);
+          shipments.forEach((s: any) => {
+            if (s && s.id) {
+              shipmentsMap.set(s.id, s);
+            }
+          });
+        } catch (err) {
+          console.error('⚠️ Erro ao buscar detalhes de envios (multiget):', err);
+        }
+      }
+
       const salesMap = new Map();
-      (ordersResponse.results || []).forEach((order: any) => {
+      orders.forEach((order: any) => {
         if (salesMap.has(order.id)) return;
         
         const buyer = order.buyer || {};
@@ -718,6 +753,20 @@ async function startServer() {
           ? `${buyer.first_name} ${buyer.last_name}` 
           : (buyer.nickname || 'Cliente ML');
           
+        const shipmentDetails = order.shipping?.id ? shipmentsMap.get(order.shipping.id) : null;
+        const shippingStatus = shipmentDetails?.status || order.shipping?.status;
+        const shippingSubstatus = shipmentDetails?.substatus || order.shipping?.substatus;
+        
+        // Mapeamento preciso para o frontend
+        
+        // Determina o status unificado para o frontend
+        let statusFinal = shippingStatus;
+        if (shippingStatus === 'ready_to_ship' || shippingStatus === 'shipped' || shippingStatus === 'delivered' || shippingStatus === 'cancelled' || shippingStatus === 'not_delivered') {
+          statusFinal = shippingSubstatus ? `${shippingStatus}_${shippingSubstatus}` : shippingStatus;
+        }
+        
+        const isCancelled = order.status === 'cancelled' || shippingStatus === 'cancelled' || shippingSubstatus === 'cancelled_manually' || shippingSubstatus === 'time_expired' || shippingSubstatus === 'returning_to_sender';
+
         salesMap.set(order.id, {
           id: order.id,
           cliente: nomeCliente,
@@ -725,18 +774,23 @@ async function startServer() {
           valor: order.total_amount,
           data: order.date_created,
           status: order.status === 'paid' ? 'Pago' : order.status,
-          shipping_status: order.shipping?.status,
-          shipping_substatus: order.shipping?.substatus,
+          shipping_status: statusFinal,
+          shipping_substatus: shippingSubstatus,
           has_dispute: order.status_detail === 'mediation' || order.tags?.includes('disputed'),
           itens: order.order_items?.map((i: any) => i.item?.title || i.item?.id || 'Produto ML').join(', '),
           thumbnail: order.order_items?.[0]?.item?.thumbnail,
           shipping_id: order.shipping?.id,
-          quantidade: order.order_items?.reduce((acc: number, item: any) => acc + (item.quantity || 1), 0) || 1
+          quantidade: order.order_items?.reduce((acc: number, item: any) => acc + (item.quantity || 1), 0) || 1,
+          is_cancelled: isCancelled
         });
       });
       
-      res.json({ success: true, data: Array.from(salesMap.values()) });
+      const salesData = Array.from(salesMap.values());
+      console.log('📦 Sales data sent to frontend:', JSON.stringify(salesData.slice(0, 5), null, 2));
+      
+      res.json({ success: true, data: salesData });
     } catch (error: any) {
+      console.error('❌ Erro ao listar vendas ML:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -967,16 +1021,6 @@ async function startServer() {
           console.log(`    → NOME encontrado: "${result.nome}"`);
         }
         
-        // RICH TEXT (descrição, ano)
-        else if (value.type === 'rich_text' && value.rich_text?.[0]?.plain_text) {
-          const text = value.rich_text[0].plain_text;
-          if (lowerKey.includes('desc') || lowerKey.includes('obs')) {
-            result.descricao = text;
-          } else if (lowerKey.includes('ano')) {
-            result.ano = text;
-          }
-        }
-        
         // NÚMERO (valor, estoque, ano)
         else if (value.type === 'number') {
           if (lowerKey.includes('valor') || lowerKey.includes('preço') || lowerKey.includes('preco')) {
@@ -987,6 +1031,36 @@ async function startServer() {
             console.log(`    → ESTOQUE encontrado: ${result.estoque}`);
           } else if (lowerKey.includes('ano')) {
             result.ano = value.number;
+          }
+        }
+        
+        // FORMULA (valor, estoque)
+        else if (value.type === 'formula') {
+          const formulaValue = value.formula?.number || value.formula?.string || 0;
+          if (lowerKey.includes('valor') || lowerKey.includes('preço') || lowerKey.includes('preco')) {
+            result.valor = Number(formulaValue) || 0;
+            console.log(`    → VALOR (fórmula) encontrado: ${result.valor}`);
+          } else if (lowerKey.includes('estoque') || lowerKey.includes('quant')) {
+            result.estoque = Number(formulaValue) || 0;
+            console.log(`    → ESTOQUE (fórmula) encontrado: ${result.estoque}`);
+          }
+        }
+        
+        // FALLBACK PARA VALOR/ESTOQUE EM TEXTO
+        else if (value.type === 'rich_text' && value.rich_text?.[0]?.plain_text) {
+          const text = value.rich_text[0].plain_text;
+          if (lowerKey.includes('desc') || lowerKey.includes('obs')) {
+            result.descricao = text;
+          } else if (lowerKey.includes('ano')) {
+            result.ano = text;
+          } else if ((lowerKey.includes('valor') || lowerKey.includes('preço') || lowerKey.includes('preco')) && result.valor === 0) {
+            // Tenta extrair número de texto (ex: "R$ 1.200,00" -> 1200)
+            const cleaned = text.replace(/[^\d,.-]/g, '').replace(',', '.');
+            result.valor = parseFloat(cleaned) || 0;
+            if (result.valor > 0) console.log(`    → VALOR (texto) extraído: ${result.valor}`);
+          } else if ((lowerKey.includes('estoque') || lowerKey.includes('quant')) && result.estoque === 0) {
+            result.estoque = parseInt(text.replace(/[^\d]/g, '')) || 0;
+            if (result.estoque > 0) console.log(`    → ESTOQUE (texto) extraído: ${result.estoque}`);
           }
         }
         
@@ -1163,6 +1237,12 @@ async function startServer() {
       else if (value.type === 'number' && 
               (lowerKey.includes('valor') || lowerKey.includes('preço'))) {
         result.valor = value.number || 0;
+      }
+      
+      // Fórmula (valor)
+      else if (value.type === 'formula' && 
+              (lowerKey.includes('valor') || lowerKey.includes('preço'))) {
+        result.valor = Number(value.formula?.number || value.formula?.string || 0) || 0;
       }
       
       // Date
@@ -1733,7 +1813,7 @@ async function startServer() {
       );
 
       await Promise.all(deletePromises);
-      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+      const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "2fbdfa25a52880a587ebcca53c478342";
       invalidateCache(salesDbId);
       res.json({ success: true });
     } catch (error: any) {

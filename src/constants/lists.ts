@@ -16,7 +16,6 @@ export const CATEGORIAS_OFICIAIS = [
   "Embreagem",
   "Engrenagem de comando",
   "Engrenagem de partida",
-  "Escapamento",
   "Escapamentos",
   "Estator",
   "Farol",

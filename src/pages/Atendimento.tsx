@@ -309,7 +309,7 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
   };
 
   const insertProductIntoReply = (product: any) => {
-    const productText = `🔹 *${product.nome}*\n💰 R$ ${product.valor.toFixed(2)}\n🔢 ID: ${product.rk_id}\n📦 Estoque: ${product.estoque}`;
+    const productText = `🔹 *${product.nome}*\n💰 R$ ${Number(product.valor || 0).toFixed(2)}\n🔢 ID: ${product.rk_id}\n📦 Estoque: ${product.estoque || 0}`;
     setReplyText(prev => prev + (prev ? '\n\n' : '') + productText);
   };
 
