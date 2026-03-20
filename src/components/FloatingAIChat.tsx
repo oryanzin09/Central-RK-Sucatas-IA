@@ -211,10 +211,10 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
     <>
       <motion.button
         className={cn(
-          "fixed bottom-24 right-8 w-14 h-14 rounded-full flex items-center justify-center z-50 transition-all duration-300 group",
+          "fixed bottom-24 right-6 w-14 h-14 rounded-full flex items-center justify-center z-50 transition-all duration-300 group",
           theme === 'dark' 
-            ? "bg-[#1E1E2F] hover:bg-[#2D2D44] border border-[#A5B4FC]/10 shadow-[0_8px_30px_rgba(0,0,0,0.3)]" 
-            : "bg-white hover:bg-gray-50 border border-indigo-600/10 shadow-[0_8px_30px_rgba(0,0,0,0.1)]"
+            ? "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 shadow-xl" 
+            : "bg-white hover:bg-gray-50 border border-zinc-200 shadow-xl"
         )}
         whileHover={{ scale: 1.05, y: -2 }}
         whileTap={{ scale: 0.95 }}
@@ -224,17 +224,17 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
       >
         <Sparkles className={cn(
           "w-6 h-6 transition-transform group-hover:rotate-12",
-          theme === 'dark' ? "text-[#A5B4FC]" : "text-indigo-600"
+          theme === 'dark' ? "text-violet-400" : "text-violet-600"
         )} />
       </motion.button>
 
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.8, y: 20 }}
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: 20 }}
-            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[500px] h-[650px] z-50 rounded-2xl shadow-2xl overflow-hidden border flex flex-col"
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="fixed inset-4 z-[100] rounded-2xl shadow-2xl overflow-hidden border flex flex-col md:top-1/2 md:left-1/2 md:transform md:-translate-x-1/2 md:-translate-y-1/2 md:w-[500px] md:h-[650px]"
             style={{
               backgroundColor: theme === 'dark' ? '#18181b' : '#ffffff',
               borderColor: theme === 'dark' ? '#27272a' : '#e5e7eb'
@@ -254,7 +254,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
                   </h3>
                   <p className="text-xs text-zinc-500 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                    Online - Perguntas rápidas
+                    Online
                   </p>
                 </div>
               </div>
@@ -269,7 +269,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
                 )}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
-                title="Fechar e limpar chat"
+                title="Fechar"
               >
                 <Check size={20} className="group-hover:scale-110 transition-transform" />
               </motion.button>
@@ -278,15 +278,6 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
             <div 
               className="flex-1 overflow-y-auto p-4 space-y-4 relative"
             >
-              <div className="absolute inset-0 z-0">
-                <img 
-                  src="https://images.unsplash.com/photo-1565043666741-69f6646e95e0?q=80&w=2070&auto=format&fit=crop" 
-                  alt="Oficina de motos"
-                  className="w-full h-full object-cover opacity-5"
-                />
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-zinc-900/50 to-zinc-900" />
-              </div>
-              
               <div className="relative z-10 space-y-4">
                 {messages.map((msg) => (
                   <div key={msg.id} className={cn("flex", msg.role === 'user' ? "justify-end" : "justify-start")}>
@@ -336,7 +327,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Pergunte sobre peças, vendas..."
+                  placeholder="Pergunte..."
                   className={cn(
                     "flex-1 border rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
                     theme === 'dark' 
@@ -357,9 +348,6 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
                   <Send size={18} />
                 </button>
               </div>
-              <p className="text-[10px] text-center mt-2 text-zinc-500">
-                Powered by Gemini • Conversas rápidas • Fechar com ✓
-              </p>
             </div>
           </motion.div>
         )}

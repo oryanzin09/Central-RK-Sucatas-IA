@@ -3547,12 +3547,12 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions }: {
                   />
                 </div>
 
-                <div className="pt-4 flex items-center justify-end gap-3">
+                <div className="pt-4 flex items-center gap-3">
                   <button 
                     type="button"
                     onClick={() => setIsModalOpen(false)}
                     className={cn(
-                      "px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
+                      "flex-1 px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
                       theme === 'dark' ? "text-zinc-400 hover:text-white hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
                     )}
                   >
@@ -3561,7 +3561,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions }: {
                   <button 
                     type="submit"
                     disabled={isSaving}
-                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar no Notion
@@ -4810,12 +4810,12 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   </div>
                 </div>
 
-                <div className="pt-4 flex items-center justify-end gap-3">
+                <div className="pt-4 flex items-center gap-3">
                   <button 
                     type="button"
                     onClick={() => setIsEditModalOpen(false)}
                     className={cn(
-                      "px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
+                      "flex-1 px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
                       theme === 'dark' ? "text-zinc-400 hover:text-white hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
                     )}
                   >
@@ -4824,7 +4824,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                   <button 
                     type="submit"
                     disabled={isSaving}
-                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar Alterações
@@ -7647,11 +7647,11 @@ function AppContent() {
                 <FreteView theme={theme} />
               ) : (
                 <div className={cn(
-                  "flex flex-col items-center justify-center h-[60vh] transition-colors",
-                  theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                  "flex flex-col items-center justify-center h-[60vh] transition-colors w-3/4 mx-auto",
+                  theme === 'dark' ? "text-violet-500" : "text-violet-600"
                 )}>
-                  <Settings size={48} className="mb-4 opacity-20" />
-                  <p className="text-lg">Funcionalidade em desenvolvimento</p>
+                  <Settings size={48} className="mb-4 opacity-50" />
+                  <p className="text-lg font-bold">Funcionalidade em desenvolvimento</p>
                 </div>
               )}
             </motion.div>
