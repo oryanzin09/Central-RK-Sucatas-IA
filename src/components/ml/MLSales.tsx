@@ -8,6 +8,49 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export const getStatusInfo = (sale: any) => {
+  if (sale.has_dispute) {
+    return { label: 'Mediação', color: 'bg-red-500/20 text-red-400', icon: AlertCircle, description: 'Responda à mediação para prosseguir.', action: 'responder_mediacao' };
+  }
+  
+  const shippingStatus = String(sale.shipping_status || '');
+  const status = String(sale.status || '');
+  
+  // Handle reprint status explicitly
+  if (shippingStatus.includes('reprint') || status.includes('REIMPRIMIR') || shippingStatus.includes('REIMPRIMIR')) {
+    return { label: 'Reimprimir Etiqueta', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'A etiqueta precisa ser impressa novamente.', action: 'imprimir_etiqueta' };
+  }
+
+  if (shippingStatus === 'ready_to_ship_ready_to_print' || shippingStatus === 'ready_to_print') {
+    return { label: 'Pronta para gerar etiqueta', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'Você deve despachar o pacote hoje ou amanhã.', action: 'imprimir_etiqueta' };
+  }
+  if (shippingStatus === 'ready_to_ship_printed' || shippingStatus === 'printed') {
+    return { label: 'Etiqueta impressa', color: 'bg-amber-500/20 text-amber-400', icon: Package, description: 'Aguardando despacho.', action: 'imprimir_etiqueta' };
+  }
+  if (shippingStatus === 'ready_to_ship_invoice_pending' || shippingStatus === 'invoice_pending') {
+    return { label: 'Aguardando nota fiscal', color: 'bg-orange-500/20 text-orange-400', icon: AlertCircle, description: 'Emita a NF para liberar a etiqueta.', action: 'emitir_nf' };
+  }
+  if (shippingStatus === 'ready_to_ship') {
+    return { label: 'Pronta para envio', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'Você deve despachar o pacote.', action: 'imprimir_etiqueta' };
+  }
+  if (shippingStatus.startsWith('shipped')) {
+    return { label: 'Em trânsito', color: 'bg-violet-500/20 text-violet-400', icon: Truck, description: 'O pacote está a caminho do comprador.', action: 'acompanhar_envio' };
+  }
+  if (shippingStatus.startsWith('delivered')) {
+    return { label: 'Entregue', color: 'bg-emerald-500/20 text-emerald-400', icon: CheckCircle, description: 'O pacote foi entregue ao comprador.', action: 'ver_detalhes' };
+  }
+  if (shippingStatus.startsWith('cancelled') || shippingStatus.startsWith('not_delivered') || sale.is_cancelled) {
+    return { label: 'Cancelada/Não entregue', color: 'bg-red-500/20 text-red-400', icon: AlertCircle, description: 'Venda cancelada ou não entregue.', action: 'ver_detalhes' };
+  }
+
+  switch (shippingStatus) {
+    case 'pending':
+      return { label: 'Envio pendente', color: 'bg-amber-500/20 text-amber-400', icon: Clock, description: 'Aguardando liberação da etiqueta.', action: 'ver_detalhes' };
+    default:
+      return { label: sale.status || 'Pago', color: 'bg-zinc-500/20 text-zinc-400', icon: Package, description: 'Aguardando atualização de envio.', action: 'ver_detalhes' };
+  }
+};
+
 export const MLSales = ({ theme }: { theme: string }) => {
   const [sales, setSales] = useState<any[]>([]);
   const [listings, setListings] = useState<any[]>([]);
@@ -53,53 +96,20 @@ export const MLSales = ({ theme }: { theme: string }) => {
     }
   };
 
-  const getStatusInfo = (sale: any) => {
-    if (sale.has_dispute) {
-      return { label: 'Mediação', color: 'bg-red-500/20 text-red-400', icon: AlertCircle, description: 'Responda à mediação para prosseguir.' };
-    }
-    
-    const shippingStatus = String(sale.shipping_status || '');
-    const status = String(sale.status || '');
-    
-    // Handle reprint status explicitly
-    if (shippingStatus.includes('reprint') || status.includes('REIMPRIMIR') || shippingStatus.includes('REIMPRIMIR')) {
-      return { label: 'Reimprimir Etiqueta', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'A etiqueta precisa ser impressa novamente.' };
-    }
 
-    switch (shippingStatus) {
-      case 'ready_to_print':
-        return { label: 'Etiqueta pronta', color: 'bg-blue-500/20 text-blue-400', icon: Printer, description: 'Você deve despachar o pacote hoje ou amanhã.' };
-      case 'pending':
-        return { label: 'Envio pendente', color: 'bg-amber-500/20 text-amber-400', icon: Clock, description: 'Aguardando liberação da etiqueta.' };
-      case 'shipped':
-        return { label: 'Em trânsito', color: 'bg-violet-500/20 text-violet-400', icon: Truck, description: 'O pacote está a caminho do comprador.' };
-      case 'delivered':
-        return { label: 'Entregue', color: 'bg-emerald-500/20 text-emerald-400', icon: CheckCircle, description: 'O pacote foi entregue ao comprador.' };
-      default:
-        return { label: sale.status || 'Pago', color: 'bg-zinc-500/20 text-zinc-400', icon: Package, description: 'Aguardando atualização de envio.' };
-    }
-  };
 
   const tabs = [
     { 
       id: 'pending', 
       label: 'Envios pendentes', 
       filter: (s: any) => {
-        const isCancelled = s.is_cancelled || s.status === 'cancelled' || s.shipping_status === 'cancelled' || s.shipping_status === 'not_delivered_returning_to_sender';
+        const isCancelled = s.is_cancelled || s.status === 'cancelled' || s.shipping_status === 'cancelled' || s.shipping_status === 'not_delivered_returning_to_sender' || s.shipping_substatus === 'cancelled' || s.shipping_substatus === 'not_delivered';
         const isShipped = ['shipped', 'delivered'].includes(s.shipping_status) || String(s.shipping_status).startsWith('shipped_') || String(s.shipping_status).startsWith('delivered_');
         
-        // Include ready_to_ship statuses
-        const isReadyToShip = String(s.shipping_status).startsWith('ready_to_ship');
+        // Include ready_to_ship and pending statuses
+        const isReadyToShip = String(s.shipping_status).startsWith('ready_to_ship') || s.shipping_status === 'pending';
         
-        const isPending = isReadyToShip && !isCancelled && !isShipped;
-
-        if (isPending) {
-          console.log('Sale included in pending:', s.id, s.shipping_status, s.status);
-        } else {
-          console.log('Sale excluded from pending:', s.id, s.shipping_status, s.status);
-        }
-        
-        return isPending;
+        return isReadyToShip && !isCancelled && !isShipped && !s.has_dispute;
       }
     },
     { id: 'dispute', label: 'Aguardando', filter: (s: any) => s.has_dispute },
@@ -207,7 +217,7 @@ export const MLSales = ({ theme }: { theme: string }) => {
                     </div>
                     
                     <div className="flex items-center gap-2">
-                      {sale.has_dispute && (
+                      {statusInfo.action === 'responder_mediacao' && (
                         <button
                           onClick={() => window.open(`https://myaccount.mercadolivre.com.br/messaging/orders/${sale.id}`, '_blank')}
                           className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-red-500/20"
@@ -215,12 +225,28 @@ export const MLSales = ({ theme }: { theme: string }) => {
                           Responder mediação
                         </button>
                       )}
-                      {(sale.shipping_status === 'ready_to_print' || String(sale.shipping_status).includes('reprint') || String(sale.status).includes('REIMPRIMIR')) && !sale.has_dispute && (
+                      {statusInfo.action === 'imprimir_etiqueta' && (
                         <button
                           onClick={() => printLabel(sale.shipping_id)}
                           className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
                         >
                           <Printer size={14} /> Imprimir Etiqueta
+                        </button>
+                      )}
+                      {statusInfo.action === 'emitir_nf' && (
+                        <button
+                          onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
+                          className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-500/20"
+                        >
+                          <AlertCircle size={14} /> Emitir NF
+                        </button>
+                      )}
+                      {statusInfo.action === 'acompanhar_envio' && (
+                        <button
+                          onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
+                          className="bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-violet-500/20"
+                        >
+                          <Truck size={14} /> Acompanhar Envio
                         </button>
                       )}
                       <button

@@ -210,14 +210,22 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
   return (
     <>
       <motion.button
-        className="fixed bottom-24 right-8 w-14 h-14 bg-violet-600 rounded-full shadow-xl flex items-center justify-center z-50 hover:bg-violet-500 transition-all duration-200 group"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
+        className={cn(
+          "fixed bottom-24 right-8 w-14 h-14 rounded-full flex items-center justify-center z-50 transition-all duration-300 group",
+          theme === 'dark' 
+            ? "bg-[#1E1E2F] hover:bg-[#2D2D44] border border-[#A5B4FC]/10 shadow-[0_8px_30px_rgba(0,0,0,0.3)]" 
+            : "bg-white hover:bg-gray-50 border border-indigo-600/10 shadow-[0_8px_30px_rgba(0,0,0,0.1)]"
+        )}
+        whileHover={{ scale: 1.05, y: -2 }}
+        whileTap={{ scale: 0.95 }}
         onClick={handleOpen}
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
       >
-        <Sparkles className="text-white w-6 h-6 group-hover:rotate-12 transition-transform" />
+        <Sparkles className={cn(
+          "w-6 h-6 transition-transform group-hover:rotate-12",
+          theme === 'dark' ? "text-[#A5B4FC]" : "text-indigo-600"
+        )} />
       </motion.button>
 
       <AnimatePresence>

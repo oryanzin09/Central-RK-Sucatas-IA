@@ -77,6 +77,7 @@ import {
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
 import { FloatingAIChat } from './components/FloatingAIChat';
+import { GlobalSearch } from './components/GlobalSearch';
 import { CustomDropdown } from './components/CustomDropdown';
 import { CATEGORIAS_OFICIAIS, MOTOS_OFICIAIS, PAGAMENTOS_OFICIAIS } from './constants/lists';
 import { MobileBottomNav } from './components/MobileBottomNav';
@@ -734,17 +735,12 @@ const DashboardView = ({
   const filteredSales = useMemo(() => {
     if (source === 'estoque') return metrics.ultimasVendas;
     return metrics.ultimasVendas.filter((sale: any) => {
-      const isCancelled = sale.is_cancelled;
+      const isCancelled = sale.is_cancelled || sale.status === 'cancelled' || sale.shipping_status?.startsWith('cancelled') || sale.shipping_substatus === 'cancelled' || sale.shipping_substatus === 'not_delivered';
       
       if (mlSalesSubTab === 'pending') {
         // Vendas pendentes: prontas para imprimir etiqueta, etiqueta já impressa ou aguardando NF
-        return !sale.has_dispute && !isCancelled && (
-          sale.shipping_status === 'ready_to_ship_ready_to_print' || 
-          sale.shipping_status === 'ready_to_ship_printed' || 
-          sale.shipping_status === 'ready_to_ship_invoice_pending'
-        );
+        return !sale.has_dispute && !isCancelled && (sale.shipping_status?.startsWith('ready_to_ship') || sale.shipping_status === 'pending');
       }
-      if (mlSalesSubTab === 'waiting') return !sale.has_dispute && !isCancelled && (sale.shipping_status === 'pending' || sale.shipping_status === 'ready_to_ship');
       if (mlSalesSubTab === 'dispute') return sale.has_dispute;
       if (mlSalesSubTab === 'shipped') return sale.shipping_status === 'shipped' && !isCancelled;
       if (mlSalesSubTab === 'delivered') return sale.shipping_status === 'delivered' && !isCancelled;
@@ -841,54 +837,10 @@ const DashboardView = ({
             Dashboard <span className="text-violet-500">RK</span>
           </h2>
           
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Filtro de Período (apenas ML) */}
-            {source === 'mercadolivre' && (
-              <div className="flex items-center gap-2 mr-2">
-                <CustomDropdown
-                  value={mlPeriod}
-                  onChange={setMlPeriod}
-                  theme={theme}
-                  options={[
-                    { value: '7d', label: 'Últimos 7 dias' },
-                    { value: '15d', label: 'Últimos 15 dias' },
-                    { value: '30d', label: 'Últimos 30 dias' },
-                    { value: '60d', label: 'Últimos 60 dias' },
-                    { value: 'custom', label: 'Data Específica' },
-                  ]}
-                  className="w-40"
-                />
-
-                {mlPeriod === 'custom' && (
-                  <div className="flex items-center gap-1 pr-2">
-                    <input
-                      type="date"
-                      value={mlCustomDate.start}
-                      onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
-                        theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
-                      )}
-                    />
-                    <span className="text-zinc-500 text-xs font-bold">a</span>
-                    <input
-                      type="date"
-                      value={mlCustomDate.end}
-                      onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
-                      className={cn(
-                        "px-3 py-1.5 rounded-full text-xs font-bold border-none outline-none transition-all",
-                        theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-white text-zinc-700"
-                      )}
-                    />
-                  </div>
-                )}
-                {isMlDashboardLoading && <Loader2 className="animate-spin text-amber-500" size={16} />}
-              </div>
-            )}
-
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
             {/* Toggle de Fonte de Dados */}
             <div className={cn(
-              "flex p-1 rounded-full border transition-all",
+              "inline-flex p-1 rounded-full border transition-all w-fit",
               theme === 'dark' ? "bg-zinc-900/80 border-zinc-800" : "bg-zinc-100 border-zinc-200"
             )}>
               <button
@@ -916,39 +868,142 @@ const DashboardView = ({
                 M. Livre
               </button>
             </div>
-
-            {/* Botão de Sincronizar */}
-            <button 
-              onClick={refreshData}
-              disabled={loading}
-              className={cn(
-                "p-2 rounded-full transition-all border",
-                theme === 'dark' 
-                  ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-                  : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
-              )}
-              title="Sincronizar Dados"
-            >
-              <RefreshCw size={18} className={cn(loading && "animate-spin")} />
-            </button>
             
-            {/* Toggle de Informações Sensíveis */}
-            <button
-              onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
-              className={cn(
-                "p-2 rounded-full transition-all border",
-                theme === 'dark' 
-                  ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-                  : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
-              )}
-              title={showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
-            >
-              {showSensitiveInfo ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Filtro de Período (sempre renderizado para manter layout fixo) */}
+              <div className={cn("relative transition-opacity duration-200", source === 'mercadolivre' ? "opacity-100" : "opacity-0 pointer-events-none")}>
+                <button
+                  onClick={() => {
+                    const dropdown = document.getElementById('ml-period-dropdown');
+                    if (dropdown) {
+                      dropdown.classList.toggle('hidden');
+                    }
+                  }}
+                  className={cn(
+                    "p-2 rounded-full transition-all border flex items-center justify-center relative",
+                    theme === 'dark' 
+                      ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                      : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+                  )}
+                  title="Filtro de Período"
+                >
+                  <Calendar size={18} />
+                  {mlPeriod !== '30d' && (
+                    <span className="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-full"></span>
+                  )}
+                </button>
+                
+                <div 
+                  id="ml-period-dropdown" 
+                  className={cn(
+                    "hidden absolute right-0 top-full mt-2 w-64 p-3 rounded-2xl border shadow-xl z-50",
+                    theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+                  )}
+                >
+                  <h4 className={cn("text-xs font-bold uppercase tracking-wider mb-2 px-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Período</h4>
+                  <div className="space-y-1 mb-3">
+                    {[
+                      { value: '7d', label: 'Últimos 7 dias' },
+                      { value: '15d', label: 'Últimos 15 dias' },
+                      { value: '30d', label: 'Últimos 30 dias' },
+                      { value: '60d', label: 'Últimos 60 dias' },
+                      { value: 'custom', label: 'Data Específica' },
+                    ].map(option => (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          setMlPeriod(option.value);
+                          if (option.value !== 'custom') {
+                            document.getElementById('ml-period-dropdown')?.classList.add('hidden');
+                          }
+                        }}
+                        className={cn(
+                          "w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all",
+                          mlPeriod === option.value
+                            ? (theme === 'dark' ? "bg-amber-500/10 text-amber-500" : "bg-amber-50 text-amber-600")
+                            : (theme === 'dark' ? "text-zinc-300 hover:bg-zinc-800" : "text-zinc-700 hover:bg-zinc-100")
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {mlPeriod === 'custom' && (
+                    <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                      <div>
+                        <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Início</label>
+                        <input
+                          type="date"
+                          value={mlCustomDate.start}
+                          onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
+                          className={cn(
+                            "w-full px-3 py-2 rounded-xl text-xs font-medium border outline-none transition-all",
+                            theme === 'dark' 
+                              ? "bg-zinc-950 border-zinc-800 text-zinc-300 focus:border-amber-500/50" 
+                              : "bg-zinc-50 border-zinc-200 text-zinc-700 focus:border-amber-500/50"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Fim</label>
+                        <input
+                          type="date"
+                          value={mlCustomDate.end}
+                          onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
+                          className={cn(
+                            "w-full px-3 py-2 rounded-xl text-xs font-medium border outline-none transition-all",
+                            theme === 'dark' 
+                              ? "bg-zinc-950 border-zinc-800 text-zinc-300 focus:border-amber-500/50" 
+                              : "bg-zinc-50 border-zinc-200 text-zinc-700 focus:border-amber-500/50"
+                          )}
+                        />
+                      </div>
+                      <button
+                        onClick={() => document.getElementById('ml-period-dropdown')?.classList.add('hidden')}
+                        className="w-full mt-2 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 transition-colors"
+                      >
+                        Aplicar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Botão de Sincronizar */}
+              <button 
+                onClick={refreshData}
+                disabled={loading}
+                className={cn(
+                  "p-2 rounded-full transition-all border",
+                  theme === 'dark' 
+                    ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                    : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+                )}
+                title="Sincronizar Dados"
+              >
+                <RefreshCw size={18} className={cn(loading && "animate-spin")} />
+              </button>
+              
+              {/* Toggle de Informações Sensíveis */}
+              <button
+                onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
+                className={cn(
+                  "p-2 rounded-full transition-all border",
+                  theme === 'dark' 
+                    ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                    : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+                )}
+                title={showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
+              >
+                {showSensitiveInfo ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-      </div>
+
+      {/* Grid de Métricas Principais */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6 px-4 sm:px-0">
         {source === 'estoque' ? (
           <>
@@ -1485,25 +1540,11 @@ const DashboardView = ({
                     "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
                     mlSalesSubTab === 'pending' ? "bg-blue-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
                   )}>
-                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'ready_to_ship' && s.shipping_status !== 'cancelled' && s.shipping_substatus !== 'cancelled' && s.shipping_substatus !== 'not_delivered').length}
-                  </span>
-                </button>
-
-                <button 
-                  onClick={() => setMlSalesSubTab('waiting')}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors",
-                    mlSalesSubTab === 'waiting' 
-                      ? (theme === 'dark' ? "bg-zinc-800 text-white" : "bg-zinc-100 text-zinc-900")
-                      : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-500 hover:bg-zinc-50")
-                  )}
-                >
-                  Aguardando
-                  <span className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded-full transition-colors",
-                    mlSalesSubTab === 'waiting' ? "bg-amber-500 text-white" : (theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400")
-                  )}>
-                    {metrics.ultimasVendas.filter((s: any) => !s.has_dispute && s.shipping_status === 'pending' && s.shipping_status !== 'cancelled' && s.shipping_substatus !== 'cancelled' && s.shipping_substatus !== 'not_delivered').length}
+                    {metrics.ultimasVendas.filter((s: any) => {
+                      const isCancelled = s.is_cancelled || s.status === 'cancelled' || s.shipping_status?.startsWith('cancelled') || s.shipping_substatus === 'cancelled' || s.shipping_substatus === 'not_delivered';
+                      const isReadyToShip = s.shipping_status?.startsWith('ready_to_ship') || s.shipping_status === 'pending';
+                      return !s.has_dispute && isReadyToShip && !isCancelled;
+                    }).length}
                   </span>
                 </button>
 
@@ -1617,17 +1658,17 @@ const DashboardView = ({
                       buttonAction: 'dispute'
                     };
                   }
-                  if (sale.shipping_status === 'ready_to_ship') {
-                    if (sale.shipping_substatus === 'ready_to_print') {
+                  if (sale.shipping_status?.startsWith('ready_to_ship')) {
+                    if (sale.shipping_status.includes('ready_to_print') || sale.shipping_substatus === 'ready_to_print') {
                       return {
-                        title: 'Pronto para gerar etiqueta',
+                        title: 'Pronta para gerar etiqueta',
                         titleColor: 'text-orange-500',
                         description: 'Você deve despachar o pacote hoje ou amanhã em Correios.',
                         buttonText: 'GERAR ETIQUETA',
                         buttonAction: 'print'
                       };
                     }
-                    if (sale.shipping_substatus === 'printed') {
+                    if (sale.shipping_status.includes('printed') || sale.shipping_substatus === 'printed') {
                       return {
                         title: 'Etiqueta já impressa',
                         titleColor: 'text-blue-500',
@@ -1636,18 +1677,18 @@ const DashboardView = ({
                         buttonAction: 'print'
                       };
                     }
-                    if (sale.shipping_substatus === 'invoice_pending') {
+                    if (sale.shipping_status.includes('invoice_pending') || sale.shipping_substatus === 'invoice_pending') {
                       return {
                         title: 'Aguardando nota fiscal',
                         titleColor: 'text-amber-500',
                         description: 'Enviar XML da NF para liberar a etiqueta.',
-                        buttonText: 'Ver detalhes',
-                        buttonAction: 'view'
+                        buttonText: 'Emitir NF',
+                        buttonAction: 'invoice'
                       };
                     }
                     // Default for ready_to_ship
                     return {
-                      title: 'Pronto para envio',
+                      title: 'Pronta para envio',
                       titleColor: 'text-orange-500',
                       description: 'Você deve despachar o pacote.',
                       buttonText: 'GERAR ETIQUETA',
@@ -1656,11 +1697,11 @@ const DashboardView = ({
                   }
                   if (sale.shipping_status === 'shipped') {
                     return {
-                      title: 'Enviado',
-                      titleColor: 'text-emerald-500',
+                      title: 'Em trânsito',
+                      titleColor: 'text-violet-500',
                       description: 'O pacote está a caminho do comprador.',
-                      buttonText: 'Ver detalhes',
-                      buttonAction: 'view'
+                      buttonText: 'Acompanhar envio',
+                      buttonAction: 'track'
                     };
                   }
                   if (sale.shipping_status === 'delivered') {
@@ -1779,6 +1820,13 @@ const DashboardView = ({
                           }
                         }}
                         className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+                      >
+                        {statusInfo.buttonText}
+                      </button>
+                    ) : statusInfo.buttonAction === 'dispute' ? (
+                      <button 
+                        onClick={() => window.open(`https://myaccount.mercadolivre.com.br/messaging/orders/${sale.id}`, '_blank')}
+                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
                       >
                         {statusInfo.buttonText}
                       </button>
@@ -1943,6 +1991,7 @@ const DashboardView = ({
               ))}
             </div>
           </div>
+        </div>
       </div>
 
       {/* Modal de Transações por Tipo */}
@@ -2218,8 +2267,8 @@ const DashboardView = ({
         )}
       </AnimatePresence>
     </div>
-  </>
-);
+    </>
+  );
 };
 
 const InventoryView = ({ theme, onSelectItem, onRegisterActions }: { 
@@ -7601,6 +7650,7 @@ function AppContent() {
       </main>
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
       <FloatingAIChat theme={theme} />
+      <GlobalSearch theme={theme} onSelectItem={setSelectedDetailItem} />
       
       {/* Modal de Detalhes Global */}
       <AnimatePresence>
