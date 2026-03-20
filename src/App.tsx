@@ -446,11 +446,12 @@ const SkeletonRow = ({ theme }: { theme: 'light' | 'dark', key?: any }) => (
   </tr>
 );
 
-const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onClick, isSensitive }: any) => {
+const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onClick, isSensitive, isCurrency = true }: any) => {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   
   const formatValue = (val: any) => {
+    if (!isCurrency) return val;
     if (typeof val === 'string' && val.includes('R$')) return val;
     const num = typeof val === 'number' ? val : parseFloat(String(val).replace(/[^\d,-]/g, '').replace(',', '.'));
     if (isNaN(num)) return val;
@@ -837,7 +838,7 @@ const DashboardView = ({
             Dashboard <span className="text-violet-500">RK</span>
           </h2>
           
-          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
             {/* Toggle de Fonte de Dados */}
             <div className={cn(
               "inline-flex p-1 rounded-full border transition-all w-fit",
@@ -880,7 +881,7 @@ const DashboardView = ({
                     }
                   }}
                   className={cn(
-                    "p-2 rounded-full transition-all border flex items-center justify-center relative",
+                    "p-1.5 sm:p-2 rounded-full transition-all border flex items-center justify-center relative",
                     theme === 'dark' 
                       ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
                       : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
@@ -975,7 +976,7 @@ const DashboardView = ({
                 onClick={refreshData}
                 disabled={loading}
                 className={cn(
-                  "p-2 rounded-full transition-all border",
+                  "p-1.5 sm:p-2 rounded-full transition-all border",
                   theme === 'dark' 
                     ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
                     : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
@@ -989,7 +990,7 @@ const DashboardView = ({
               <button
                 onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
                 className={cn(
-                  "p-2 rounded-full transition-all border",
+                  "p-1.5 sm:p-2 rounded-full transition-all border",
                   theme === 'dark' 
                     ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
                     : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
@@ -1114,6 +1115,7 @@ const DashboardView = ({
       color="bg-indigo-500" 
       theme={theme} 
       onClick={onFetchAllMlListings}
+      isCurrency={false}
     />
     <StatCard 
       icon={BarChart3} 
@@ -1132,6 +1134,7 @@ const DashboardView = ({
       theme={theme} 
       trend={metrics.perguntasPendentes > 0 ? -10 : 0}
       onClick={() => onTabChange('mercadolivre')}
+      isCurrency={false}
     />
     <StatCard 
       icon={ShoppingBag} 
