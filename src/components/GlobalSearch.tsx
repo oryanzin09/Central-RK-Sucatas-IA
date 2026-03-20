@@ -222,11 +222,11 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
                               </span>
                               <span className={cn(
                                 "font-mono font-bold text-sm whitespace-nowrap",
-                                result.data.valor >= 0 
-                                  ? "text-emerald-500 [text-shadow:0_0_8px_rgba(16,185,129,0.5)]" 
-                                  : "text-red-500 [text-shadow:0_0_8px_rgba(239,68,68,0.5)]"
+                                (result.data.valor < 0 || (result.data.tipo && result.data.tipo.toLowerCase() === 'saída'))
+                                  ? "text-red-500 [text-shadow:0_0_8px_rgba(239,68,68,0.5)]"
+                                  : "text-emerald-500 [text-shadow:0_0_8px_rgba(16,185,129,0.5)]"
                               )}>
-                                {result.data.valor >= 0 ? '+' : '-'}R$ {Math.abs(result.data.valor).toFixed(2)}
+                                {(result.data.valor < 0 || (result.data.tipo && result.data.tipo.toLowerCase() === 'saída')) ? '-' : '+'}R$ {Math.abs(result.data.valor).toFixed(2)}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 mt-1">
