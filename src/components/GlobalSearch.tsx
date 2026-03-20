@@ -2,11 +2,13 @@ import React, { useState, useRef, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, X, Package, ShoppingCart, Bike, Tag, Layers } from 'lucide-react';
 import { DataContext } from '../App';
-import { cn } from '../utils';
+import { cn, formatDateRelative } from '../utils';
 
 interface GlobalSearchProps {
   theme: 'light' | 'dark';
   onSelectItem: (item: any) => void;
+  isOpen: boolean;
+  setIsOpen: (isOpen: boolean) => void;
 }
 
 function normalizarTexto(texto: string) {
@@ -66,8 +68,7 @@ const CatalogItemCard = ({ item, theme, onClick }: { item: any, theme: string, o
   </button>
 );
 
-export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem }) => {
-  const [isOpen, setIsOpen] = useState(false);
+export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem, isOpen, setIsOpen }) => {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const { inventory, sales, motos } = useContext(DataContext);
@@ -109,6 +110,28 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem 
       }
     });
 
+    // Search Sales (Vendas)
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    sales.forEach(sale => {
+      if (!sale.tipo) return;
+      
+      const saleDate = new Date(sale.data);
+      const isSameMonth = saleDate.getMonth() === currentMonth && saleDate.getFullYear() === currentYear;
+      
+      const normalizedTipo = normalizarTexto(sale.tipo);
+      
+      if (isSameMonth && normalizedTipo.includes(normalizedQuery)) {
+        results.push({
+          type: 'venda',
+          data: sale,
+          score: 8
+        });
+      }
+    });
+
     // Sort by score descending
     return results.sort((a, b) => b.score - a.score).slice(0, 8);
   };
@@ -119,16 +142,23 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem 
     <>
       <motion.button
         className={cn(
-          "fixed bottom-24 right-6 w-14 h-14 rounded-full flex items-center justify-center z-50 transition-all duration-300 group",
+          "fixed right-6 w-14 h-14 rounded-full flex items-center justify-center z-50 transition-all duration-300 group",
           theme === 'dark' 
             ? "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 shadow-xl" 
             : "bg-white hover:bg-gray-50 border border-zinc-200 shadow-xl"
         )}
         whileHover={{ scale: 1.05, y: -2 }}
         whileTap={{ scale: 0.95 }}
-        onClick={() => setIsOpen(true)}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsOpen(true);
+        }}
         initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
+        animate={{ 
+          scale: 1,
+          bottom: isOpen ? '260px' : '160px'
+        }}
       >
         <Search className={cn(
           "w-6 h-6 transition-transform group-hover:scale-110",
@@ -151,7 +181,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem 
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className={cn(
-                "fixed bottom-20 left-4 right-4 md:left-auto md:right-auto md:mx-auto md:w-3/4 max-w-4xl max-h-[70vh] z-50 rounded-2xl shadow-2xl overflow-hidden border flex flex-col",
+                "fixed bottom-20 left-4 right-4 md:left-auto md:right-auto md:mx-auto md:w-3/4 max-w-4xl max-h-[70vh] z-[110] rounded-2xl shadow-2xl overflow-hidden border flex flex-col",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-indigo-600/10"
               )}
             >
@@ -175,7 +205,43 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem 
                             }} 
                           />
                         )}
-                        {/* Future result types will be handled here */}
+                        {result.type === 'venda' && (
+                          <div 
+                            className={cn(
+                              "p-3 rounded-xl border cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors",
+                              theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-white border-zinc-200"
+                            )}
+                            onClick={() => {
+                              onSelectItem(result.data);
+                              handleClose();
+                            }}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className={cn("font-medium truncate pr-2", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
+                                {result.data.nome}
+                              </span>
+                              <span className={cn(
+                                "font-mono font-bold text-sm whitespace-nowrap",
+                                result.data.valor >= 0 
+                                  ? "text-emerald-500 [text-shadow:0_0_8px_rgba(16,185,129,0.5)]" 
+                                  : "text-red-500 [text-shadow:0_0_8px_rgba(239,68,68,0.5)]"
+                              )}>
+                                {result.data.valor >= 0 ? '+' : '-'}R$ {Math.abs(result.data.valor).toFixed(2)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={cn(
+                                "text-[10px] px-2 py-0.5 rounded-md font-medium uppercase tracking-wider",
+                                theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
+                              )}>
+                                {result.data.tipo}
+                              </span>
+                              <span className={cn("text-[10px]", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>
+                                {formatDateRelative(result.data.data)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </React.Fragment>
                     ))}
                   </div>

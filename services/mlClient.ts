@@ -44,10 +44,21 @@ class MLClient {
     return this._userId;
   }
 
+  private lastRequestTime: number = 0;
+  private minDelay: number = 300; // 300ms delay between requests
+
   /**
    * Método base para todas as requisições com retry automático em caso de token expirado
    */
   async request(endpoint: string, options: any = {}) {
+    // Rate limiting: delay entre requisições
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    if (timeSinceLastRequest < this.minDelay) {
+      await new Promise(resolve => setTimeout(resolve, this.minDelay - timeSinceLastRequest));
+    }
+    this.lastRequestTime = Date.now();
+
     try {
       console.log(`📡 Chamando API ML: ${endpoint}`);
       const response = await axios({
@@ -61,6 +72,12 @@ class MLClient {
           ...(options.headers || {})
         }
       });
+
+      // Verifica se o Mercado Livre retornou "Rate exceeded" como string em vez de JSON
+      if (typeof response.data === 'string' && response.data.includes('Rate exceeded')) {
+        throw new Error('Rate exceeded.');
+      }
+
       return response.data;
     } catch (error: any) {
       // Se for erro 401 (token expirado), tenta refresh automático

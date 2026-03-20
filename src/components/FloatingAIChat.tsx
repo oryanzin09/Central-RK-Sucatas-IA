@@ -19,9 +19,10 @@ interface Message {
 
 interface FloatingAIChatProps {
   theme: 'light' | 'dark';
+  isSearchOpen: boolean;
 }
 
-export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
+export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchOpen }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -211,16 +212,23 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme }) => {
     <>
       <motion.button
         className={cn(
-          "fixed bottom-24 right-6 w-14 h-14 rounded-full flex items-center justify-center z-50 transition-all duration-300 group",
+          "fixed right-6 w-14 h-14 rounded-full flex items-center justify-center z-[60] transition-all duration-300 group",
           theme === 'dark' 
             ? "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 shadow-xl" 
             : "bg-white hover:bg-gray-50 border border-zinc-200 shadow-xl"
         )}
         whileHover={{ scale: 1.05, y: -2 }}
         whileTap={{ scale: 0.95 }}
-        onClick={handleOpen}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleOpen();
+        }}
         initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
+        animate={{ 
+          scale: 1,
+          bottom: isSearchOpen ? '200px' : '96px'
+        }}
       >
         <Sparkles className={cn(
           "w-6 h-6 transition-transform group-hover:rotate-12",

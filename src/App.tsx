@@ -7246,6 +7246,7 @@ function AppContent() {
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
   const [inventoryActions, setInventoryActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [mlDashboardData, setMlDashboardData] = useState<any>(null);
   const [isMlDashboardLoading, setIsMlDashboardLoading] = useState(false);
@@ -7659,8 +7660,8 @@ function AppContent() {
         </div>
       </main>
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
-      <FloatingAIChat theme={theme} />
-      <GlobalSearch theme={theme} onSelectItem={setSelectedDetailItem} />
+      <FloatingAIChat theme={theme} isSearchOpen={isSearchOpen} />
+      <GlobalSearch theme={theme} onSelectItem={setSelectedDetailItem} isOpen={isSearchOpen} setIsOpen={setIsSearchOpen} />
       
       {/* Modal de Detalhes Global */}
       <AnimatePresence>
