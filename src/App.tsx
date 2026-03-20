@@ -871,105 +871,19 @@ const DashboardView = ({
             </div>
             
             <div className="flex items-center gap-2">
-              {/* Filtro de Período (sempre renderizado para manter layout fixo) */}
-              <div className={cn("relative transition-opacity duration-200", source === 'mercadolivre' ? "opacity-100" : "opacity-0 pointer-events-none")}>
-                <button
-                  onClick={() => {
-                    const dropdown = document.getElementById('ml-period-dropdown');
-                    if (dropdown) {
-                      dropdown.classList.toggle('hidden');
-                    }
-                  }}
-                  className={cn(
-                    "p-1.5 sm:p-2 rounded-full transition-all border flex items-center justify-center relative",
-                    theme === 'dark' 
-                      ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-                      : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
-                  )}
-                  title="Filtro de Período"
-                >
-                  <Calendar size={18} />
-                  {mlPeriod !== '30d' && (
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-full"></span>
-                  )}
-                </button>
-                
-                <div 
-                  id="ml-period-dropdown" 
-                  className={cn(
-                    "hidden absolute right-0 top-full mt-2 w-64 p-3 rounded-2xl border shadow-xl z-50",
-                    theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
-                  )}
-                >
-                  <h4 className={cn("text-xs font-bold uppercase tracking-wider mb-2 px-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Período</h4>
-                  <div className="space-y-1 mb-3">
-                    {[
-                      { value: '7d', label: 'Últimos 7 dias' },
-                      { value: '15d', label: 'Últimos 15 dias' },
-                      { value: '30d', label: 'Últimos 30 dias' },
-                      { value: '60d', label: 'Últimos 60 dias' },
-                      { value: 'custom', label: 'Data Específica' },
-                    ].map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => {
-                          setMlPeriod(option.value);
-                          if (option.value !== 'custom') {
-                            document.getElementById('ml-period-dropdown')?.classList.add('hidden');
-                          }
-                        }}
-                        className={cn(
-                          "w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all",
-                          mlPeriod === option.value
-                            ? (theme === 'dark' ? "bg-amber-500/10 text-amber-500" : "bg-amber-50 text-amber-600")
-                            : (theme === 'dark' ? "text-zinc-300 hover:bg-zinc-800" : "text-zinc-700 hover:bg-zinc-100")
-                        )}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {mlPeriod === 'custom' && (
-                    <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                      <div>
-                        <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Início</label>
-                        <input
-                          type="date"
-                          value={mlCustomDate.start}
-                          onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
-                          className={cn(
-                            "w-full px-3 py-2 rounded-xl text-xs font-medium border outline-none transition-all",
-                            theme === 'dark' 
-                              ? "bg-zinc-950 border-zinc-800 text-zinc-300 focus:border-amber-500/50" 
-                              : "bg-zinc-50 border-zinc-200 text-zinc-700 focus:border-amber-500/50"
-                          )}
-                        />
-                      </div>
-                      <div>
-                        <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Fim</label>
-                        <input
-                          type="date"
-                          value={mlCustomDate.end}
-                          onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
-                          className={cn(
-                            "w-full px-3 py-2 rounded-xl text-xs font-medium border outline-none transition-all",
-                            theme === 'dark' 
-                              ? "bg-zinc-950 border-zinc-800 text-zinc-300 focus:border-amber-500/50" 
-                              : "bg-zinc-50 border-zinc-200 text-zinc-700 focus:border-amber-500/50"
-                          )}
-                        />
-                      </div>
-                      <button
-                        onClick={() => document.getElementById('ml-period-dropdown')?.classList.add('hidden')}
-                        className="w-full mt-2 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 transition-colors"
-                      >
-                        Aplicar
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
+              {/* Toggle de Informações Sensíveis */}
+              <button
+                onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
+                className={cn(
+                  "p-1.5 sm:p-2 rounded-full transition-all border",
+                  theme === 'dark' 
+                    ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                    : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+                )}
+                title={showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
+              >
+                {showSensitiveInfo ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
 
               {/* Botão de Sincronizar */}
               <button 
@@ -985,20 +899,108 @@ const DashboardView = ({
               >
                 <RefreshCw size={18} className={cn(loading && "animate-spin")} />
               </button>
-              
-              {/* Toggle de Informações Sensíveis */}
-              <button
-                onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
-                className={cn(
-                  "p-1.5 sm:p-2 rounded-full transition-all border",
-                  theme === 'dark' 
-                    ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-                    : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
-                )}
-                title={showSensitiveInfo ? "Ocultar Sensíveis" : "Mostrar Sensíveis"}
-              >
-                {showSensitiveInfo ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+
+              {/* Filtro de Período (apenas para Mercado Livre) */}
+              {source === 'mercadolivre' && (
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      const dropdown = document.getElementById('ml-period-dropdown');
+                      if (dropdown) {
+                        dropdown.classList.toggle('hidden');
+                      }
+                    }}
+                    className={cn(
+                      "p-1.5 sm:p-2 rounded-full transition-all border flex items-center justify-center relative",
+                      theme === 'dark' 
+                        ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
+                        : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+                    )}
+                    title="Filtro de Período"
+                  >
+                    <Calendar size={18} />
+                    {mlPeriod !== '30d' && (
+                      <span className="absolute top-0 right-0 w-2 h-2 bg-amber-500 rounded-full"></span>
+                    )}
+                  </button>
+                  
+                  <div 
+                    id="ml-period-dropdown" 
+                    className={cn(
+                      "hidden absolute right-0 top-full mt-2 w-64 p-3 rounded-2xl border shadow-xl z-50",
+                      theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+                    )}
+                  >
+                    <h4 className={cn("text-xs font-bold uppercase tracking-wider mb-2 px-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Período</h4>
+                    <div className="space-y-1 mb-3">
+                      {[
+                        { value: '7d', label: 'Últimos 7 dias' },
+                        { value: '15d', label: 'Últimos 15 dias' },
+                        { value: '30d', label: 'Últimos 30 dias' },
+                        { value: '60d', label: 'Últimos 60 dias' },
+                        { value: 'custom', label: 'Data Específica' },
+                      ].map(option => (
+                        <button
+                          key={option.value}
+                          onClick={() => {
+                            setMlPeriod(option.value);
+                            if (option.value !== 'custom') {
+                              document.getElementById('ml-period-dropdown')?.classList.add('hidden');
+                            }
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all",
+                            mlPeriod === option.value
+                              ? (theme === 'dark' ? "bg-amber-500/10 text-amber-500" : "bg-amber-50 text-amber-600")
+                              : (theme === 'dark' ? "text-zinc-300 hover:bg-zinc-800" : "text-zinc-700 hover:bg-zinc-100")
+                          )}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {mlPeriod === 'custom' && (
+                      <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                        <div>
+                          <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Início</label>
+                          <input
+                            type="date"
+                            value={mlCustomDate.start}
+                            onChange={(e) => setMlCustomDate({ ...mlCustomDate, start: e.target.value })}
+                            className={cn(
+                              "w-full px-3 py-2 rounded-xl text-xs font-medium border outline-none transition-all",
+                              theme === 'dark' 
+                                ? "bg-zinc-950 border-zinc-800 text-zinc-300 focus:border-amber-500/50" 
+                                : "bg-zinc-50 border-zinc-200 text-zinc-700 focus:border-amber-500/50"
+                            )}
+                          />
+                        </div>
+                        <div>
+                          <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Fim</label>
+                          <input
+                            type="date"
+                            value={mlCustomDate.end}
+                            onChange={(e) => setMlCustomDate({ ...mlCustomDate, end: e.target.value })}
+                            className={cn(
+                              "w-full px-3 py-2 rounded-xl text-xs font-medium border outline-none transition-all",
+                              theme === 'dark' 
+                                ? "bg-zinc-950 border-zinc-800 text-zinc-300 focus:border-amber-500/50" 
+                                : "bg-zinc-50 border-zinc-200 text-zinc-700 focus:border-amber-500/50"
+                            )}
+                          />
+                        </div>
+                        <button
+                          onClick={() => document.getElementById('ml-period-dropdown')?.classList.add('hidden')}
+                          className="w-full mt-2 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 transition-colors"
+                        >
+                          Aplicar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -7238,6 +7240,7 @@ function AppContent() {
     }
     return 'dashboard';
   });
+  const contentRef = useRef<HTMLDivElement>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
   const [showPaymentFilter, setShowPaymentFilter] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
@@ -7331,6 +7334,10 @@ function AppContent() {
 
   useEffect(() => {
     localStorage.setItem('activeTab', activeTab);
+    window.scrollTo(0, 0);
+    if (contentRef.current) {
+      contentRef.current.scrollTo(0, 0);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -7584,7 +7591,7 @@ function AppContent() {
         </header>
 
         {/* Content Area */}
-        <div className="p-4 md:p-6 overflow-y-auto">
+        <div ref={contentRef} className="p-4 md:p-6 overflow-y-auto flex-1">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}

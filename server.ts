@@ -1335,7 +1335,8 @@ async function startServer() {
       let anoProp = "Ano";
       let descProp = "Descrição";
       let mlProp = "ML LINK";
-
+      let imgProp = "Imagem";
+ 
       for (const [key, prop] of Object.entries(dbProps)) {
         const p = prop as any;
         const lowerKey = key.toLowerCase();
@@ -1348,6 +1349,7 @@ async function startServer() {
         else if (lowerKey.includes('ano')) anoProp = key;
         else if (lowerKey.includes('desc') || lowerKey.includes('obs')) descProp = key;
         else if (lowerKey.includes('ml') || lowerKey.includes('link')) mlProp = key;
+        else if (lowerKey.includes('img') || lowerKey.includes('foto')) imgProp = key;
       }
 
       const properties: any = {
@@ -1388,6 +1390,21 @@ async function startServer() {
         properties[mlProp] = { url: ml_link || null };
       }
 
+      if (imgProp && dbProps[imgProp] && dbProps[imgProp].type === 'files' && req.body.imagem) {
+        const imagem = req.body.imagem;
+        const isNotionUrl = imagem && (imagem.includes('s3.us-west-2.amazonaws.com') || imagem.includes('notion-static.com'));
+        
+        if (imagem && (imagem.startsWith('http://') || imagem.startsWith('https://')) && !isNotionUrl) {
+          properties[imgProp] = { 
+            files: [{ 
+              name: 'Imagem', 
+              type: 'external', 
+              external: { url: imagem } 
+            }] 
+          };
+        }
+      }
+
       const response = await fetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: {
@@ -1411,6 +1428,122 @@ async function startServer() {
       res.json(formatInventoryItem(data));
     } catch (error: any) {
       console.error("Create Item Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/inventory/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome, categoria, moto, valor, estoque, ano, descricao, ml_link, imagem } = req.body;
+
+      console.log(`📝 Editando item ${id}:`, { nome, categoria, moto, valor, estoque, ano, descricao, ml_link, imagem });
+
+      // Busca a estrutura do banco (usando cache)
+      const dbData = await getCachedDbStructure(DATABASE_ID);
+      const dbProps = dbData.properties;
+
+      // Mapeia os campos para os nomes reais das propriedades
+      let nameProp = "Peça";
+      let catProp = "Categoria";
+      let motoProp = "Moto";
+      let valorProp = "Valor";
+      let estoqueProp = "Estoque";
+      let anoProp = "Ano";
+      let descProp = "Descrição";
+      let mlProp = "ML LINK";
+      let imgProp = "Imagem";
+
+      for (const [key, prop] of Object.entries(dbProps)) {
+        const p = prop as any;
+        const lowerKey = key.toLowerCase();
+        
+        if (p.type === 'title') nameProp = key;
+        else if (lowerKey.includes('categoria') || lowerKey.includes('cat')) catProp = key;
+        else if (lowerKey.includes('moto')) motoProp = key;
+        else if (lowerKey.includes('valor') || lowerKey.includes('preço')) valorProp = key;
+        else if (lowerKey.includes('estoque') || lowerKey.includes('quant')) estoqueProp = key;
+        else if (lowerKey.includes('ano')) anoProp = key;
+        else if (lowerKey.includes('desc') || lowerKey.includes('obs')) descProp = key;
+        else if (lowerKey.includes('ml') || lowerKey.includes('link')) mlProp = key;
+        else if (lowerKey.includes('img') || lowerKey.includes('foto')) imgProp = key;
+      }
+
+      const properties: any = {};
+
+      if (nome !== undefined) {
+        properties[nameProp] = { title: [{ text: { content: nome } }] };
+      }
+
+      if (catProp && dbProps[catProp] && dbProps[catProp].type === 'multi_select' && categoria !== undefined) {
+        properties[catProp] = { multi_select: categoria ? [{ name: categoria }] : [] };
+      }
+
+      if (motoProp && dbProps[motoProp] && dbProps[motoProp].type === 'select' && moto !== undefined) {
+        properties[motoProp] = { select: moto ? { name: moto } : null };
+      }
+
+      if (valorProp && dbProps[valorProp] && dbProps[valorProp].type === 'number' && valor !== undefined) {
+        properties[valorProp] = { number: Number(valor) };
+      }
+
+      if (estoqueProp && dbProps[estoqueProp] && dbProps[estoqueProp].type === 'number' && estoque !== undefined) {
+        properties[estoqueProp] = { number: Number(estoque) };
+      }
+
+      if (anoProp && dbProps[anoProp] && ano !== undefined) {
+        if (dbProps[anoProp].type === 'rich_text') {
+          properties[anoProp] = { rich_text: [{ text: { content: String(ano) || "" } }] };
+        } else if (dbProps[anoProp].type === 'number') {
+          properties[anoProp] = { number: Number(ano) };
+        }
+      }
+
+      if (descProp && dbProps[descProp] && dbProps[descProp].type === 'rich_text' && descricao !== undefined) {
+        properties[descProp] = { rich_text: [{ text: { content: descricao || "" } }] };
+      }
+
+      if (mlProp && dbProps[mlProp] && dbProps[mlProp].type === 'url' && ml_link !== undefined) {
+        properties[mlProp] = { url: ml_link || null };
+      }
+
+      if (imgProp && dbProps[imgProp] && dbProps[imgProp].type === 'files' && imagem !== undefined) {
+        const isNotionUrl = imagem && (imagem.includes('s3.us-west-2.amazonaws.com') || imagem.includes('notion-static.com'));
+
+        if (imagem && (imagem.startsWith('http://') || imagem.startsWith('https://')) && !isNotionUrl) {
+          properties[imgProp] = { 
+            files: [{ 
+              name: 'Imagem', 
+              type: 'external', 
+              external: { url: imagem } 
+            }] 
+          };
+        } else if (!imagem) {
+          properties[imgProp] = { files: [] };
+        }
+        // Se for uma URL do Notion, ignoramos para evitar erro de validação (presumindo que não mudou)
+      }
+
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ properties })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Notion API error: ${error}`);
+      }
+
+      const updatedPage = await response.json();
+      invalidateCache(DATABASE_ID);
+      res.json(formatInventoryItem(updatedPage));
+    } catch (error: any) {
+      console.error("Update Item Error:", error);
       res.status(500).json({ error: error.message });
     }
   });
