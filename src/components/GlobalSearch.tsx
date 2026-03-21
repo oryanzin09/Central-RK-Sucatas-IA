@@ -9,6 +9,7 @@ interface GlobalSearchProps {
   onSelectItem: (item: any) => void;
   isOpen: boolean;
   setIsOpen: (isOpen: boolean) => void;
+  customClick?: () => void;
 }
 
 function normalizarTexto(texto: string) {
@@ -23,7 +24,7 @@ const CatalogItemCard = ({ item, theme, onClick }: { item: any, theme: string, o
   <button
     onClick={onClick}
     className={cn(
-      "w-full text-left p-2.5 rounded-xl flex items-center gap-3 transition-all border",
+      "w-full text-left p-2.5 rounded-lg flex items-center gap-3 transition-all border",
       theme === 'dark' 
         ? "bg-zinc-900 border-zinc-800 hover:border-violet-500/50" 
         : "bg-white border-zinc-200 hover:border-indigo-500/50"
@@ -62,21 +63,95 @@ const CatalogItemCard = ({ item, theme, onClick }: { item: any, theme: string, o
         </span>
       </div>
     </div>
-    <p className="font-black text-emerald-500 text-xs drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]">
+    <p className="font-black text-emerald-500 text-xs [text-shadow:0_0_10px_rgba(16,185,129,0.5)]">
       {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.valor))}
     </p>
   </button>
 );
 
-export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem, isOpen, setIsOpen }) => {
+const MotoItemCard = ({ item, theme, onClick }: { item: any, theme: string, onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className={cn(
+      "w-full text-left p-2.5 rounded-lg flex items-center gap-3 transition-all border",
+      theme === 'dark' 
+        ? "bg-zinc-900 border-zinc-800 hover:border-blue-500/50" 
+        : "bg-white border-zinc-200 hover:border-blue-500/50"
+    )}
+  >
+    <div className={cn(
+      "w-16 h-12 rounded-lg overflow-hidden flex-shrink-0",
+      theme === 'dark' ? "bg-zinc-800" : "bg-zinc-100"
+    )}>
+      {item.imagens?.[0] || item.imagem ? (
+        <img 
+          src={item.imagens?.[0] || item.imagem} 
+          alt={item.nome} 
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-zinc-400">
+          <Bike size={20} />
+        </div>
+      )}
+    </div>
+    <div className="flex-1 min-w-0">
+      <p className={cn("font-bold text-xs mb-1 truncate uppercase", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
+        {item.nome}
+      </p>
+      <div className="flex flex-wrap gap-1">
+        <span className={cn("px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border shadow-sm", theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200")}>
+          {item.marca}
+        </span>
+        <span className={cn("px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border shadow-sm", theme === 'dark' ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-zinc-100 text-zinc-600 border-zinc-200")}>
+          {item.ano}
+        </span>
+        <span className={cn("px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border shadow-sm", theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200")}>
+          {item.cilindrada}cc
+        </span>
+        {item.status && (
+          <span className={cn(
+            "px-1.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-wider border shadow-sm",
+            item.status === 'DISPONÍVEL' ? (theme === 'dark' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200") :
+            item.status === 'VENDIDA' ? (theme === 'dark' ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-rose-50 text-rose-600 border-rose-200") :
+            (theme === 'dark' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200")
+          )}>
+            {item.status}
+          </span>
+        )}
+      </div>
+    </div>
+    <p className="font-black text-emerald-500 text-xs [text-shadow:0_0_10px_rgba(16,185,129,0.5)]">
+      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(item.valor))}
+    </p>
+  </button>
+);
+
+export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem, isOpen, setIsOpen, customClick }) => {
   const [query, setQuery] = useState('');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const inputRef = useRef<HTMLInputElement>(null);
   const { inventory, sales, motos } = useContext(DataContext);
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    } else {
+      document.body.style.overflow = 'unset';
     }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
   }, [isOpen]);
 
   const handleClose = () => {
@@ -132,6 +207,22 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
       }
     });
 
+    // Search Motos
+    motos.forEach(moto => {
+      const motoText = normalizarTexto(`${moto.nome} ${moto.marca} ${moto.modelo} ${moto.lote || ''}`);
+      
+      const exactNameMatch = normalizarTexto(moto.nome || '') === normalizedQuery;
+      const matchesAll = queryWords.every(word => motoText.includes(word));
+      
+      if (exactNameMatch || matchesAll) {
+        results.push({
+          type: 'moto',
+          data: moto,
+          score: exactNameMatch ? 12 : (matchesAll ? 7 : 0)
+        });
+      }
+    });
+
     // Sort by score descending
     return results.sort((a, b) => b.score - a.score).slice(0, 8);
   };
@@ -147,17 +238,21 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
             ? "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 shadow-xl" 
             : "bg-white hover:bg-gray-50 border border-zinc-200 shadow-xl"
         )}
-        whileHover={{ scale: 1.05, y: -2 }}
+        whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.95 }}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          setIsOpen(true);
+          if (customClick) {
+            customClick();
+          } else {
+            setIsOpen(true);
+          }
         }}
         initial={{ scale: 0 }}
         animate={{ 
           scale: 1,
-          bottom: isOpen ? '260px' : '160px'
+          bottom: '136px'
         }}
       >
         <Search className={cn(
@@ -177,11 +272,14 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
               onClick={handleClose}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.9, y: isMobile ? 20 : 0 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              exit={{ opacity: 0, scale: 0.9, y: isMobile ? 20 : 0 }}
               className={cn(
-                "fixed bottom-20 left-4 right-4 md:left-auto md:right-auto md:mx-auto md:w-3/4 max-w-4xl max-h-[70vh] z-[110] rounded-2xl shadow-2xl overflow-hidden border flex flex-col",
+                "fixed z-[110] rounded-lg shadow-2xl overflow-hidden border flex flex-col",
+                isMobile 
+                  ? "bottom-20 left-4 right-4 max-h-[60vh]" 
+                  : "bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl max-h-[70vh]",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-indigo-600/10"
               )}
             >
@@ -205,10 +303,20 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
                             }} 
                           />
                         )}
+                        {result.type === 'moto' && (
+                          <MotoItemCard 
+                            item={result.data} 
+                            theme={theme} 
+                            onClick={() => {
+                              onSelectItem(result.data);
+                              handleClose();
+                            }} 
+                          />
+                        )}
                         {result.type === 'venda' && (
                           <div 
                             className={cn(
-                              "p-3 rounded-xl border cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors",
+                              "p-3 rounded-lg border cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-all duration-200",
                               theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-white border-zinc-200"
                             )}
                             onClick={() => {
@@ -216,27 +324,37 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
                               handleClose();
                             }}
                           >
-                            <div className="flex justify-between items-start">
-                              <span className={cn("font-medium truncate pr-2", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
-                                {result.data.nome}
+                            <div className="flex justify-between items-start mb-2">
+                              <span className={cn("font-bold text-sm truncate pr-2", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
+                                {result.data.nome ? result.data.nome.charAt(0).toUpperCase() + result.data.nome.slice(1) : ''}
                               </span>
                               <span className={cn(
-                                "font-mono font-bold text-sm whitespace-nowrap",
-                                (result.data.valor < 0 || (result.data.tipo && result.data.tipo.toLowerCase() === 'saída'))
-                                  ? "text-red-500 [text-shadow:0_0_8px_rgba(239,68,68,0.5)]"
-                                  : "text-emerald-500 [text-shadow:0_0_8px_rgba(16,185,129,0.5)]"
+                                "font-black text-sm whitespace-nowrap transition-all duration-300",
+                                (result.data.tipo?.toUpperCase() === 'SAÍDA')
+                                  ? "text-rose-500 [text-shadow:0_0_10px_rgba(244,63,94,0.5)]"
+                                  : "text-emerald-500 [text-shadow:0_0_10px_rgba(16,185,129,0.5)]"
                               )}>
-                                {(result.data.valor < 0 || (result.data.tipo && result.data.tipo.toLowerCase() === 'saída')) ? '-' : '+'}R$ {Math.abs(result.data.valor).toFixed(2)}
+                                {result.data.tipo?.toUpperCase() === 'SAÍDA' ? '-' : ''}{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(result.data.valor))}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 mt-1">
+                            <div className="flex flex-wrap gap-1.5">
                               <span className={cn(
-                                "text-[10px] px-2 py-0.5 rounded-md font-medium uppercase tracking-wider",
-                                theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
+                                "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border shadow-sm",
+                                result.data.tipo?.toUpperCase() === 'PIX' ? (theme === 'dark' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200") :
+                                result.data.tipo?.toUpperCase() === 'SAÍDA' ? (theme === 'dark' ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-rose-50 text-rose-600 border-rose-200") :
+                                result.data.tipo?.toUpperCase() === 'DINHEIRO' ? (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-200") :
+                                result.data.tipo?.toUpperCase() === 'CRÉDITO' ? (theme === 'dark' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-orange-50 text-orange-600 border-orange-200") :
+                                result.data.tipo?.toUpperCase() === 'DÉBITO' ? (theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200") :
+                                result.data.tipo?.toUpperCase() === 'MARCELO' ? (theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200") :
+                                result.data.tipo?.toUpperCase().includes('MERCADO LIVRE') ? (theme === 'dark' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200") :
+                                (theme === 'dark' ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-zinc-100 text-zinc-600 border-zinc-200")
                               )}>
                                 {result.data.tipo}
                               </span>
-                              <span className={cn("text-[10px]", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>
+                              <span className={cn(
+                                "px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border shadow-sm",
+                                theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200"
+                              )}>
                                 {formatDateRelative(result.data.data)}
                               </span>
                             </div>
@@ -265,7 +383,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Buscar..."
                     className={cn(
-                      "w-full pl-10 pr-10 py-2.5 rounded-xl outline-none transition-colors text-sm",
+                      "w-full pl-10 pr-10 py-2.5 rounded-lg outline-none transition-colors text-sm",
                       theme === 'dark' 
                         ? "bg-zinc-950 text-white placeholder-zinc-500 focus:ring-0" 
                         : "bg-gray-50 text-zinc-900 placeholder-zinc-400 focus:ring-1 focus:ring-indigo-600/50"

@@ -48,12 +48,14 @@ import {
   MessageCircle,
   ShoppingBag,
   Eye,
+  FileText,
+  CreditCard,
+  Zap,
+  Tag,
+  FileDown,
   EyeOff,
   Truck,
-  Tag,
   Activity,
-  CreditCard,
-  FileText,
   MapPin,
   Hash,
   TrendingDown,
@@ -88,6 +90,59 @@ import { io } from 'socket.io-client';
 
 const modelosMotos = MOTOS_OFICIAIS;
 const modelosUnicos = MOTOS_OFICIAIS;
+
+const parseJson = async (res: Response) => {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error(`❌ Erro ao parsear JSON de ${res.url}. Conteúdo recebido:`, text.substring(0, 200));
+    throw new Error(`Resposta inválida de ${res.url}`);
+  }
+};
+
+const fetchWithRetry = async (url: string, retries = 8) => {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const res = await fetch(url);
+      
+      // Se o status for 503 ou 502, é provável que o servidor esteja iniciando
+      if (res.status === 503 || res.status === 502) {
+        throw new Error('Servidor indisponível (iniciando)');
+      }
+
+      // Verifica o corpo da resposta mesmo se o status for 200
+      // O proxy da plataforma às vezes retorna 200 com o HTML de "Starting Server"
+      const contentType = res.headers.get('content-type');
+      if (contentType && (contentType.includes('text/html') || contentType.includes('text/plain'))) {
+        const clone = res.clone();
+        const text = await clone.text();
+        if (
+          text.includes('<title>Starting Server...</title>') || 
+          text.includes('Starting Server...') ||
+          text.trim().startsWith('<!doctype html>') ||
+          text.trim().startsWith('<!DOCTYPE html>')
+        ) {
+          throw new Error('Servidor ainda iniciando (HTML recebido)');
+        }
+      }
+
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      
+      return res;
+    } catch (err) {
+      if (i === retries) {
+        console.error(`❌ Falha definitiva ao buscar ${url}:`, err);
+        throw err;
+      }
+      // Espera progressiva mais longa: 3s, 6s, 9s...
+      const delay = 3000 * (i + 1);
+      console.warn(`⚠️ Tentativa ${i + 1} falhou para ${url}: ${err instanceof Error ? err.message : String(err)}. Tentando novamente em ${delay}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('Falha após retentativas');
+};
 
 function normalizarTexto(texto: string) {
   return texto
@@ -204,36 +259,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const query = force ? '?force=true' : '';
       
-      // Função auxiliar para fetch com retry
-      const fetchWithRetry = async (url: string, retries = 2) => {
-        for (let i = 0; i <= retries; i++) {
-          try {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`Status ${res.status}`);
-            return res;
-          } catch (err) {
-            if (i === retries) throw err;
-            await new Promise(r => setTimeout(r, 1000 * (i + 1)));
-          }
-        }
-        throw new Error('Falha após retentativas');
-      };
-
       const results = await Promise.allSettled([
         fetchWithRetry(`/api/inventory${query}`),
         fetchWithRetry(`/api/sales${query}`),
         fetchWithRetry(`/api/motos${query}`)
       ]);
-      
-      const parseJson = async (res: Response) => {
-        const text = await res.text();
-        try {
-          return JSON.parse(text);
-        } catch (e) {
-          console.error(`❌ Erro ao parsear JSON de ${res.url}. Conteúdo recebido:`, text.substring(0, 200));
-          throw new Error(`Resposta inválida de ${res.url}`);
-        }
-      };
 
       // Processar resultados individualmente
       // Estoque
@@ -598,7 +628,8 @@ const DashboardView = ({
   paymentFilter,
   setPaymentFilter,
   showPaymentFilter,
-  setShowPaymentFilter
+  setShowPaymentFilter,
+  isSearchOpen
 }: any) => {
   const { inventory, sales, loading, refreshData, showSensitiveInfo, setShowSensitiveInfo } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
@@ -830,7 +861,7 @@ const DashboardView = ({
 
   return (
     <>
-      <div className="space-y-6">
+      <div className={cn("space-y-6", isSearchOpen && "blur-md pointer-events-none")}>
       <div className="space-y-4 mb-6">
         {/* Linha 1: Título e Ações Principais */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1451,27 +1482,41 @@ const DashboardView = ({
                       className="transition-colors group cursor-pointer hover:bg-zinc-800/20"
                     >
                       <td className={cn("px-4 py-3 font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-col min-w-0">
                           <span className="truncate max-w-[200px]" title={sale.nome}>
-                            {sale.nome}
+                            {sale.nome ? sale.nome.charAt(0).toUpperCase() + sale.nome.slice(1) : ''}
                           </span>
+                          {sale.moto && (
+                            <span className="text-[9px] font-bold uppercase text-violet-400 tracking-wider">
+                              {sale.moto.toUpperCase()}
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-emerald-400 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]">
+                      <td className="px-4 py-3 text-emerald-400 font-black font-mono drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]">
                         {formatCurrency(sale.valor)}
                       </td>
                       <td className="px-4 py-3">
                         <span className={cn(
-                          "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
-                          theme === 'dark' 
-                            ? "bg-zinc-800/50 text-zinc-400 border border-zinc-700/50" 
-                            : "bg-zinc-100 text-zinc-600"
+                          "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border",
+                          sale.tipo?.toUpperCase() === 'PIX' ? (theme === 'dark' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200") :
+                          sale.tipo?.toUpperCase() === 'DINHEIRO' ? (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-200") :
+                          sale.tipo?.toUpperCase() === 'CRÉDITO' ? (theme === 'dark' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-orange-50 text-orange-600 border-orange-200") :
+                          sale.tipo?.toUpperCase() === 'DÉBITO' ? (theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200") :
+                          sale.tipo?.toUpperCase() === 'MARCELO' ? (theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200") :
+                          sale.tipo?.toUpperCase().includes('MERCADO LIVRE') ? (theme === 'dark' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200") :
+                          (theme === 'dark' ? "bg-zinc-800 text-zinc-400 border-zinc-700/50" : "bg-zinc-100 text-zinc-600")
                         )}>
                           {sale.tipo}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-zinc-500 text-xs font-medium">
-                        {new Date(sale.data).toLocaleDateString('pt-BR')}
+                      <td className="px-4 py-3">
+                        <span className={cn(
+                          "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border",
+                          theme === 'dark' ? "bg-zinc-800/50 text-zinc-500 border-zinc-700/50" : "bg-zinc-50 text-zinc-500 border-zinc-200"
+                        )}>
+                          {new Date(sale.data).toLocaleDateString('pt-BR')}
+                        </span>
                       </td>
                     </tr>
                   ))}
@@ -1494,31 +1539,47 @@ const DashboardView = ({
                             "font-bold text-[13px] leading-tight truncate", 
                             theme === 'dark' ? "text-zinc-300" : "text-zinc-700"
                           )}>
-                            {sale.nome}
+                            {sale.nome ? sale.nome.charAt(0).toUpperCase() + sale.nome.slice(1) : ''}
                           </span>
                           <span className={cn(
-                            "font-black text-base tracking-tight drop-shadow-[0_0_8px_rgba(52,211,153,0.2)]",
-                            isSaida ? "text-rose-400" : "text-emerald-400"
+                            "font-black text-base tracking-tight transition-all duration-300",
+                            isSaida 
+                              ? "text-rose-500 [text-shadow:0_0_10px_rgba(244,63,94,0.5)]" 
+                              : "text-emerald-500 [text-shadow:0_0_10px_rgba(16,185,129,0.5)]"
                           )}>
-                            {isSaida ? `- ${formatCurrency(sale.valor)}` : formatCurrency(sale.valor)}
+                            {isSaida ? '-' : ''}{formatCurrency(Math.abs(sale.valor))}
                           </span>
                         </div>
-                        <span className="text-zinc-500 text-[8px] font-bold bg-zinc-800/30 px-1.5 py-0.5 rounded border border-zinc-800/30 shrink-0 mt-1">
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border",
+                          theme === 'dark' ? "bg-zinc-800/50 text-zinc-500 border-zinc-700/50" : "bg-zinc-50 text-zinc-500 border-zinc-200"
+                        )}>
                           {new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={cn(
-                          "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shadow-sm",
+                          "px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border shadow-sm",
                           isSaida 
                             ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                            : (theme === 'dark' ? "bg-zinc-800 text-zinc-500 border border-zinc-700" : "bg-zinc-100 text-zinc-400 border border-zinc-200")
+                            : (
+                              sale.tipo?.toUpperCase() === 'PIX' ? (theme === 'dark' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200") :
+                              sale.tipo?.toUpperCase() === 'DINHEIRO' ? (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-200") :
+                              sale.tipo?.toUpperCase() === 'CRÉDITO' ? (theme === 'dark' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-orange-50 text-orange-600 border-orange-200") :
+                              sale.tipo?.toUpperCase() === 'DÉBITO' ? (theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200") :
+                              sale.tipo?.toUpperCase() === 'MARCELO' ? (theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200") :
+                              sale.tipo?.toUpperCase().includes('MERCADO LIVRE') ? (theme === 'dark' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200") :
+                              (theme === 'dark' ? "bg-zinc-800 text-zinc-500 border border-zinc-700" : "bg-zinc-100 text-zinc-400 border border-zinc-200")
+                            )
                         )}>
                           {sale.tipo}
                         </span>
                         {sale.moto && (
-                          <span className="text-zinc-600 text-[8px] font-bold truncate max-w-[80px]">
-                            {sale.moto}
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border",
+                            theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200"
+                          )}>
+                            {sale.moto.toUpperCase()}
                           </span>
                         )}
                       </div>
@@ -2276,10 +2337,11 @@ const DashboardView = ({
   );
 };
 
-const InventoryView = ({ theme, onSelectItem, onRegisterActions }: { 
+const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { 
   theme: 'light' | 'dark', 
   onSelectItem: (item: any) => void,
-  onRegisterActions?: (actions: { edit: (item: any) => void, delete: (id: string) => void }) => void
+  onRegisterActions?: (actions: { edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void }) => void,
+  isSearchOpen?: boolean
 }) => {
   const { inventory: items, loading, setInventory, refreshData } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
@@ -2350,6 +2412,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions }: {
   const [bulkCategory, setBulkCategory] = useState('');
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     nome: '',
     categoria: '',
@@ -2644,6 +2707,12 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions }: {
         delete: (id: string) => {
           setItemToDelete(id);
           setIsDeleteConfirmOpen(true);
+        },
+        focusSearch: () => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+            searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
         }
       });
     }
@@ -2724,13 +2793,15 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions }: {
         "relative z-50 p-6 rounded-[2rem] flex flex-col gap-6 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
           ? "bg-zinc-900 border-zinc-800 shadow-black/20" 
-          : "bg-white border-zinc-100 shadow-zinc-200/30"
+          : "bg-white border-zinc-100 shadow-zinc-200/30",
+        isSearchOpen && "blur-md pointer-events-none"
       )}>
         {/* Top Row: Search and Primary Actions */}
         <div className="flex flex-col md:flex-row items-center gap-4">
           <div className="w-full md:flex-1 relative group">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-violet-500 transition-colors" size={20} />
             <input 
+              ref={searchInputRef}
               type="text" 
               placeholder="Buscar por peça, moto ou ID..." 
               value={searchTerm}
@@ -3749,11 +3820,12 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions }: {
   );
 };
 
-const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void }) => {
+const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean }) => {
   const { sales: items, loading, refreshData, setSales } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   
@@ -3964,6 +4036,24 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
     }
   };
 
+  useEffect(() => {
+    if (onRegisterActions) {
+      onRegisterActions({
+        edit: handleEditSale,
+        delete: (id: string) => {
+          setItemToDelete(id);
+          setIsDeleteConfirmOpen(true);
+        },
+        focusSearch: () => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+            searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      });
+    }
+  }, [onRegisterActions]);
+
   const paymentTypes = useMemo(() => {
     const types = new Set(items.map(item => item.tipo).filter(Boolean));
     return ['Todos', ...Array.from(types)];
@@ -4114,7 +4204,8 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
         "border p-4 md:p-6 rounded-2xl space-y-4 md:space-y-6 transition-all duration-300",
         theme === 'dark' 
           ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
-          : "bg-white border-zinc-200 shadow-sm"
+          : "bg-white border-zinc-200 shadow-sm",
+        isSearchOpen && "blur-md pointer-events-none"
       )}>
         {/* Busca e Atualizar */}
         <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -4342,7 +4433,9 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                           className="w-full bg-transparent border-b border-violet-500 outline-none"
                         />
                       ) : (
-                        <span className={cn("text-sm font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>{item.nome}</span>
+                        <span className={cn("text-sm font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+                          {item.nome ? item.nome.charAt(0).toUpperCase() + item.nome.slice(1) : ''}
+                        </span>
                       )}
                     </div>
                   </td>
@@ -4354,7 +4447,9 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                         autoFocus
                         className="w-full bg-transparent border-b border-violet-500 outline-none"
                       />
-                    ) : item.moto}
+                    ) : (
+                      <span className="uppercase font-bold text-[10px] tracking-wider">{item.moto}</span>
+                    )}
                   </td>
                   <td className="px-6 py-4" onDoubleClick={() => handleInlineEdit(item.id, 'valor')}>
                     {editingCell?.itemId === item.id && editingCell?.field === 'valor' ? (
@@ -4365,22 +4460,41 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                         className="w-full bg-transparent border-b border-violet-500 outline-none"
                       />
                     ) : (
-                      <span className="text-sm font-bold text-emerald-500">
-                        {formatCurrency(item.valor)}
+                      <span className={cn(
+                        "text-sm font-black font-sans transition-all duration-300",
+                        (item.tipo?.toUpperCase() === 'SAÍDA')
+                          ? "text-rose-500 [text-shadow:0_0_10px_rgba(244,63,94,0.5)]"
+                          : "text-emerald-500 [text-shadow:0_0_10px_rgba(16,185,129,0.5)]"
+                      )}>
+                        {item.tipo?.toUpperCase() === 'SAÍDA' ? '-' : ''}{formatCurrency(Math.abs(item.valor))}
                       </span>
                     )}
                   </td>
                   <td className="px-6 py-4 text-sm">
                     {item.tipo && (
                       <span className={cn(
-                        "px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors",
-                        theme === 'dark' ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-zinc-100 text-zinc-600 border-zinc-200"
+                        "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm transition-colors",
+                        item.tipo.toUpperCase() === 'PIX' ? (theme === 'dark' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200") :
+                        item.tipo.toUpperCase() === 'SAÍDA' ? (theme === 'dark' ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-rose-50 text-rose-600 border-rose-200") :
+                        item.tipo.toUpperCase() === 'DINHEIRO' ? (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-200") :
+                        item.tipo.toUpperCase() === 'CRÉDITO' ? (theme === 'dark' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-orange-50 text-orange-600 border-orange-200") :
+                        item.tipo.toUpperCase() === 'DÉBITO' ? (theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200") :
+                        item.tipo.toUpperCase() === 'MARCELO' ? (theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200") :
+                        item.tipo.toUpperCase().includes('MERCADO LIVRE') ? (theme === 'dark' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200") :
+                        (theme === 'dark' ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-zinc-100 text-zinc-600 border-zinc-200")
                       )}>
                         {item.tipo}
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-xs text-zinc-500 font-medium">{formatDate(item.data)}</td>
+                  <td className="px-6 py-4">
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm transition-colors font-mono",
+                      theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200"
+                    )}>
+                      {formatDate(item.data)}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-xs font-mono text-zinc-600">{item.numero_id}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -4463,29 +4577,59 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
                     </div>
                   )}
                   <div className="flex flex-col">
-                    <span className={cn("font-bold text-base", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>{item.nome}</span>
-                    <span className="text-[10px] text-zinc-500 uppercase">{item.numero_id}</span>
+                    <span className={cn("font-bold text-base", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
+                      {item.nome ? item.nome.charAt(0).toUpperCase() + item.nome.slice(1) : ''}
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      <span className={cn(
+                        "px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border",
+                        theme === 'dark' ? "bg-zinc-800 text-zinc-400 border-zinc-700" : "bg-zinc-100 text-zinc-500 border-zinc-200"
+                      )}>
+                        {item.numero_id}
+                      </span>
+                      {item.moto && (
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border",
+                          theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200"
+                        )}>
+                          {item.moto.toUpperCase()}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <span className="text-lg font-bold text-emerald-500">{formatCurrency(item.valor)}</span>
+                <span className={cn(
+                  "text-lg font-black font-sans transition-all duration-300",
+                  (item.tipo?.toUpperCase() === 'SAÍDA')
+                    ? "text-rose-500 [text-shadow:0_0_10px_rgba(244,63,94,0.5)]"
+                    : "text-emerald-500 [text-shadow:0_0_10px_rgba(16,185,129,0.5)]"
+                )}>
+                  {item.tipo?.toUpperCase() === 'SAÍDA' ? '-' : ''}{formatCurrency(Math.abs(item.valor))}
+                </span>
               </div>
               
-              <div className="grid grid-cols-2 gap-y-2 text-xs mb-4">
-                <div className="flex flex-col">
-                  <span className="text-zinc-500 uppercase font-bold text-[9px]">Moto</span>
-                  <span className={theme === 'dark' ? "text-zinc-300" : "text-zinc-700"}>{item.moto}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-500 uppercase font-bold text-[9px]">Pagamento</span>
-                  <span className={theme === 'dark' ? "text-zinc-300" : "text-zinc-700"}>{item.tipo || 'Pix'}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-500 uppercase font-bold text-[9px]">Data</span>
-                  <span className={theme === 'dark' ? "text-zinc-300" : "text-zinc-700"}>{formatDate(item.data)}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-zinc-500 uppercase font-bold text-[9px]">ID</span>
-                  <span className="font-mono">{item.id.substring(0, 8)}</span>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {item.tipo && (
+                  <div className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm flex items-center gap-1.5",
+                    item.tipo.toUpperCase() === 'PIX' ? (theme === 'dark' ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-emerald-50 text-emerald-600 border-emerald-200") :
+                    item.tipo.toUpperCase() === 'SAÍDA' ? (theme === 'dark' ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-rose-50 text-rose-600 border-rose-200") :
+                    item.tipo.toUpperCase() === 'DINHEIRO' ? (theme === 'dark' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-green-50 text-green-600 border-green-200") :
+                    item.tipo.toUpperCase() === 'CRÉDITO' ? (theme === 'dark' ? "bg-orange-500/10 text-orange-400 border-orange-500/20" : "bg-orange-50 text-orange-600 border-orange-200") :
+                    item.tipo.toUpperCase() === 'DÉBITO' ? (theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200") :
+                    item.tipo.toUpperCase() === 'MARCELO' ? (theme === 'dark' ? "bg-violet-500/10 text-violet-400 border-violet-500/20" : "bg-violet-50 text-violet-600 border-violet-200") :
+                    item.tipo.toUpperCase().includes('MERCADO LIVRE') ? (theme === 'dark' ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-amber-50 text-amber-600 border-amber-200") :
+                    (theme === 'dark' ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-zinc-100 text-zinc-600 border-zinc-200")
+                  )}>
+                    {item.tipo}
+                  </div>
+                )}
+                <div className={cn(
+                  "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border shadow-sm flex items-center gap-1.5",
+                  theme === 'dark' ? "bg-blue-500/10 text-blue-400 border-blue-500/20" : "bg-blue-50 text-blue-600 border-blue-200"
+                )}>
+                  <Calendar size={10} />
+                  {formatDate(item.data)}
                 </div>
               </div>
 
@@ -4964,7 +5108,7 @@ const SalesView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
 // MOTOS VIEW COMPONENT
 // =============================================================================
 
-const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void }) => {
+const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean }) => {
   const { motos: items, loading, refreshData, setMotos } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -4984,6 +5128,25 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [inlineEditData, setInlineEditData] = useState<any>(null);
   const editRowRef = useRef<HTMLTableRowElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (onRegisterActions) {
+      onRegisterActions({
+        edit: handleEditMoto,
+        delete: (id: string) => {
+          setItemToDelete(id);
+          setIsDeleteConfirmOpen(true);
+        },
+        focusSearch: () => {
+          if (searchInputRef.current) {
+            searchInputRef.current.focus();
+            searchInputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      });
+    }
+  }, [onRegisterActions]);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -5649,12 +5812,14 @@ const MotosView = ({ theme, onSelectItem }: { theme: 'light' | 'dark', onSelectI
         "border p-6 rounded-2xl space-y-6 transition-all duration-300",
         theme === 'dark' 
           ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
-          : "bg-white border-zinc-200 shadow-sm"
+          : "bg-white border-zinc-200 shadow-sm",
+        isSearchOpen && "blur-md pointer-events-none"
       )}>
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex-1 min-w-[300px] relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
             <input 
+              ref={searchInputRef}
               type="text" 
               placeholder="Buscar por nome, marca, modelo..." 
               value={searchTerm}
@@ -6683,6 +6848,14 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
 
   const [copied, setCopied] = useState(false);
 
+  // Scroll Lock
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, []);
+
   const handleCopyLink = () => {
     const link = item.ml_link || item.permalink;
     if (link) {
@@ -6750,57 +6923,57 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
   const itemName = item.nome || item.titulo || item.peca || item.title || 'Sem Nome';
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-0 md:p-4 bg-black/90 backdrop-blur-xl">
       <motion.div
-        initial={{ opacity: 0, scale: 0.9, y: 40 }}
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 40 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
         className={cn(
-          "w-full max-w-lg max-h-[90vh] overflow-hidden rounded-[2.5rem] border shadow-2xl flex flex-col relative",
-          theme === 'dark' ? "bg-zinc-900/95 border-zinc-800/50" : "bg-white/98 border-zinc-200"
+          "w-[96%] md:w-full h-auto max-h-[74vh] md:max-h-[90vh] md:max-w-xl overflow-hidden rounded-lg border shadow-2xl flex flex-col relative",
+          theme === 'dark' ? "bg-zinc-950 border-zinc-800/50" : "bg-white border-zinc-200"
         )}
       >
         {/* Close Button Floating */}
         <button 
           onClick={onClose} 
           className={cn(
-            "absolute top-6 right-6 z-20 p-2.5 rounded-full transition-all active:scale-90 shadow-lg backdrop-blur-md",
-            theme === 'dark' ? "bg-zinc-800/80 text-zinc-400 hover:text-white" : "bg-white/80 text-zinc-500 hover:text-zinc-900"
+            "absolute top-1.5 right-1.5 z-50 p-1 rounded-full transition-all active:scale-90 shadow-xl backdrop-blur-md border",
+            theme === 'dark' ? "bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-white" : "bg-white/80 border-zinc-200 text-zinc-500 hover:text-zinc-900"
           )}
         >
-          <X size={20} />
+          <X size={14} />
         </button>
 
         <div className="flex-1 overflow-y-auto scrollbar-hide">
           {/* Hero Section with Image */}
-          <div className="relative h-72 w-full bg-zinc-950/20 flex items-center justify-center overflow-hidden">
+          <div className="relative h-28 md:h-64 w-full bg-zinc-950/40 flex items-center justify-center overflow-hidden">
             {(item.imagens && item.imagens.length > 0) ? (
-              <img src={item.imagens[0]} alt={itemName} className="w-full h-full object-contain p-6 relative z-10" referrerPolicy="no-referrer" />
+              <img src={item.imagens[0]} alt={itemName} className="w-full h-full object-contain p-1.5 relative z-10" referrerPolicy="no-referrer" />
             ) : item.imagem ? (
-              <img src={item.imagem} alt={itemName} className="w-full h-full object-contain p-6 relative z-10" referrerPolicy="no-referrer" />
+              <img src={item.imagem} alt={itemName} className="w-full h-full object-contain p-1.5 relative z-10" referrerPolicy="no-referrer" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-zinc-800 relative z-10">
-                {isSale ? <ShoppingBag size={100} strokeWidth={1} className="opacity-20" /> : <Package size={100} strokeWidth={1} className="opacity-20" />}
+                {isSale ? <ShoppingBag size={32} strokeWidth={1} className="opacity-10" /> : <Package size={32} strokeWidth={1} className="opacity-10" />}
               </div>
             )}
             
-            {/* Background Glow based on theme */}
+            {/* Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_70%)] from-violet-500/10 to-transparent" />
-            <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-zinc-900 to-transparent pointer-events-none z-10" />
+            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-zinc-950 to-transparent pointer-events-none z-10" />
           </div>
 
           {/* Main Content */}
-          <div className="px-8 pb-8 -mt-10 relative z-20">
-            <div className="flex flex-col gap-1 mb-8">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1 bg-violet-500/20 text-violet-400 text-[10px] font-black uppercase tracking-widest rounded-full border border-violet-500/20 shadow-[0_0_10px_rgba(139,92,246,0.2)]">
-                    {item.categoria || (isSale ? 'Venda' : 'Peça')}
+          <div className="px-2.5 md:px-8 -mt-3 relative z-20 pb-2.5">
+            <div className="flex flex-col gap-0 mb-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="px-1 py-0.5 bg-violet-500/20 text-violet-400 text-[6.5px] font-black uppercase tracking-widest rounded-sm border border-violet-500/20 shadow-sm">
+                    {item.categoria || (isSale ? 'Venda' : (item.marca ? 'Moto' : 'Peça'))}
                   </span>
                   {(item.status || item.tipo) && (
                     <span className={cn(
-                      "px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full border",
-                      (item.status === 'Disponível' || item.status === 'Ativo' || (isSale && item.tipo !== 'SAÍDA'))
+                      "px-1 py-0.5 text-[6.5px] font-black uppercase tracking-widest rounded-sm border shadow-sm",
+                      (item.status === 'Disponível' || item.status === 'DISPONÍVEL' || item.status === 'Ativo' || (isSale && item.tipo !== 'SAÍDA'))
                         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                         : "bg-rose-500/10 text-rose-400 border-rose-500/20"
                     )}>
@@ -6808,19 +6981,21 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
                     </span>
                   )}
                 </div>
-                <span className="text-zinc-500 text-[10px] font-mono font-bold bg-zinc-800/50 px-2 py-1 rounded-lg">#{item.rk_id || (item.id && String(item.id).slice(0,8)) || 'N/A'}</span>
+                <span className="text-zinc-500 text-[6.5px] font-mono font-bold bg-zinc-900/80 px-1 py-0.5 rounded-sm border border-zinc-800/50">
+                  #{item.rk_id || (item.id && String(item.id).slice(0,4)) || 'N/A'}
+                </span>
               </div>
               
-              <h3 className={cn("text-2xl font-black leading-tight tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+              <h3 className={cn("text-sm md:text-2xl font-black leading-tight tracking-tight uppercase", theme === 'dark' ? "text-white" : "text-zinc-900")}>
                 {itemName}
               </h3>
               
-              <div className="flex items-baseline gap-2 mt-3">
+              <div className="flex items-baseline gap-1 mt-0">
                 <span className={cn(
-                  "text-4xl font-black tracking-tighter",
+                  "text-lg md:text-4xl font-black tracking-tighter transition-all duration-500",
                   item.tipo === 'SAÍDA' 
-                    ? "text-rose-400 drop-shadow-[0_0_20px_rgba(244,63,94,0.6)]" 
-                    : "text-emerald-400 drop-shadow-[0_0_20px_rgba(52,211,153,0.6)]"
+                    ? "text-rose-500 [text-shadow:0_0_8px_rgba(244,63,94,0.3)]" 
+                    : "text-emerald-500 [text-shadow:0_0_8px_rgba(16,185,129,0.3)]"
                 )}>
                   {formatCurrency(itemValue)}
                 </span>
@@ -6828,114 +7003,140 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
             </div>
 
             {/* Elegant Grid */}
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              {!isSale && <DetailItem label="Estoque" value={item.estoque !== undefined ? item.estoque : 'N/A'} icon={Package} theme={theme} />}
-              <DetailItem label="Moto/Modelo" value={item.moto || item.modelo || 'N/A'} icon={Bike} theme={theme} />
-              {!isSale && <DetailItem label="Ano" value={item.ano || 'N/A'} icon={Calendar} theme={theme} />}
-              {isSale && <DetailItem label="Pagamento" value={item.forma_pagamento || item.tipo || 'N/A'} icon={CreditCard} theme={theme} />}
+            <div className="grid grid-cols-2 gap-1 md:gap-3 mb-2.5">
+              {!isSale && !item.marca && (
+                <>
+                  <DetailItem label="Estoque" value={item.estoque !== undefined ? item.estoque : 'N/A'} icon={Package} theme={theme} />
+                  <DetailItem label="Moto/Modelo" value={item.moto || item.modelo || 'N/A'} icon={Bike} theme={theme} />
+                  <div className="col-span-2">
+                    <DetailItem label="Ano" value={item.ano || 'N/A'} icon={Calendar} theme={theme} />
+                  </div>
+                </>
+              )}
+              
+              {item.marca && (
+                <>
+                  <DetailItem label="Moto/Modelo" value={item.moto || item.modelo || 'N/A'} icon={Bike} theme={theme} />
+                  <DetailItem label="Marca" value={item.marca} icon={Tag} theme={theme} />
+                  <DetailItem label="Ano" value={item.ano || 'N/A'} icon={Calendar} theme={theme} />
+                  <DetailItem label="Cilindrada" value={item.cilindrada ? `${item.cilindrada}cc` : 'N/A'} icon={Zap} theme={theme} />
+                  <div className="col-span-2">
+                    <DetailItem label="Lote" value={item.lote || 'N/A'} icon={Layers} theme={theme} />
+                  </div>
+                </>
+              )}
+              
+              {isSale && (
+                <>
+                  <DetailItem label="Moto/Modelo" value={item.moto || item.modelo || 'N/A'} icon={Bike} theme={theme} />
+                  <DetailItem label="Pagamento" value={item.forma_pagamento || item.tipo || 'N/A'} icon={CreditCard} theme={theme} />
+                </>
+              )}
             </div>
 
-            {/* Additional Info Grid */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* Additional Info Grid - Hidden on mobile to reduce info as requested */}
+            <div className="hidden md:grid grid-cols-2 gap-3 mb-2.5">
               <div className={cn(
-                "p-4 rounded-2xl border flex flex-col gap-1",
-                theme === 'dark' ? "bg-zinc-900/50 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
+                "p-1 rounded-md border flex flex-col gap-0",
+                theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
               )}>
-                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">ID Notion</span>
-                <span className={cn("text-xs font-mono font-medium truncate", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                  {item.id}
+                <span className="text-[5.5px] font-black uppercase text-zinc-500 tracking-widest">Criado em</span>
+                <span className={cn("text-[7.5px] font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>
+                  {formatDate(item.criado_em || item.data || item.date_created)}
                 </span>
               </div>
               <div className={cn(
-                "p-4 rounded-2xl border flex flex-col gap-1",
-                theme === 'dark' ? "bg-zinc-900/50 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
+                "p-1 rounded-md border flex flex-col gap-0",
+                theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
               )}>
-                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider">Criado em</span>
-                <span className={cn("text-xs font-medium", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                  {formatDate(item.criado_em || item.data || item.date_created)}
+                <span className="text-[5.5px] font-black uppercase text-zinc-500 tracking-widest">ID</span>
+                <span className={cn("text-[7.5px] font-mono font-medium truncate", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+                  {String(item.id).slice(0, 4)}...
                 </span>
               </div>
             </div>
 
             {/* Description Section */}
             {(item.descricao || item.pecas_retiradas || item.observacoes) && (
-              <div className="space-y-6 mb-8">
+              <div className="space-y-1 mb-2.5">
                 {(item.pecas_retiradas) && (
-                  <div className="p-5 rounded-3xl bg-zinc-800/20 border border-zinc-800/50 space-y-3">
-                    <h4 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.2em] flex items-center gap-2">
-                      <Wrench size={14} /> Peças Retiradas
+                  <div className="p-1.5 rounded-md bg-zinc-900/40 border border-zinc-800/50 space-y-0">
+                    <h4 className="text-[6.5px] font-black uppercase text-violet-400 tracking-[0.1em] flex items-center gap-1">
+                      <Wrench size={7} /> Peças Retiradas
                     </h4>
-                    <p className={cn("text-sm leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
+                    <p className={cn("text-[8.5px] leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
                       {item.pecas_retiradas}
                     </p>
                   </div>
                 )}
                 {(item.descricao || item.observacoes) && (
-                  <div className="p-5 rounded-3xl bg-zinc-800/20 border border-zinc-800/50 space-y-3">
-                    <h4 className="text-[10px] font-black uppercase text-amber-400 tracking-[0.2em] flex items-center gap-2">
-                      <FileText size={14} /> Observações
+                  <div className="p-1.5 rounded-md bg-zinc-900/40 border border-zinc-800/50 space-y-0">
+                    <h4 className="text-[6.5px] font-black uppercase text-amber-400 tracking-[0.1em] flex items-center gap-1">
+                      <FileText size={7} /> Observações
                     </h4>
-                    <p className={cn("text-sm leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
+                    <p className={cn("text-[8.5px] leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
                       {item.descricao || item.observacoes}
                     </p>
                   </div>
                 )}
               </div>
             )}
+          </div>
+        </div>
 
-            {/* Quick Actions */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              {onEdit && (
-                <button 
-                  onClick={() => {
-                    onEdit(item);
-                    onClose();
-                  }}
-                  className={cn(
-                    "flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all cursor-pointer hover:scale-[1.02] active:scale-95",
-                    theme === 'dark' 
-                      ? "bg-zinc-800/50 text-zinc-300 hover:bg-violet-600 hover:text-white border border-zinc-700/50 hover:border-violet-500" 
-                      : "bg-white text-zinc-600 hover:bg-violet-600 hover:text-white border border-zinc-200 shadow-sm hover:border-violet-500"
-                  )}
-                >
-                  <Edit2 size={16} /> Editar
-                </button>
-              )}
-              {onDelete && (
-                <button 
-                  onClick={() => {
-                    onDelete(item.id);
-                    onClose();
-                  }}
-                  className={cn(
-                    "flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all cursor-pointer hover:scale-[1.02] active:scale-95",
-                    theme === 'dark' 
-                      ? "bg-rose-500/10 text-rose-400 hover:bg-rose-600 hover:text-white border border-rose-500/20 hover:border-rose-500" 
-                      : "bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white border border-rose-100 shadow-sm hover:border-rose-500"
-                  )}
-                >
-                  <Trash2 size={16} /> Excluir
-                </button>
-              )}
-            </div>
-
-            {/* Action Button */}
-            {(item.ml_link || item.permalink) && (
-              <motion.a 
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                href={item.ml_link || item.permalink} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-3 w-full py-4 mt-2 bg-[#FFE600] text-[#2D3277] font-bold text-sm rounded-2xl hover:bg-[#F0D800] transition-colors shadow-md cursor-pointer"
+        {/* Fixed Quick Actions Footer */}
+        <div className={cn(
+          "p-1.5 border-t flex flex-col gap-1",
+          theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+        )}>
+          <div className="grid grid-cols-2 gap-1">
+            {onEdit && (
+              <button 
+                onClick={() => {
+                  onEdit(item);
+                  onClose();
+                }}
+                className={cn(
+                  "flex items-center justify-center gap-1 px-1.5 py-1 rounded-md font-black text-[7.5px] uppercase tracking-widest transition-all cursor-pointer border shadow-sm",
+                  theme === 'dark' 
+                    ? "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-violet-600 hover:text-white" 
+                    : "bg-white border-zinc-200 text-zinc-600 hover:bg-violet-600 hover:text-white"
+                )}
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-[#2D3277]">
-                  <path d="M10.75 2.06a2.25 2.25 0 0 1 2.5 0l7.5 4.87a2.25 2.25 0 0 1 1.02 1.88v6.38a2.25 2.25 0 0 1-1.02 1.88l-7.5 4.87a2.25 2.25 0 0 1-2.5 0l-7.5-4.87A2.25 2.25 0 0 1 2.23 15.2V8.81a2.25 2.25 0 0 1 1.02-1.88l7.5-4.87ZM12 4.31l-6.27 4.07 6.27 4.08 6.27-4.08L12 4.31ZM4.48 10.3v4.9l6.27 4.08v-4.9l-6.27-4.08Zm15.04 0-6.27 4.08v4.9l6.27-4.08v-4.9Z"/>
-                </svg>
-                Ver no Mercado Livre
-              </motion.a>
+                <Edit2 size={9} /> Editar
+              </button>
+            )}
+            {onDelete && (
+              <button 
+                onClick={() => {
+                  onDelete(item.id);
+                  onClose();
+                }}
+                className={cn(
+                  "flex items-center justify-center gap-1 px-1.5 py-1 rounded-md font-black text-[7.5px] uppercase tracking-widest transition-all cursor-pointer border shadow-sm",
+                  theme === 'dark' 
+                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-600 hover:text-white" 
+                    : "bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-600 hover:text-white"
+                )}
+              >
+                <Trash2 size={9} /> Excluir
+              </button>
             )}
           </div>
+
+          {(item.ml_link || item.permalink) && (
+            <motion.a 
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              href={item.ml_link || item.permalink} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1 w-full py-1.5 bg-[#FFE600] text-[#2D3277] font-black text-[7.5px] uppercase tracking-[0.05em] rounded-md hover:bg-[#F0D800] transition-all shadow-md cursor-pointer border border-[#FFE600]/20"
+            >
+              <ExternalLink size={9} />
+              Abrir no Mercado Livre
+            </motion.a>
+          )}
         </div>
       </motion.div>
     </div>
@@ -6947,17 +7148,17 @@ const DetailItem = ({ label, value, theme, icon: Icon }: { label: string, value:
   
   return (
     <div className={cn(
-      "p-4 rounded-2xl border flex flex-col gap-1.5 transition-all",
-      theme === 'dark' ? "bg-zinc-800/30 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
+      "p-1.5 md:p-3 rounded-md border flex flex-col gap-0.5 transition-all",
+      theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
     )}>
-      <div className="flex items-center gap-2 text-zinc-500">
-        <Icon size={12} strokeWidth={2.5} />
-        <span className="text-[9px] uppercase font-black tracking-widest">{label}</span>
+      <div className="flex items-center gap-1 text-zinc-500">
+        <Icon size={8} strokeWidth={2.5} />
+        <span className="text-[6px] md:text-[8px] uppercase font-black tracking-widest">{label}</span>
       </div>
       <span className={cn(
-        "text-xs font-bold truncate",
-        theme === 'dark' ? "text-zinc-200" : "text-zinc-900",
-        (label === 'Estoque' || label === 'Valor' || label === 'Preço') && "text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.4)]"
+        "text-[9px] md:text-sm font-black truncate uppercase",
+        theme === 'dark' ? "text-zinc-100" : "text-zinc-900",
+        (label === 'Estoque') && "text-emerald-400 [text-shadow:0_0_8px_rgba(16,185,129,0.3)]"
       )}>
         {displayValue}
       </span>
@@ -7244,7 +7445,9 @@ function AppContent() {
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
   const [showPaymentFilter, setShowPaymentFilter] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
-  const [inventoryActions, setInventoryActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void } | null>(null);
+  const [inventoryActions, setInventoryActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
+  const [salesActions, setSalesActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
+  const [motosActions, setMotosActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -7386,8 +7589,8 @@ function AppContent() {
   const fetchAllMlListings = async () => {
     setIsMlListingsLoading(true);
     try {
-      const res = await fetch('/api/ml/listings?limit=50');
-      const data = await res.json();
+      const res = await fetchWithRetry('/api/ml/listings?limit=50');
+      const data = await parseJson(res);
       setAllMlListings(data.data || []);
       setShowAllMlAds(true);
     } catch (err) {
@@ -7397,9 +7600,25 @@ function AppContent() {
     }
   };
 
+  const itemActions = useMemo(() => {
+    if (!selectedDetailItem) return { edit: undefined, delete: undefined };
+    const item = selectedDetailItem;
+    
+    if (item.marca) {
+      return { edit: motosActions?.edit, delete: motosActions?.delete };
+    }
+    if (item.rk_id || item.categoria) {
+      return { edit: inventoryActions?.edit, delete: inventoryActions?.delete };
+    }
+    if (item.valor !== undefined) {
+      return { edit: salesActions?.edit, delete: salesActions?.delete };
+    }
+    return { edit: undefined, delete: undefined };
+  }, [selectedDetailItem, inventoryActions, salesActions, motosActions]);
+
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300 flex font-sans",
+      "min-h-screen transition-colors duration-300 flex font-sans max-w-[1800px] mx-auto w-full shadow-2xl shadow-black/20",
       theme === 'dark' 
         ? "bg-[radial-gradient(ellipse_at_top,_#1a1b1f,_#09090b)] text-zinc-100" 
         : "bg-zinc-50 text-zinc-900"
@@ -7596,9 +7815,9 @@ function AppContent() {
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
               {activeTab === 'dashboard' ? (
@@ -7631,17 +7850,19 @@ function AppContent() {
                   setPaymentFilter={setPaymentFilter}
                   showPaymentFilter={showPaymentFilter}
                   setShowPaymentFilter={setShowPaymentFilter}
+                  isSearchOpen={isSearchOpen}
                 />
               ) : activeTab === 'estoque' ? (
                 <InventoryView 
                   theme={theme} 
                   onSelectItem={setSelectedDetailItem} 
                   onRegisterActions={setInventoryActions}
+                  isSearchOpen={isSearchOpen}
                 />
               ) : activeTab === 'vendas' ? (
-                <SalesView theme={theme} onSelectItem={setSelectedDetailItem} />
+                <SalesView theme={theme} onSelectItem={setSelectedDetailItem} onRegisterActions={setSalesActions} isSearchOpen={isSearchOpen} />
               ) : activeTab === 'motos' ? (
-                <MotosView theme={theme} onSelectItem={setSelectedDetailItem} />
+                <MotosView theme={theme} onSelectItem={setSelectedDetailItem} onRegisterActions={setMotosActions} isSearchOpen={isSearchOpen} />
               ) : activeTab === 'atendimento' ? (
                 <Atendimento theme={theme} />
               ) : activeTab === 'frete' ? (
@@ -7661,7 +7882,15 @@ function AppContent() {
       </main>
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
       <FloatingAIChat theme={theme} isSearchOpen={isSearchOpen} />
-      <GlobalSearch theme={theme} onSelectItem={setSelectedDetailItem} isOpen={isSearchOpen} setIsOpen={setIsSearchOpen} />
+      <GlobalSearch 
+        theme={theme} 
+        onSelectItem={setSelectedDetailItem} 
+        isOpen={isSearchOpen} 
+        setIsOpen={setIsSearchOpen}
+        customClick={() => {
+          setIsSearchOpen(true);
+        }}
+      />
       
       {/* Modal de Detalhes Global */}
       <AnimatePresence>
@@ -7670,8 +7899,8 @@ function AppContent() {
             item={selectedDetailItem} 
             theme={theme} 
             onClose={() => setSelectedDetailItem(null)} 
-            onEdit={activeTab === 'estoque' ? inventoryActions?.edit : undefined}
-            onDelete={activeTab === 'estoque' ? inventoryActions?.delete : undefined}
+            onEdit={itemActions.edit}
+            onDelete={itemActions.delete}
           />
         )}
       </AnimatePresence>

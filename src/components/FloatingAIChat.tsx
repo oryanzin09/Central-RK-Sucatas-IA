@@ -24,12 +24,19 @@ interface FloatingAIChatProps {
 
 export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchOpen }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -217,7 +224,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
             ? "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 shadow-xl" 
             : "bg-white hover:bg-gray-50 border border-zinc-200 shadow-xl"
         )}
-        whileHover={{ scale: 1.05, y: -2 }}
+        whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.95 }}
         onClick={(e) => {
           e.preventDefault();
@@ -227,7 +234,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
         initial={{ scale: 0 }}
         animate={{ 
           scale: 1,
-          bottom: isSearchOpen ? '200px' : '96px'
+          bottom: '76px'
         }}
       >
         <Sparkles className={cn(
