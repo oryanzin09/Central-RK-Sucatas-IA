@@ -87,6 +87,8 @@ import { FreteView } from './components/FreteView';
 import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
 import { io } from 'socket.io-client';
+import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import { Capacitor } from '@capacitor/core';
 
 const modelosMotos = MOTOS_OFICIAIS;
 const modelosUnicos = MOTOS_OFICIAIS;
@@ -362,6 +364,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const interval = setInterval(() => {
       loadData(false, true);
     }, 30000); // Aumentado para 30 segundos para evitar sobrecarga
+
+    const initApp = async () => {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await CapacitorUpdater.notifyAppReady();
+          console.log('✅ App pronto para atualizações automáticas');
+        } catch (error) {
+          console.error('Erro no auto-update:', error);
+        }
+      }
+    };
+    initApp();
 
     return () => {
       socket.disconnect();
