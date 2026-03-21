@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '21'          # ← MUDADO DE 17 PARA 21
+          java-version: '21'
 
       - name: Install dependencies
         run: npm ci
@@ -34,10 +34,10 @@ jobs:
         run: ls -la dist || echo "dist folder not found"
 
       - name: Install Capacitor
-        run: |
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "RK Sucatas" "com.rksucatas.app" --web-dir=dist
-          npx cap add android
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Add Android platform
+        run: npx cap add android
 
       - name: Sync Capacitor
         run: npx cap sync android
