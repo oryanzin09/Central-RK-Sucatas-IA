@@ -32,7 +32,7 @@ const serverStartTime = new Date().toISOString();
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
 const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 5; // 5 minutos
-const DATA_CACHE_TTL = 1000 * 60 * 2; // 2 minutos para dados (RK Sucatas: carregamento rápido)
+const DATA_CACHE_TTL = 1000 * 5; // 5 segundos para dados (RK Sucatas: sincronização quase instantânea)
 const fetchLocks: Record<string, Promise<any> | null> = {};
 
 // Cache para detalhes de itens do Mercado Livre para evitar re-fetch constante

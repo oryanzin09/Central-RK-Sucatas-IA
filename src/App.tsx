@@ -43,6 +43,7 @@ import {
   Upload,
   User,
   Camera,
+  Image as ImageIcon,
   Box,
   BarChart3,
   MessageCircle,
@@ -247,7 +248,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [whatsappConversations, setWhatsappConversations] = useState<any[]>([]);
   const [whatsappQr, setWhatsappQr] = useState<string | null>(null);
   const [showSensitiveInfo, setShowSensitiveInfo] = useState(true);
-  const CACHE_TIME = 5 * 60 * 1000; // 5 minutos
+  const CACHE_TIME = 5 * 1000; // 5 segundos
 
   const loadData = async (force = false, silent = false) => {
     const now = Date.now();
@@ -363,7 +364,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     // Polling para sincronização "instantânea" (silenciosa)
     const interval = setInterval(() => {
       loadData(false, true);
-    }, 30000); // Aumentado para 30 segundos para evitar sobrecarga
+    }, 5000); // 5 segundos
 
     const initApp = async () => {
       if (Capacitor.isNativePlatform()) {
@@ -2464,7 +2465,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
   const filteredAndSortedItems = useMemo(() => {
     const searchTerms = searchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
     
-    let result = items.filter(item => {
+    let result = [...items].filter(item => {
       const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => 
         (item.nome?.toLowerCase() || '').includes(term) ||
         (item.moto?.toLowerCase() || '').includes(term) ||
@@ -2479,26 +2480,30 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
       return matchesSearch && matchesCategory && matchesMoto && matchesStock;
     });
 
-    if (sortConfig.key && sortConfig.direction) {
-      result.sort((a, b) => {
+    result.sort((a, b) => {
+      // 1. Primary Sort: sortConfig
+      if (sortConfig.key && sortConfig.direction) {
         const aValue = a[sortConfig.key];
         const bValue = b[sortConfig.key];
 
-        if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-        if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
+        if (aValue !== bValue) {
+          if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+          if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+      }
 
-    if (showWithPhotoFirst) {
-      result.sort((a, b) => {
+      // 2. Secondary Sort: Photo priority (if enabled)
+      if (showWithPhotoFirst) {
         const aHasPhoto = !!a.imagem;
         const bHasPhoto = !!b.imagem;
-        if (aHasPhoto && !bHasPhoto) return -1;
-        if (!aHasPhoto && bHasPhoto) return 1;
-        return 0;
-      });
-    }
+        if (aHasPhoto !== bHasPhoto) {
+          if (aHasPhoto && !bHasPhoto) return -1;
+          if (!aHasPhoto && bHasPhoto) return 1;
+        }
+      }
+
+      return 0;
+    });
 
     return result;
   }, [items, searchTerm, selectedCategory, selectedMoto, onlyWithStock, sortConfig, showWithPhotoFirst]);
@@ -2894,6 +2899,19 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
               ]}
               className="w-full sm:w-44"
             />
+
+            <button
+              onClick={() => setShowWithPhotoFirst(!showWithPhotoFirst)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all text-xs font-medium",
+                showWithPhotoFirst 
+                  ? "bg-violet-500/10 border-violet-500/30 text-violet-500" 
+                  : theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-500" : "bg-zinc-50 border-[#eef2f6] text-zinc-400"
+              )}
+            >
+              <ImageIcon size={14} />
+              <span>Fotos Primeiro</span>
+            </button>
           </div>
 
           <div className={cn(
@@ -7632,7 +7650,7 @@ function AppContent() {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300 flex font-sans max-w-[1800px] mx-auto w-full shadow-2xl shadow-black/20",
+      "min-h-screen transition-colors duration-300 flex font-sans max-w-[1800px] w-full shadow-2xl shadow-black/20",
       theme === 'dark' 
         ? "bg-[radial-gradient(ellipse_at_top,_#1a1b1f,_#09090b)] text-zinc-100" 
         : "bg-zinc-50 text-zinc-900"
