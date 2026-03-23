@@ -231,10 +231,10 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
           e.stopPropagation();
           handleOpen();
         }}
-        initial={{ scale: 0 }}
+        initial={{ scale: 0, bottom: '0px' }}
         animate={{ 
           scale: 1,
-          bottom: '76px'
+          bottom: '130px'
         }}
       >
         <Sparkles className={cn(

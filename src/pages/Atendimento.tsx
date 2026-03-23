@@ -372,35 +372,36 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
               <button 
                 onClick={() => setShowLogs(!showLogs)}
                 className={cn(
-                  "p-1.5 rounded-lg transition-colors",
-                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500" : "hover:bg-zinc-100 text-zinc-400"
+                  "p-2 rounded-xl transition-all active:scale-95",
+                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300" : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600"
                 )}
                 title="Ver Logs de Conexão"
               >
-                <Clock size={14} />
+                <Clock size={16} />
               </button>
               <button 
                 onClick={handleReconnect}
                 disabled={isRefreshing}
                 className={cn(
-                  "p-1.5 rounded-lg transition-colors",
-                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500" : "hover:bg-zinc-100 text-zinc-400",
+                  "p-2 rounded-xl transition-all active:scale-95 disabled:opacity-50",
+                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300" : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600",
                   isRefreshing && "animate-spin"
                 )}
                 title="Forçar Reconexão"
               >
-                <Smartphone size={14} />
+                <Smartphone size={16} />
               </button>
               <button 
                 onClick={handleRefresh}
                 disabled={isRefreshing}
                 className={cn(
-                  "p-1.5 rounded-lg transition-colors",
-                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500" : "hover:bg-zinc-100 text-zinc-400",
+                  "p-2 rounded-xl transition-all active:scale-95 disabled:opacity-50",
+                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300" : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600",
                   isRefreshing && "animate-spin"
                 )}
+                title="Atualizar"
               >
-                <RefreshCw size={14} />
+                <RefreshCw size={16} />
               </button>
               {isConnected ? (
                 <div className="flex items-center gap-2">
@@ -418,7 +419,10 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                   <button 
                     onClick={handleLogout}
                     disabled={isLoggingOut}
-                    className="text-[10px] text-zinc-500 hover:text-rose-400 font-bold uppercase transition-colors"
+                    className={cn(
+                      "text-[10px] px-2 py-1 rounded-lg font-bold uppercase transition-all active:scale-95 disabled:opacity-50",
+                      theme === 'dark' ? "text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400" : "text-zinc-500 hover:bg-rose-50 hover:text-rose-600"
+                    )}
                   >
                     Sair
                   </button>
@@ -430,7 +434,10 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                   
                   <button 
                     onClick={forceNewQR}
-                    className="text-[10px] text-zinc-500 hover:text-violet-400 font-bold uppercase transition-colors"
+                    className={cn(
+                      "text-[10px] px-2 py-1 rounded-lg font-bold uppercase transition-all active:scale-95",
+                      theme === 'dark' ? "text-zinc-500 hover:bg-violet-500/10 hover:text-violet-400" : "text-zinc-500 hover:bg-violet-50 hover:text-violet-600"
+                    )}
                   >
                     Conectar
                   </button>
@@ -456,10 +463,10 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
             <button
               onClick={() => setShowOnlyUnread(true)}
               className={cn(
-                "px-3 py-1.5 rounded-xl text-xs font-medium transition-colors",
+                "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all active:scale-95",
                 showOnlyUnread
-                  ? "bg-violet-600 text-white"
-                  : theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-200 text-zinc-600"
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                  : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
               )}
             >
               Não lidas
@@ -467,10 +474,10 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
             <button
               onClick={() => setShowOnlyUnread(false)}
               className={cn(
-                "px-3 py-1.5 rounded-xl text-xs font-medium transition-colors",
+                "px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all active:scale-95",
                 !showOnlyUnread
-                  ? "bg-violet-600 text-white"
-                  : theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-200 text-zinc-600"
+                  ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
+                  : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-200 text-zinc-600 hover:bg-zinc-300"
               )}
             >
               Todas
@@ -505,7 +512,7 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                 </div>
                 <button
                   onClick={forceNewQR}
-                  className="text-[10px] px-3 py-1 bg-violet-600 text-white rounded-lg hover:bg-violet-500 font-bold uppercase"
+                  className="text-[10px] px-4 py-1.5 bg-violet-600 text-white rounded-xl hover:bg-violet-500 font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-violet-600/20"
                 >
                   Novo QR
                 </button>
@@ -533,11 +540,11 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
             </div>
           ) : (
             filteredConversations.map((conv) => (
-              <div
+              <button
                 key={conv.number}
                 onClick={() => handleSelectConversation(conv)}
                 className={cn(
-                  "p-4 border-b border-zinc-800 cursor-pointer transition-colors group",
+                  "w-full text-left p-4 border-b border-zinc-800 cursor-pointer transition-all group active:scale-[0.98]",
                   selectedConversation?.number === conv.number 
                     ? theme === 'dark' ? "bg-violet-500/10" : "bg-violet-50"
                     : "hover:bg-zinc-800/20",
@@ -545,7 +552,7 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                 )}
               >
                 <div className="flex items-start justify-between mb-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <div className="w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center overflow-hidden border border-zinc-700 flex-shrink-0">
                       {conv.profilePic ? (
                         <img src={conv.profilePic} alt={conv.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -554,32 +561,32 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-sm leading-tight truncate">{conv.name}</h4>
+                      <h4 className="font-bold text-sm leading-tight truncate">{conv.name}</h4>
                       <p className="text-[10px] text-zinc-500 truncate">{conv.number}</p>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <p className="text-[10px] text-zinc-500">{formatTime(conv.lastTimestamp)}</p>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <p className="text-[10px] text-zinc-500 font-medium">{formatTime(conv.lastTimestamp)}</p>
                     {conv.unreadCount > 0 && (
-                      <span className="inline-flex items-center justify-center w-5 h-5 text-[10px] bg-violet-600 text-white rounded-full font-bold">
+                      <span className="inline-flex items-center justify-center w-5 h-5 text-[10px] bg-violet-600 text-white rounded-full font-black shadow-lg shadow-violet-600/20">
                         {conv.unreadCount}
                       </span>
                     )}
                   </div>
                 </div>
                 
-                <p className="text-xs line-clamp-2 mt-2 text-zinc-400">
+                <p className="text-xs line-clamp-2 mt-2 text-zinc-400 font-medium leading-relaxed">
                   {conv.lastMessage}
                 </p>
                 
                 {conv.intent && (
                   <div className="mt-2 flex items-center gap-1">
-                    <span className="text-[10px] bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full border border-violet-500/20 font-bold uppercase">
+                    <span className="text-[9px] bg-violet-500/10 text-violet-400 px-2 py-0.5 rounded-full border border-violet-500/20 font-black uppercase tracking-wider">
                       {getIntentIcon(conv.intent.intencao)} {conv.intent.resumo}
                     </span>
                   </div>
                 )}
-              </div>
+              </button>
             ))
           )}
         </div>
@@ -611,17 +618,26 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                 Última atividade: {formatDate(selectedConversation.lastTimestamp)}
               </div>
               <div className="flex items-center gap-2">
-                <button className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400">
+                <button className={cn(
+                  "p-2 rounded-xl transition-all active:scale-95",
+                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-600"
+                )}>
                   <Phone size={18} />
                 </button>
                 <button 
                   onClick={(e) => handleDeleteConversation(e, selectedConversation.number)}
-                  className="p-2 hover:bg-rose-500/10 hover:text-rose-500 rounded-lg text-zinc-400 transition-colors"
+                  className={cn(
+                    "p-2 rounded-xl transition-all active:scale-95",
+                    theme === 'dark' ? "hover:bg-rose-500/10 text-zinc-400 hover:text-rose-400" : "hover:bg-rose-50 text-zinc-600 hover:text-rose-600"
+                  )}
                   title="Excluir Conversa"
                 >
                   <Trash2 size={18} />
                 </button>
-                <button className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400">
+                <button className={cn(
+                  "p-2 rounded-xl transition-all active:scale-95",
+                  theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-600"
+                )}>
                   <MoreVertical size={18} />
                 </button>
               </div>
@@ -669,22 +685,46 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                   )}
 
                   <div className="flex items-start justify-between gap-4 mb-1">
-                    <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
+                    {msg.body.includes('ORÇAMENTO - RK SUCATAS') ? (
+                      <div className={cn(
+                        "w-full p-3 rounded-xl border flex flex-col gap-2",
+                        msg.from === 'me' 
+                          ? "bg-white/10 border-white/20 text-white" 
+                          : theme === 'dark' ? "bg-zinc-900 border-zinc-700" : "bg-zinc-50 border-zinc-200"
+                      )}>
+                        <div className="flex items-center gap-2 border-b border-white/10 pb-2 mb-1">
+                          <div className="p-1.5 bg-emerald-500/20 rounded-lg">
+                            <DollarSign size={14} className="text-emerald-400" />
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-widest">Orçamento Detalhado</span>
+                        </div>
+                        <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words font-medium opacity-90">{msg.body}</p>
+                        <div className="mt-2 pt-2 border-t border-white/10 flex items-center justify-between">
+                          <span className="text-[9px] font-bold uppercase tracking-wider opacity-60">RK Sucatas</span>
+                          <div className="flex items-center gap-1 text-emerald-400">
+                            <Check size={12} />
+                            <span className="text-[10px] font-black uppercase">Oficial</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words">{msg.body}</p>
+                    )}
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">
                       <button 
                         onClick={(e) => handleDeleteLocal(e, msg.id)}
-                        className="p-1 hover:bg-black/20 rounded text-white/70"
+                        className="p-1.5 hover:bg-black/20 rounded-lg text-white/70 transition-all active:scale-90"
                         title="Excluir localmente"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={14} />
                       </button>
                       {msg.from === 'me' && (
                         <button 
                           onClick={(e) => handleDeleteRemote(e, msg.id)}
-                          className="p-1 hover:bg-black/20 rounded text-white/70"
+                          className="p-1.5 hover:bg-black/20 rounded-lg text-white/70 transition-all active:scale-90"
                           title="Apagar para todos"
                         >
-                          <Smartphone size={12} />
+                          <Smartphone size={14} />
                         </button>
                       )}
                     </div>
@@ -713,18 +753,27 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
           {/* Área de Resposta */}
           <div className="p-4 border-t border-zinc-800">
             {selectedConversation.intent && (
-              <div className="mb-3 p-3 bg-violet-500/10 border border-violet-500/20 rounded-xl flex items-start gap-3">
-                <div className="p-2 bg-violet-500/20 rounded-lg">
+              <div className={cn(
+                "mb-3 p-3 rounded-xl flex items-start gap-3 border transition-all",
+                theme === 'dark' ? "bg-violet-500/5 border-violet-500/20" : "bg-violet-50 border-violet-100"
+              )}>
+                <div className="p-2 bg-violet-500/20 rounded-lg shrink-0">
                   <Bot size={16} className="text-violet-400" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-bold text-violet-400 uppercase tracking-wider">Sugestão da IA</span>
-                    <span className="text-[10px] px-2 py-0.5 bg-violet-500/20 text-violet-300 rounded-full">
+                    <span className="text-[10px] font-black text-violet-400 uppercase tracking-widest">Sugestão da IA</span>
+                    <span className={cn(
+                      "text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider",
+                      theme === 'dark' ? "bg-violet-500/20 text-violet-300" : "bg-violet-100 text-violet-600"
+                    )}>
                       {selectedConversation.intent.intencao}
                     </span>
                   </div>
-                  <p className="text-xs text-zinc-300">{selectedConversation.intent.resumo}</p>
+                  <p className={cn(
+                    "text-xs leading-relaxed line-clamp-2",
+                    theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
+                  )}>{selectedConversation.intent.resumo}</p>
                 </div>
               </div>
             )}
@@ -772,10 +821,10 @@ export const Atendimento: React.FC<AtendimentoProps> = ({ theme }) => {
                 onClick={handleSendReply}
                 disabled={!replyText.trim() || sending || !isConnected}
                 className={cn(
-                  "w-12 h-12 rounded-xl flex items-center justify-center transition-all",
+                  "w-12 h-12 rounded-xl flex items-center justify-center transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg",
                   replyText.trim() && isConnected
-                    ? "bg-violet-600 text-white hover:bg-violet-500"
-                    : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
+                    ? "bg-violet-600 text-white hover:bg-violet-500 shadow-violet-600/20"
+                    : theme === 'dark' ? "bg-zinc-800 text-zinc-500" : "bg-zinc-200 text-zinc-400"
                 )}
               >
                 {sending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}

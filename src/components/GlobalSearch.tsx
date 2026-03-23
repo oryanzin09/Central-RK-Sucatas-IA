@@ -249,10 +249,10 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
             setIsOpen(true);
           }
         }}
-        initial={{ scale: 0 }}
+        initial={{ scale: 0, bottom: '0px' }}
         animate={{ 
           scale: 1,
-          bottom: '136px'
+          bottom: '185px'
         }}
       >
         <Search className={cn(

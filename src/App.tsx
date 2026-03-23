@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useContext, createContext, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback } from 'react';
 import { 
   LayoutDashboard, 
   Package, 
@@ -80,6 +80,7 @@ import {
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
 import { FloatingAIChat } from './components/FloatingAIChat';
+import { BudgetModal } from './components/BudgetModal';
 import { GlobalSearch } from './components/GlobalSearch';
 import { CustomDropdown } from './components/CustomDropdown';
 import { CATEGORIAS_OFICIAIS, MOTOS_OFICIAIS, PAGAMENTOS_OFICIAIS } from './constants/lists';
@@ -644,7 +645,8 @@ const DashboardView = ({
   setPaymentFilter,
   showPaymentFilter,
   setShowPaymentFilter,
-  isSearchOpen
+  isSearchOpen,
+  onRefreshMlDashboard
 }: any) => {
   const { inventory, sales, loading, refreshData, showSensitiveInfo, setShowSensitiveInfo } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
@@ -933,17 +935,24 @@ const DashboardView = ({
 
               {/* Botão de Sincronizar */}
               <button 
-                onClick={refreshData}
-                disabled={loading}
+                onClick={() => {
+                  refreshData();
+                  if (source === 'mercadolivre' && onRefreshMlDashboard) {
+                    onRefreshMlDashboard();
+                  }
+                }}
+                disabled={loading || isMlDashboardLoading}
                 className={cn(
-                  "p-1.5 sm:p-2 rounded-full transition-all border",
+                  "flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded-full transition-all border font-bold text-xs",
                   theme === 'dark' 
                     ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-800" 
-                    : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50"
+                    : "bg-white border-zinc-200 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-50",
+                  (loading || isMlDashboardLoading) && "opacity-50 cursor-not-allowed"
                 )}
                 title="Sincronizar Dados"
               >
-                <RefreshCw size={18} className={cn(loading && "animate-spin")} />
+                <RefreshCw size={16} className={cn((loading || isMlDashboardLoading) && "animate-spin")} />
+                <span className="hidden sm:inline">Sincronizar</span>
               </button>
 
               {/* Filtro de Período (apenas para Mercado Livre) */}
@@ -1113,7 +1122,9 @@ const DashboardView = ({
                               theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-white" : "bg-white border-zinc-100 text-zinc-900"
                             )}>
                               <p className="opacity-60 mb-1">{payload[0].payload.label}</p>
-                              <p className="text-emerald-400">{formatCurrency(payload[0].value)}</p>
+                              <p className={cn("text-emerald-400", !showSensitiveInfo && "blur-sm select-none")}>
+                                {showSensitiveInfo ? formatCurrency(payload[0].value) : "R$ ***"}
+                              </p>
                             </div>
                           );
                         }
@@ -1168,10 +1179,11 @@ const DashboardView = ({
     <StatCard 
       icon={BarChart3} 
       label="Vendas ML (Mês)" 
-      value={formatCurrency(metrics.valorVendasMes)} 
+      value={metrics.valorVendasMes} 
       subValue={`${metrics.totalVendasMes} pedidos no período`}
       color="bg-teal-500" 
       theme={theme} 
+      isSensitive={true}
     />
     <StatCard 
       icon={MessageCircle} 
@@ -1187,10 +1199,11 @@ const DashboardView = ({
     <StatCard 
       icon={ShoppingBag} 
       label="Ticket Médio ML" 
-      value={formatCurrency(metrics.ticketMedio)} 
+      value={metrics.ticketMedio} 
       subValue="valor médio por pedido"
       color="bg-amber-400" 
       theme={theme} 
+      isSensitive={true}
     />
           </>
         )}
@@ -1252,7 +1265,7 @@ const DashboardView = ({
                   tick={{ fontWeight: 600 }}
                 />
                 <Tooltip 
-                  formatter={(value: number) => [formatCurrency(value), ""]}
+                  formatter={(value: number) => [showSensitiveInfo ? formatCurrency(value) : "R$ ***", ""]}
                   contentStyle={{ 
                     backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
                     border: `1px solid ${theme === 'dark' ? '#27272a' : '#e5e7eb'}`, 
@@ -1289,7 +1302,7 @@ const DashboardView = ({
                   animationDuration={1000}
                 />
                 <Tooltip 
-                  formatter={(value: number) => [formatCurrency(value), ""]}
+                  formatter={(value: number) => [showSensitiveInfo ? formatCurrency(value) : "R$ ***", ""]}
                   contentStyle={{ 
                     backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
                     border: 'none',
@@ -1339,8 +1352,8 @@ const DashboardView = ({
                       <Cell key={`cell-${index}`} fill={source === 'estoque' ? COLORS[index % COLORS.length] : (index === 0 ? '#10b981' : '#f43f5e')} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => source === 'estoque' ? formatCurrency(value) : value}
+                <Tooltip 
+                    formatter={(value: number) => source === 'estoque' ? (showSensitiveInfo ? formatCurrency(value) : "R$ ***") : value}
                     contentStyle={{ 
                       backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
                       border: `1px solid ${theme === 'dark' ? '#27272a' : '#e5e7eb'}`, 
@@ -1367,7 +1380,7 @@ const DashboardView = ({
                   <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: source === 'estoque' ? COLORS[index % COLORS.length] : item.color }} />
                   {item.name}
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-zinc-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20">
-                    {source === 'estoque' ? formatCurrency(item.value) : item.value}
+                    {source === 'estoque' ? (showSensitiveInfo ? formatCurrency(item.value) : "R$ ***") : item.value}
                   </div>
                 </div>
               ))}
@@ -1939,7 +1952,9 @@ const DashboardView = ({
                       )} title={sale.itens}>{sale.itens}</span>
                     </div>
                     <div className="flex items-center gap-8">
-                      <span className="text-zinc-500 text-sm">{formatCurrency(sale.valor)}</span>
+                      <span className={cn("text-zinc-500 text-sm font-mono", !showSensitiveInfo && "blur-sm select-none")}>
+                        {showSensitiveInfo ? formatCurrency(sale.valor) : "R$ ***"}
+                      </span>
                       <span className="text-zinc-500 text-sm">{sale.quantidade} unidade{sale.quantidade > 1 ? 's' : ''}</span>
                     </div>
                   </div>
@@ -2807,139 +2822,144 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
 
   return (
     <div className="space-y-4">
-      {/* Toolbar Harmonizada e Profissional */}
+      {/* Toolbar Profissional e Compacta */}
       <div className={cn(
-        "relative z-50 p-6 rounded-[2rem] flex flex-col gap-6 transition-all duration-300 shadow-xl border",
+        "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
-          ? "bg-zinc-900 border-zinc-800 shadow-black/20" 
-          : "bg-white border-zinc-100 shadow-zinc-200/30",
-        isSearchOpen && "blur-md pointer-events-none"
+          ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
+        isSearchOpen && "blur-md pointer-events-none opacity-50"
       )}>
-        {/* Top Row: Search and Primary Actions */}
-        <div className="flex flex-col md:flex-row items-center gap-4">
-          <div className="w-full md:flex-1 relative group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-violet-500 transition-colors" size={20} />
-            <input 
-              ref={searchInputRef}
-              type="text" 
-              placeholder="Buscar por peça, moto ou ID..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className={cn(
-                "w-full rounded-2xl py-4 pl-14 pr-6 text-base font-medium outline-none transition-all duration-300 border shadow-sm",
-                theme === 'dark' 
-                  ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-4 focus:ring-violet-500/5" 
-                  : "bg-zinc-50 border-[#eef2f6] text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
-              )}
-            />
-          </div>
-
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <button 
-              onClick={handleManualRefresh}
-              disabled={loading || isRefreshing}
-              className={cn(
-                "p-4 rounded-2xl transition-all border group flex-1 md:flex-none flex items-center justify-center shadow-sm",
-                theme === 'dark' 
-                  ? "bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/30" 
-                  : "bg-white border-[#eef2f6] text-zinc-500 hover:text-violet-600 hover:border-violet-500/30"
-              )}
-            >
-              <RefreshCw size={20} className={cn((loading || isRefreshing) && "animate-spin")} />
-            </button>
-
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center justify-center gap-2 px-8 py-4 bg-violet-600 text-white rounded-2xl hover:bg-violet-500 active:scale-95 transition-all shadow-lg shadow-violet-600/20 font-bold text-sm uppercase tracking-wider flex-[2] md:flex-none"
-            >
-              <Plus size={20} />
-              <span>Novo Item</span>
-            </button>
-          </div>
+        {/* Search Bar Compacta */}
+        <div className="w-full relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={18} />
+          <input 
+            ref={searchInputRef}
+            type="text" 
+            placeholder="Buscar no estoque..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className={cn(
+              "w-full rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
+              theme === 'dark' 
+                ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50" 
+                : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
+            )}
+          />
         </div>
 
-        {/* Bottom Row: Filters and View Toggles */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
-          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-            
+        {/* Filtros e Ações Compactos */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
             <CustomDropdown
               theme={theme}
-              icon={<Filter size={16} />}
+              icon={<Filter size={14} />}
               value={selectedCategory}
-              onChange={setSelectedCategory}
+              className="flex-1 md:flex-none min-w-[120px]"
+              onChange={(val) => {
+                setSelectedCategory(val);
+                setCurrentPage(1);
+              }}
               options={[
                 { value: 'Todas', label: 'Categorias' },
                 ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat }))
               ]}
-              className="w-full sm:w-40"
             />
             
             <CustomDropdown
               theme={theme}
-              icon={<Bike size={16} />}
+              icon={<Bike size={14} />}
               value={selectedMoto}
-              onChange={setSelectedMoto}
+              className="flex-1 md:flex-none min-w-[120px]"
+              onChange={(val) => {
+                setSelectedMoto(val);
+                setCurrentPage(1);
+              }}
               options={[
                 { value: 'Todas', label: 'Motos' },
                 ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto }))
               ]}
-              className="w-full sm:w-40"
             />
 
             <CustomDropdown
               theme={theme}
-              icon={<ArrowDownAZ size={16} />}
+              icon={<ArrowDownAZ size={14} />}
               value={sortConfig.key}
-              onChange={(val) => setSortConfig({ key: val, direction: 'desc' })}
+              className="flex-1 md:flex-none min-w-[120px]"
+              onChange={(val) => {
+                setSortConfig({ key: val, direction: 'desc' });
+                setCurrentPage(1);
+              }}
               options={[
-                { value: 'criado_em', label: 'Mais Recentes' },
-                { value: 'valor', label: 'Maior Preço' },
-                { value: 'nome', label: 'Nome (A-Z)' },
-                { value: 'estoque', label: 'Maior Estoque' }
+                { value: 'criado_em', label: 'Recentes' },
+                { value: 'valor', label: 'Preço' },
+                { value: 'nome', label: 'Nome' },
+                { value: 'estoque', label: 'Estoque' }
               ]}
-              className="w-full sm:w-44"
             />
-
-            <button
-              onClick={() => setShowWithPhotoFirst(!showWithPhotoFirst)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all text-xs font-medium",
-                showWithPhotoFirst 
-                  ? "bg-violet-500/10 border-violet-500/30 text-violet-500" 
-                  : theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-500" : "bg-zinc-50 border-[#eef2f6] text-zinc-400"
-              )}
-            >
-              <ImageIcon size={14} />
-              <span>Fotos Primeiro</span>
-            </button>
           </div>
 
-          <div className={cn(
-            "hidden sm:flex p-1 rounded-xl border shadow-sm",
-            theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-zinc-50 border-[#eef2f6]"
-          )}>
+          <div className="flex items-center gap-2 w-full md:w-auto">
             <button 
-              onClick={() => setViewMode('table')}
+              onClick={handleManualRefresh}
+              disabled={loading || isRefreshing}
               className={cn(
-                "p-2 rounded-lg transition-all",
-                viewMode === 'table' 
-                  ? "bg-white text-violet-600 shadow-sm border border-[#eef2f6]" 
-                  : "text-zinc-400 hover:text-zinc-600"
+                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                theme === 'dark' 
+                  ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
+                  : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
               )}
             >
-              <TableIcon size={18} />
+              <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
+              <span className="hidden sm:inline">Sincronizar</span>
             </button>
+
             <button 
-              onClick={() => setViewMode('card')}
+              onClick={() => {
+                setEditingItem(null);
+                setFormData({
+                  nome: '',
+                  categoria: '',
+                  novaCategoria: '',
+                  moto: '',
+                  outraMoto: '',
+                  valor: 0,
+                  estoque: 1,
+                  rk_id: '',
+                  imagens: []
+                });
+                setIsModalOpen(true);
+              }}
               className={cn(
-                "p-2 rounded-lg transition-all",
-                viewMode === 'card' 
-                  ? "bg-white text-violet-600 shadow-sm border border-[#eef2f6]" 
-                  : "text-zinc-400 hover:text-zinc-600"
+                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-6 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-md",
+                theme === 'dark'
+                  ? "bg-violet-600 border-violet-500 text-white hover:bg-violet-500 shadow-violet-500/20"
+                  : "bg-violet-600 border-violet-500 text-white hover:bg-violet-500 shadow-violet-500/30"
               )}
             >
-              <LayoutGrid size={18} />
+              <Plus size={16} />
+              <span>Novo Item</span>
             </button>
+
+            {(searchTerm || selectedCategory !== 'Todas' || selectedMoto !== 'Todas') && (
+              <button 
+                onClick={() => {
+                  setSearchTerm('');
+                  setSelectedCategory('Todas');
+                  setSelectedMoto('Todas');
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  theme === 'dark' 
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
+                    : "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                )}
+              >
+                <X size={16} />
+                <span>Limpar</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2963,28 +2983,28 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
             <div className={cn("flex items-center gap-2 border-l pl-4", theme === 'dark' ? "border-zinc-800" : "border-zinc-200")}>
               <button 
                 onClick={() => handleBulkUpdateStock(1)}
-                className={cn("p-2 rounded-lg transition-colors text-emerald-400", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}
+                className={cn("p-2 rounded-lg transition-all active:scale-95 text-emerald-400", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}
                 title="Aumentar estoque"
               >
                 <Plus size={18} />
               </button>
               <button 
                 onClick={() => handleBulkUpdateStock(-1)}
-                className={cn("p-2 rounded-lg transition-colors text-rose-400", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}
+                className={cn("p-2 rounded-lg transition-all active:scale-95 text-rose-400", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}
                 title="Diminuir estoque"
               >
                 <Minus size={18} />
               </button>
               <button 
                 onClick={() => setIsCategoryModalOpen(true)}
-                className="p-2 hover:bg-zinc-800 rounded-lg transition-colors text-violet-400"
+                className={cn("p-2 rounded-lg transition-all active:scale-95 text-violet-400", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}
                 title="Mudar categoria"
               >
                 <Layers size={18} />
               </button>
               <button 
                 onClick={() => setIsBulkDeleteConfirmOpen(true)}
-                className="p-2 hover:bg-rose-500/20 hover:text-rose-400 rounded-lg transition-colors text-zinc-400"
+                className={cn("p-2 rounded-lg transition-all active:scale-95 text-zinc-400", theme === 'dark' ? "hover:bg-rose-500/20 hover:text-rose-400" : "hover:bg-rose-50 hover:text-rose-600")}
                 title="Excluir selecionados"
               >
                 <Trash2 size={18} />
@@ -2993,7 +3013,10 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
 
             <button 
               onClick={() => setSelectedIds([])}
-              className="ml-4 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className={cn(
+                "ml-4 text-xs transition-colors active:scale-95",
+                theme === 'dark' ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"
+              )}
             >
               Desmarcar tudo
             </button>
@@ -3017,18 +3040,36 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
           </div>
         )}
         <div className={cn(
-          "p-6 border-b flex items-center justify-between transition-colors",
-          theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
+          "p-4 md:p-6 border-b flex items-center justify-between transition-all duration-300",
+          theme === 'dark' ? "border-zinc-800/50 bg-zinc-900/10" : "border-zinc-100 bg-zinc-50/50"
         )}>
-          <div className="flex items-center gap-2">
-            <h3 className={cn(
-              "text-lg font-bold tracking-tight transition-colors",
-              theme === 'dark' ? "text-white" : "text-zinc-900"
-            )}>📦 Catálogo de Peças</h3>
-            <span className={cn(
-              "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-              theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600"
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "w-10 h-10 rounded-xl flex items-center justify-center shadow-sm",
+              theme === 'dark' ? "bg-zinc-800 text-violet-400" : "bg-white text-violet-600 border border-zinc-100"
             )}>
+              <Box size={20} />
+            </div>
+            <div className="flex flex-col">
+              <h3 className={cn(
+                "text-lg font-bold tracking-tight transition-colors",
+                theme === 'dark' ? "text-white" : "text-zinc-900"
+              )}>Estoque de Peças</h3>
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className={cn(
+                  "text-[10px] font-bold uppercase tracking-wider",
+                  theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                )}>Sincronizado</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-xl border backdrop-blur-md",
+            theme === 'dark' ? "bg-zinc-950/50 border-zinc-800" : "bg-white border-zinc-200"
+          )}>
+            <span className={cn("text-[10px] font-bold uppercase tracking-wider", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>
               {filteredAndSortedItems.length} itens
             </span>
           </div>
@@ -3530,6 +3571,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Categoria</label>
                     <CustomDropdown
                       theme={theme}
+                      variant="form"
                       value={formData.categoria}
                       onChange={(val) => setFormData({...formData, categoria: val})}
                       options={[
@@ -3556,6 +3598,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Moto</label>
                     <CustomDropdown
                       theme={theme}
+                      variant="form"
                       value={formData.moto}
                       onChange={(val) => setFormData({...formData, moto: val})}
                       options={[
@@ -3655,8 +3698,8 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                     type="button"
                     onClick={() => setIsModalOpen(false)}
                     className={cn(
-                      "flex-1 px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
-                      theme === 'dark' ? "text-zinc-400 hover:text-white hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                      "flex-1 px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                      theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                     )}
                   >
                     Cancelar
@@ -3664,7 +3707,12 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                   <button 
                     type="submit"
                     disabled={isSaving}
-                    className="flex-1 px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={cn(
+                      "flex-1 px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                      theme === 'dark'
+                        ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                        : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                    )}
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar no Notion
@@ -3702,15 +3750,20 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                 <button 
                   onClick={() => setIsDeleteConfirmOpen(false)}
                   className={cn(
-                    "px-4 py-2 rounded-xl transition-colors font-medium",
-                    theme === 'dark' ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700"
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                   )}
                 >
                   Cancelar
                 </button>
                 <button 
                   onClick={() => handleDelete(itemToDelete!)}
-                  className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-all"
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
                 >
                   Excluir
                 </button>
@@ -3746,15 +3799,20 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                 <button 
                   onClick={() => setIsBulkDeleteConfirmOpen(false)}
                   className={cn(
-                    "px-4 py-2 rounded-xl transition-colors font-medium",
-                    theme === 'dark' ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700"
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                   )}
                 >
                   Cancelar
                 </button>
                 <button 
                   onClick={handleBulkDelete}
-                  className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-all"
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
                 >
                   Excluir Tudo
                 </button>
@@ -3830,8 +3888,8 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                     setBulkCategory('');
                   }}
                   className={cn(
-                    "px-4 py-2 rounded-xl transition-colors font-medium",
-                    theme === 'dark' ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700"
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                   )}
                 >
                   Cancelar
@@ -3839,7 +3897,12 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                 <button 
                   onClick={handleBulkUpdateCategory}
                   disabled={!bulkCategory}
-                  className="px-6 py-2 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-violet-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                    theme === 'dark'
+                      ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                      : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                  )}
                 >
                   Atualizar
                 </button>
@@ -4231,74 +4294,94 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
 
   return (
     <div className="space-y-4">
-      {/* Barra de Filtros */}
+      {/* Toolbar Profissional e Compacta */}
       <div className={cn(
-        "border p-4 md:p-6 rounded-2xl space-y-4 md:space-y-6 transition-all duration-300",
+        "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
-          ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
-          : "bg-white border-zinc-200 shadow-sm",
-        isSearchOpen && "blur-md pointer-events-none"
+          ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
+        isSearchOpen && "blur-md pointer-events-none opacity-50"
       )}>
-        {/* Busca e Atualizar */}
-        <div className="flex flex-col md:flex-row md:items-center gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-            <input 
-              type="text" 
-              placeholder="Buscar por peça, moto ou ID..." 
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
+        {/* Search Bar Compacta */}
+        <div className="w-full relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={18} />
+          <input 
+            ref={searchInputRef}
+            type="text" 
+            placeholder="Buscar por peça, moto ou ID..." 
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className={cn(
+              "w-full rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
+              theme === 'dark' 
+                ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50" 
+                : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
+            )}
+          />
+        </div>
+
+        {/* Filtros e Ações Compactos */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CustomDropdown
+              theme={theme}
+              icon={<Filter size={14} />}
+              value={paymentType}
+              className="flex-1 md:flex-none"
+              onChange={(val) => {
+                setPaymentType(val);
                 setCurrentPage(1);
               }}
-              className={cn(
-                "w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none transition-all",
-                theme === 'dark' 
-                  ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                  : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-              )}
+              options={paymentTypes.map(type => ({ value: type, label: type }))}
             />
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <div className="flex-1 md:flex-none flex items-center gap-2 border rounded-xl px-3 py-1 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
-              <span className="text-[10px] font-bold text-zinc-500 uppercase whitespace-nowrap">Pagamento:</span>
-              <CustomDropdown
-                theme={theme}
-                value={paymentType}
-                onChange={(val) => {
-                  setPaymentType(val);
-                  setCurrentPage(1);
-                }}
-                options={paymentTypes.map(type => ({ value: type, label: type }))}
-                className="w-full md:w-40"
-              />
-            </div>
 
             <button 
               onClick={handleManualRefresh}
               disabled={loading || isRefreshing}
               className={cn(
-                "p-2.5 rounded-xl transition-all border",
+                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
                 theme === 'dark' 
-                  ? "text-zinc-400 border-zinc-800/50 hover:text-white hover:bg-zinc-800/50" 
-                  : "text-zinc-500 border-zinc-200 hover:text-zinc-900 hover:bg-zinc-100"
+                  ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
+                  : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
               )}
-              title="Atualizar dados"
             >
-              <RefreshCw size={18} className={cn((loading || isRefreshing) && "animate-spin")} />
+              <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
+              <span className="hidden md:inline">Sincronizar</span>
             </button>
 
             <button 
               onClick={() => setIsModalOpen(true)}
-              className="flex-1 md:flex-none bg-violet-600 hover:bg-violet-500 text-white px-4 md:px-6 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all shadow-[0_8px_20px_rgba(139,92,246,0.3)] font-bold tracking-tight"
+              className={cn(
+                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                theme === 'dark' 
+                  ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
+                  : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
+              )}
             >
-              <Plus size={20} />
-              <span className="whitespace-nowrap">Venda</span>
+              <Plus size={16} />
+              <span>Nova Venda</span>
             </button>
+
+            {(searchTerm || paymentType !== 'Todos') && (
+              <button 
+                onClick={clearAllFilters}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  theme === 'dark' 
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
+                    : "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                )}
+              >
+                <X size={16} />
+                <span>Limpar</span>
+              </button>
+            )}
           </div>
         </div>
-
+      </div>
         {/* Filtros Rápidos e Período */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pt-4 border-t border-zinc-800/30">
           <div className="flex flex-wrap items-center gap-2">
@@ -4377,7 +4460,6 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
             </button>
           </div>
         </div>
-      </div>
 
       {/* Tabela / Cards */}
       <div className="space-y-4">
@@ -4827,6 +4909,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Pagamento</label>
                     <CustomDropdown
                       theme={theme}
+                      variant="form"
                       value={formData.tipo}
                       onChange={(val) => setFormData({...formData, tipo: val})}
                       options={[
@@ -4845,34 +4928,39 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                       value={formData.data}
                       onChange={(e) => setFormData({...formData, data: e.target.value})}
                       className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 flex items-center justify-end gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className={cn(
-                      "px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
-                      theme === 'dark' ? "text-zinc-400 hover:text-white hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
                     )}
-                  >
-                    Cancelar
-                  </button>
-                  <button 
-                    type="submit"
-                    disabled={isSaving}
-                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                    Registrar Venda
-                  </button>
+                  />
                 </div>
-              </form>
+              </div>
+
+              <div className="pt-4 flex items-center justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className={cn(
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSaving}
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center gap-2",
+                    theme === 'dark'
+                      ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                      : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                  )}
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  Registrar Venda
+                </button>
+              </div>
+            </form>
             </motion.div>
           </div>
         )}
@@ -4961,6 +5049,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Pagamento</label>
                     <CustomDropdown
                       theme={theme}
+                      variant="form"
                       value={editFormData.tipo}
                       onChange={(val) => setEditFormData({...editFormData, tipo: val})}
                       options={[
@@ -4979,34 +5068,39 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                       value={editFormData.data}
                       onChange={(e) => setEditFormData({...editFormData, data: e.target.value})}
                       className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-4 flex items-center gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setIsEditModalOpen(false)}
-                    className={cn(
-                      "flex-1 px-6 py-2.5 text-sm font-medium transition-all rounded-xl",
-                      theme === 'dark' ? "text-zinc-400 hover:text-white hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
                     )}
-                  >
-                    Cancelar
-                  </button>
-                  <button 
-                    type="submit"
-                    disabled={isSaving}
-                    className="flex-1 px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                    Salvar Alterações
-                  </button>
+                  />
                 </div>
-              </form>
+              </div>
+
+              <div className="pt-4 flex items-center gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className={cn(
+                    "flex-1 px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSaving}
+                  className={cn(
+                    "flex-1 px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2",
+                    theme === 'dark'
+                      ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                      : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                  )}
+                >
+                  {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
             </motion.div>
           </div>
         )}
@@ -5036,8 +5130,8 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                 <button 
                   onClick={() => setIsDeleteConfirmOpen(false)}
                   className={cn(
-                    "flex-1 py-3 rounded-xl font-medium transition-all",
-                    theme === 'dark' ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700"
+                    "flex-1 py-3 px-4 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                   )}
                 >
                   Cancelar
@@ -5045,7 +5139,12 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                 <button 
                   onClick={handleDeleteSale}
                   disabled={isActionLoading}
-                  className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-500 transition-all shadow-lg shadow-rose-600/20 flex items-center justify-center gap-2"
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
                 >
                   {isActionLoading ? <Loader2 className="animate-spin" size={18} /> : "Excluir"}
                 </button>
@@ -5079,8 +5178,8 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                 <button 
                   onClick={() => setIsBulkDeleteConfirmOpen(false)}
                   className={cn(
-                    "flex-1 py-3 rounded-xl font-medium transition-all",
-                    theme === 'dark' ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-300" : "bg-zinc-100 hover:bg-zinc-200 text-zinc-700"
+                    "flex-1 py-3 px-4 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                   )}
                 >
                   Cancelar
@@ -5088,7 +5187,12 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                 <button 
                   onClick={handleBulkDelete}
                   disabled={isActionLoading}
-                  className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-500 transition-all shadow-lg shadow-rose-600/20 flex items-center justify-center gap-2"
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
                 >
                   {isActionLoading ? <Loader2 className="animate-spin" size={18} /> : "Excluir Todas"}
                 </button>
@@ -5117,14 +5221,22 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
             <div className={cn("flex items-center gap-2 border-l pl-4", theme === 'dark' ? "border-zinc-800" : "border-zinc-200")}>
               <button 
                 onClick={() => setIsBulkDeleteConfirmOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-rose-600/10 text-rose-500 hover:bg-rose-600 hover:text-white rounded-xl text-sm font-bold transition-all"
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95",
+                  theme === 'dark'
+                    ? "bg-rose-600/10 text-rose-500 hover:bg-rose-600 hover:text-white"
+                    : "bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white"
+                )}
               >
                 <Trash2 size={16} />
                 Excluir Selecionadas
               </button>
               <button 
                 onClick={() => setSelectedIds([])}
-                className={cn("px-4 py-2 text-sm font-medium transition-all", theme === 'dark' ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600")}
+                className={cn(
+                  "px-4 py-2 text-sm font-medium transition-colors rounded-lg active:scale-95",
+                  theme === 'dark' ? "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                )}
               >
                 Cancelar
               </button>
@@ -5840,201 +5952,205 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
 
   return (
     <div className="space-y-4">
+      {/* Toolbar Profissional e Compacta */}
       <div className={cn(
-        "border p-6 rounded-2xl space-y-6 transition-all duration-300",
+        "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
-          ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
-          : "bg-white border-zinc-200 shadow-sm",
-        isSearchOpen && "blur-md pointer-events-none"
+          ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
+        isSearchOpen && "blur-md pointer-events-none opacity-50"
       )}>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex-1 min-w-[300px] relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+        {/* Search Bar Compacta */}
+        <div className="w-full relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={18} />
+          <input 
+            ref={searchInputRef}
+            type="text" 
+            placeholder="Buscar motos..." 
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
+            className={cn(
+              "w-full rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
+              theme === 'dark' 
+                ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50" 
+                : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
+            )}
+          />
+        </div>
+
+        {/* Filtros e Ações Compactos */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CustomDropdown
+              theme={theme}
+              icon={<Filter size={14} />}
+              value={brandFilter}
+              className="flex-1 md:flex-none"
+              onChange={(val) => {
+                setBrandFilter(val);
+                setCurrentPage(1);
+              }}
+              options={brands.map(brand => ({ value: brand, label: brand }))}
+            />
+
+            <CustomDropdown
+              theme={theme}
+              icon={<Layers size={14} />}
+              value={statusFilter}
+              className="flex-1 md:flex-none"
+              onChange={(val) => {
+                setStatusFilter(val);
+                setCurrentPage(1);
+              }}
+              options={statuses.map(s => ({ value: s, label: s }))}
+            />
+
+            <CustomDropdown
+              theme={theme}
+              icon={<ArrowDownAZ size={14} />}
+              value={sortOrder}
+              className="flex-1 md:flex-none"
+              onChange={(val) => setSortOrder(val)}
+              options={[
+                { value: "Data de Criação", label: "Data" },
+                { value: "Nome", label: "Nome" },
+                { value: "Cilindrada", label: "Cilindrada" },
+                { value: "Ano", label: "Ano" },
+                { value: "Valor", label: "Valor" },
+                { value: "Lote", label: "Lote" },
+              ]}
+            />
+
+            <button 
+              onClick={handleManualRefresh}
+              disabled={loading || isRefreshing}
+              className={cn(
+                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                theme === 'dark' 
+                  ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
+                  : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
+              )}
+            >
+              <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
+              <span className="hidden md:inline">Sincronizar</span>
+            </button>
+
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className={cn(
+                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                theme === 'dark' 
+                  ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
+                  : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
+              )}
+            >
+              <Plus size={16} />
+              <span>Nova Moto</span>
+            </button>
+
+            {(searchTerm || brandFilter !== 'Todas' || statusFilter !== 'Todos' || cilindradaFilter !== 'Todas' || anoMinFilter || valorMinFilter || valorMaxFilter) && (
+              <button 
+                onClick={() => {
+                  setSearchTerm('');
+                  setBrandFilter('Todas');
+                  setStatusFilter('Todos');
+                  setCilindradaFilter('Todas');
+                  setAnoMinFilter('');
+                  setValorMinFilter('');
+                  setValorMaxFilter('');
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  theme === 'dark' 
+                    ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
+                    : "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                )}
+              >
+                <X size={16} />
+                <span>Limpar</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+        <div className={cn(
+          "flex flex-wrap items-center gap-4 p-3 rounded-2xl border transition-all duration-300",
+          theme === 'dark' 
+            ? "bg-zinc-900/50 border-zinc-800" 
+            : "bg-zinc-50 border-zinc-200"
+        )}>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Cilindrada:</span>
+            <CustomDropdown
+              theme={theme}
+              value={cilindradaFilter}
+              onChange={(val) => {
+                setCilindradaFilter(val);
+                setCurrentPage(1);
+              }}
+              options={cilindradas.map(c => ({ value: c, label: c }))}
+              className="w-28"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Ano Min:</span>
             <input 
-              ref={searchInputRef}
-              type="text" 
-              placeholder="Buscar por nome, marca, modelo..." 
-              value={searchTerm}
+              type="number"
+              placeholder="Ex: 2015"
+              value={anoMinFilter}
               onChange={(e) => {
-                setSearchTerm(e.target.value);
+                setAnoMinFilter(e.target.value);
                 setCurrentPage(1);
               }}
               className={cn(
-                "w-full border rounded-xl py-2.5 pl-10 pr-4 text-sm outline-none transition-all",
+                "w-20 border rounded-lg py-1.5 px-3 text-xs outline-none transition-all",
                 theme === 'dark' 
                   ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
                   : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
               )}
             />
           </div>
-          
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Marca:</span>
-              <CustomDropdown
-                theme={theme}
-                value={brandFilter}
-                onChange={(val) => {
-                  setBrandFilter(val);
-                  setCurrentPage(1);
-                }}
-                options={brands.map(brand => ({ value: brand, label: brand }))}
-                className="w-32"
-              />
-            </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Ordenar por:</span>
-              <CustomDropdown
-                theme={theme}
-                value={sortOrder}
-                onChange={(val) => setSortOrder(val)}
-                options={[
-                  { value: "Data de Criação", label: "Data de Criação" },
-                  { value: "Nome", label: "Nome" },
-                  { value: "Cilindrada", label: "Cilindrada" },
-                  { value: "Ano", label: "Ano" },
-                  { value: "Valor", label: "Valor" },
-                  { value: "Lote", label: "Lote" },
-                ]}
-                className="w-40"
-              />
-            </div>
-
-            <div className="flex items-center gap-1 border rounded-xl p-1 bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800">
-              <button 
-                onClick={() => setViewMode('table')}
-                className={cn(
-                  "p-1.5 rounded-lg transition-all",
-                  viewMode === 'table' 
-                    ? "bg-violet-600 text-white shadow-sm" 
-                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                )}
-              >
-                <TableIcon size={16} />
-              </button>
-              <button 
-                onClick={() => setViewMode('card')}
-                className={cn(
-                  "p-1.5 rounded-lg transition-all",
-                  viewMode === 'card' 
-                    ? "bg-violet-600 text-white shadow-sm" 
-                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                )}
-              >
-                <LayoutGrid size={16} />
-              </button>
-            </div>
-
-            <button 
-              onClick={handleManualRefresh}
-              disabled={loading || isRefreshing}
-              className={cn(
-                "p-2.5 rounded-xl transition-all border",
-                theme === 'dark' 
-                  ? "text-zinc-400 border-zinc-800/50 hover:text-white hover:bg-zinc-800/50" 
-                  : "text-zinc-500 border-zinc-200 hover:text-zinc-900 hover:bg-zinc-100"
-              )}
-            >
-              <RefreshCw size={18} className={cn((loading || isRefreshing) && "animate-spin")} />
-            </button>
-
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-violet-600 hover:bg-violet-500 text-white px-6 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-[0_8px_20px_rgba(139,92,246,0.3)] font-bold tracking-tight"
-            >
-              <Plus size={20} />
-              <span className="hidden sm:inline">Nova Moto</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-6 pt-4 border-t border-zinc-800/30">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Status:</span>
-              <CustomDropdown
-                theme={theme}
-                value={statusFilter}
-                onChange={(val) => {
-                  setStatusFilter(val);
-                  setCurrentPage(1);
-                }}
-                options={statuses.map(s => ({ value: s, label: s }))}
-                className="w-32"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Cilindrada:</span>
-              <CustomDropdown
-                theme={theme}
-                value={cilindradaFilter}
-                onChange={(val) => {
-                  setCilindradaFilter(val);
-                  setCurrentPage(1);
-                }}
-                options={cilindradas.map(c => ({ value: c, label: c }))}
-                className="w-32"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Ano Min:</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Valor:</span>
+            <div className="flex items-center gap-1">
               <input 
                 type="number"
-                placeholder="Ex: 2015"
-                value={anoMinFilter}
+                placeholder="Min"
+                value={valorMinFilter}
                 onChange={(e) => {
-                  setAnoMinFilter(e.target.value);
+                  setValorMinFilter(e.target.value);
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "w-20 border rounded-xl py-2 px-3 text-xs outline-none transition-all",
+                  "w-20 border rounded-lg py-1.5 px-3 text-xs outline-none transition-all",
                   theme === 'dark' 
                     ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
                     : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
                 )}
               />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-zinc-500 uppercase">Valor:</span>
-              <div className="flex items-center gap-1">
-                <input 
-                  type="number"
-                  placeholder="Min"
-                  value={valorMinFilter}
-                  onChange={(e) => {
-                    setValorMinFilter(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={cn(
-                    "w-24 border rounded-xl py-2 px-3 text-xs outline-none transition-all",
-                    theme === 'dark' 
-                      ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                      : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-                  )}
-                />
-                <span className="text-zinc-500 text-xs">-</span>
-                <input 
-                  type="number"
-                  placeholder="Max"
-                  value={valorMaxFilter}
-                  onChange={(e) => {
-                    setValorMaxFilter(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className={cn(
-                    "w-24 border rounded-xl py-2 px-3 text-xs outline-none transition-all",
-                    theme === 'dark' 
-                      ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                      : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
-                  )}
-                />
-              </div>
+              <span className="text-zinc-400 text-xs">-</span>
+              <input 
+                type="number"
+                placeholder="Max"
+                value={valorMaxFilter}
+                onChange={(e) => {
+                  setValorMaxFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "w-20 border rounded-lg py-1.5 px-3 text-xs outline-none transition-all",
+                  theme === 'dark' 
+                    ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
+                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                )}
+              />
             </div>
           </div>
 
@@ -6056,7 +6172,6 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
             </button>
           )}
         </div>
-      </div>
 
       {viewMode === 'table' ? (
         <div className={cn(
@@ -6214,6 +6329,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                       {editingRowId === item.id ? (
                         <CustomDropdown
                           theme={theme}
+                          variant="form"
                           value={inlineEditData.status} 
                           onChange={(val) => setInlineEditData({...inlineEditData, status: val})}
                           options={[
@@ -6416,6 +6532,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Status</label>
                     <CustomDropdown
                       theme={theme}
+                      variant="form"
                       value={formData.status}
                       onChange={(val) => setFormData({...formData, status: val})}
                       options={[
@@ -6556,11 +6673,25 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
               </div>
 
               <div className="p-6 border-t border-zinc-800/50 bg-zinc-900/20 flex items-center justify-end gap-3">
-                  <button type="button" onClick={closeModals} className="px-6 py-2.5 text-sm font-medium">Cancelar</button>
+                  <button 
+                    type="button" 
+                    onClick={closeModals} 
+                    className={cn(
+                      "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                      theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                    )}
+                  >
+                    Cancelar
+                  </button>
                   <button 
                     type="submit"
                     disabled={isSaving} 
-                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 flex items-center gap-2"
+                    className={cn(
+                      "px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center gap-2",
+                      theme === 'dark'
+                        ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                        : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                    )}
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar Moto
@@ -6644,6 +6775,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                     <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Status</label>
                     <CustomDropdown
                       theme={theme}
+                      variant="form"
                       value={editFormData.status}
                       onChange={(val) => setEditFormData({...editFormData, status: val})}
                       options={[
@@ -6784,11 +6916,25 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
               </div>
 
               <div className="p-6 border-t border-zinc-800/50 bg-zinc-900/20 flex items-center justify-end gap-3">
-                  <button type="button" onClick={closeModals} className="px-6 py-2.5 text-sm font-medium">Cancelar</button>
+                  <button 
+                    type="button" 
+                    onClick={closeModals} 
+                    className={cn(
+                      "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                      theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                    )}
+                  >
+                    Cancelar
+                  </button>
                   <button 
                     type="submit"
                     disabled={isSaving} 
-                    className="px-8 py-2.5 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-500 flex items-center gap-2"
+                    className={cn(
+                      "px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center gap-2",
+                      theme === 'dark'
+                        ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                        : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                    )}
                   >
                     {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
                     Salvar Alterações
@@ -6811,8 +6957,26 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
               <h3 className="text-xl font-bold mb-2">Excluir Moto?</h3>
               <p className="text-zinc-500 text-sm mb-8">Esta ação não pode ser desfeita. A moto será removida do Notion.</p>
               <div className="flex items-center gap-3">
-                <button onClick={() => setIsDeleteConfirmOpen(false)} className="flex-1 py-3 rounded-xl font-medium bg-zinc-800">Cancelar</button>
-                <button onClick={handleDeleteMoto} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold">Excluir</button>
+                <button 
+                  onClick={() => setIsDeleteConfirmOpen(false)} 
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleDeleteMoto} 
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
+                >
+                  Excluir
+                </button>
               </div>
             </motion.div>
           </div>
@@ -6825,11 +6989,27 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className={cn("fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl border backdrop-blur-xl", theme === 'dark' ? "bg-zinc-900/90 border-zinc-800 text-white" : "bg-white/90 border-zinc-200 text-zinc-900")}>
             <span className="text-sm font-medium mr-4">{selectedIds.length} moto(s) selecionada(s)</span>
             <div className="flex items-center gap-2 border-l pl-4 border-zinc-800">
-              <button onClick={() => setIsBulkDeleteConfirmOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-rose-600/10 text-rose-500 hover:bg-rose-600 hover:text-white rounded-xl text-sm font-bold transition-all">
+              <button 
+                onClick={() => setIsBulkDeleteConfirmOpen(true)} 
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all active:scale-95",
+                  theme === 'dark'
+                    ? "bg-rose-600/10 text-rose-500 hover:bg-rose-600 hover:text-white"
+                    : "bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white"
+                )}
+              >
                 <Trash2 size={16} />
                 Excluir Selecionadas
               </button>
-              <button onClick={() => setSelectedIds([])} className="px-4 py-2 text-sm font-medium text-zinc-500">Cancelar</button>
+              <button 
+                onClick={() => setSelectedIds([])} 
+                className={cn(
+                  "px-4 py-2 text-sm font-medium transition-colors rounded-lg active:scale-95",
+                  theme === 'dark' ? "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800" : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
+                )}
+              >
+                Cancelar
+              </button>
             </div>
           </motion.div>
         )}
@@ -6846,8 +7026,26 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
               <h3 className="text-xl font-bold mb-2">Excluir {selectedIds.length} Motos?</h3>
               <p className="text-zinc-500 text-sm mb-8">Esta ação removerá permanentemente todas as motos selecionadas.</p>
               <div className="flex items-center gap-3">
-                <button onClick={() => setIsBulkDeleteConfirmOpen(false)} className="flex-1 py-3 rounded-xl font-medium bg-zinc-800">Cancelar</button>
-                <button onClick={handleBulkDelete} className="flex-1 py-3 bg-rose-600 text-white rounded-xl font-bold">Excluir Todas</button>
+                <button 
+                  onClick={() => setIsBulkDeleteConfirmOpen(false)} 
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleBulkDelete} 
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
+                >
+                  Excluir Todas
+                </button>
               </div>
             </motion.div>
           </div>
@@ -7482,6 +7680,19 @@ function AppContent() {
   const [motosActions, setMotosActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+
+  // Atalho Ctrl + F para busca global
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
   const [unreadCount, setUnreadCount] = useState(0);
   const [mlDashboardData, setMlDashboardData] = useState<any>(null);
   const [isMlDashboardLoading, setIsMlDashboardLoading] = useState(false);
@@ -7576,30 +7787,30 @@ function AppContent() {
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    const fetchMlDashboard = async () => {
-      setIsMlDashboardLoading(true);
-      try {
-        let url = `/api/ml/dashboard?period=${mlPeriod}`;
-        if (mlPeriod === 'custom' && mlCustomDate.start && mlCustomDate.end) {
-          url += `&start=${mlCustomDate.start}&end=${mlCustomDate.end}`;
-        }
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success) {
-          setMlDashboardData(data.data);
-        }
-      } catch (err) {
-        console.error('Erro ao buscar dashboard ML:', err);
-      } finally {
-        setIsMlDashboardLoading(false);
+  const fetchMlDashboard = useCallback(async () => {
+    setIsMlDashboardLoading(true);
+    try {
+      let url = `/api/ml/dashboard?period=${mlPeriod}`;
+      if (mlPeriod === 'custom' && mlCustomDate.start && mlCustomDate.end) {
+        url += `&start=${mlCustomDate.start}&end=${mlCustomDate.end}`;
       }
-    };
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        setMlDashboardData(data.data);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar dashboard ML:', err);
+    } finally {
+      setIsMlDashboardLoading(false);
+    }
+  }, [mlPeriod, mlCustomDate]);
 
+  useEffect(() => {
     if (activeTab === 'dashboard' || activeTab === 'mercadolivre') {
       fetchMlDashboard();
     }
-  }, [activeTab, mlPeriod, mlCustomDate]);
+  }, [activeTab, fetchMlDashboard]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
@@ -7865,6 +8076,7 @@ function AppContent() {
                   setShowAllMlAds={setShowAllMlAds}
                   onFetchAllMlListings={fetchAllMlListings}
                   isMlListingsLoading={isMlListingsLoading}
+                  onRefreshMlDashboard={fetchMlDashboard}
                   mlPeriod={mlPeriod}
                   setMlPeriod={setMlPeriod}
                   mlCustomDate={mlCustomDate}
@@ -7913,7 +8125,33 @@ function AppContent() {
         </div>
       </main>
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
-      <FloatingAIChat theme={theme} isSearchOpen={isSearchOpen} />
+      
+      {/* Budget FAB */}
+      <motion.button
+        initial={{ scale: 0, bottom: '0px' }}
+        animate={{ scale: 1, bottom: '75px' }}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setIsBudgetModalOpen(true)}
+        className={cn(
+          "fixed right-6 w-14 h-14 rounded-full flex items-center justify-center z-[60] transition-all duration-300 shadow-2xl group border",
+          theme === 'dark' 
+            ? "bg-zinc-800 hover:bg-zinc-700 border-zinc-700" 
+            : "bg-white hover:bg-gray-50 border-zinc-200"
+        )}
+      >
+        <DollarSign className={cn(
+          "w-6 h-6 transition-transform group-hover:scale-110",
+          theme === 'dark' ? "text-violet-400" : "text-violet-600"
+        )} />
+      </motion.button>
+
+      <BudgetModal 
+        isOpen={isBudgetModalOpen} 
+        onClose={() => setIsBudgetModalOpen(false)} 
+        theme={theme} 
+      />
+
       <GlobalSearch 
         theme={theme} 
         onSelectItem={setSelectedDetailItem} 
