@@ -92,7 +92,9 @@ class MLClient {
       
       // Log detalhado do erro
       if (error.response?.status === 403) {
-        console.error('🚫 Erro 403 (Forbidden) no Mercado Livre. Verifique se o ML_USER_ID corresponde ao token e se o token tem as permissões necessárias.');
+        console.error('🚫 Erro 403 (Forbidden) no Mercado Livre.');
+        console.error('URL da requisição:', `${this.baseURL}${endpoint}`);
+        console.error('Headers enviados:', JSON.stringify(options.headers || {}, null, 2));
         console.error('Detalhes do erro:', JSON.stringify(error.response.data, null, 2));
       }
 
@@ -226,7 +228,7 @@ class MLClient {
     try {
       await this.ensureUserId();
 
-      console.log(`🔍 Buscando perguntas (${status})...`);
+      console.log(`🔍 Buscando perguntas (${status}) para usuário ${this.userId}...`);
       
       const params: any = {
         seller_id: this.userId,
@@ -237,6 +239,8 @@ class MLClient {
         params.status = status.toLowerCase();
       }
 
+      console.log('📡 Parâmetros da requisição de perguntas:', params);
+
       const response = await this.request('/questions/search', {
         params
       });
@@ -246,8 +250,8 @@ class MLClient {
         questions: response.questions || []
       };
     } catch (error) {
-      console.error('Erro ao buscar perguntas:', error);
-      return { total: 0, questions: [] };
+      console.error('❌ Erro ao buscar perguntas:', error);
+      throw error; // Re-throw to be caught by the caller
     }
   }
 

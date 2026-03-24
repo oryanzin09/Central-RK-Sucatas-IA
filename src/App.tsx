@@ -616,6 +616,47 @@ const ChartCard = ({ label, data, theme, color, icon: Icon, className }: any) =>
   </div>
 );
 
+
+const QuestionsModal = ({ isOpen, onClose, theme }: { isOpen: boolean, onClose: () => void, theme: 'light' | 'dark' }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+      <motion.div 
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className={cn(
+          "relative w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col",
+          theme === 'dark' ? "bg-zinc-950 border border-zinc-800" : "bg-white"
+        )}
+      >
+        <div className={cn(
+          "p-6 border-b flex items-center justify-between",
+          theme === 'dark' ? "border-zinc-800" : "border-zinc-100"
+        )}>
+          <h2 className={cn("text-xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+            Perguntas Mercado Livre
+          </h2>
+          <button onClick={onClose} className={cn("p-2 rounded-full", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <QuestionsDashboard theme={theme} />
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const DashboardView = ({ 
   theme, 
   onSelectItem, 
@@ -650,6 +691,7 @@ const DashboardView = ({
 }: any) => {
   const { inventory, sales, loading, refreshData, showSensitiveInfo, setShowSensitiveInfo } = useContext(DataContext);
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
+  const [isQuestionsModalOpen, setIsQuestionsModalOpen] = useState(false);
   const [mlSalesSubTab, setMlSalesSubTab] = useState('pending');
 
   const hoje = new Date();
@@ -676,6 +718,7 @@ const DashboardView = ({
         totalVendasMes: Number(mlData.totalSalesCount) || 0,
         ticketMedio: Number(mlData.avgTicket) || 0,
         perguntasPendentes: Number(mlData.pendingQuestions) || 0,
+        totalPerguntas: Number(mlData.totalQuestions) || 0,
         ultimosItens: mlData.recentListings || [],
         ultimasVendas: mlData.recentSales || []
       };
@@ -1188,14 +1231,15 @@ const DashboardView = ({
     <StatCard 
       icon={MessageCircle} 
       label="Perguntas" 
-      value={metrics.perguntasPendentes} 
-      subValue="pendentes de resposta"
+      value={`${metrics.perguntasPendentes} / ${metrics.totalPerguntas || '...'}`}
+      subValue="pendentes / total"
       color="bg-rose-400" 
       theme={theme} 
       trend={metrics.perguntasPendentes > 0 ? -10 : 0}
-      onClick={() => onTabChange('mercadolivre')}
+      onClick={() => setIsQuestionsModalOpen(true)}
       isCurrency={false}
     />
+    <QuestionsModal isOpen={isQuestionsModalOpen} onClose={() => setIsQuestionsModalOpen(false)} theme={theme} />
     <StatCard 
       icon={ShoppingBag} 
       label="Ticket Médio ML" 
@@ -2116,8 +2160,7 @@ const DashboardView = ({
           </div>
         </div>
       </div>
-      <QuestionsDashboard theme={theme} />
-
+      
       {/* Modal de Transações por Tipo */}
       <AnimatePresence>
         {selectedPaymentType && (
@@ -7708,12 +7751,7 @@ function AppContent() {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'mercadolivre' | 'frete'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('activeTab') as any) || 'dashboard';
-    }
-    return 'dashboard';
-  });
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete'>('dashboard');
   const contentRef = useRef<HTMLDivElement>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
   const [showPaymentFilter, setShowPaymentFilter] = useState(false);
@@ -7823,7 +7861,7 @@ function AppContent() {
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('activeTab', activeTab);
+    setDashboardSource('estoque');
     window.scrollTo(0, 0);
     if (contentRef.current) {
       contentRef.current.scrollTo(0, 0);
@@ -7850,7 +7888,7 @@ function AppContent() {
   }, [mlPeriod, mlCustomDate]);
 
   useEffect(() => {
-    if (activeTab === 'dashboard' || activeTab === 'mercadolivre') {
+    if (activeTab === 'dashboard') {
       fetchMlDashboard();
     }
   }, [activeTab, fetchMlDashboard]);
@@ -7988,13 +8026,6 @@ function AppContent() {
               label={isSidebarOpen ? "Frete" : ""} 
               active={activeTab === 'frete'} 
               onClick={() => setActiveTab('frete')} 
-              theme={theme}
-            />
-            <SidebarItem 
-              icon={TrendingUp} 
-              label={isSidebarOpen ? "Mercado Livre" : ""} 
-              active={activeTab === 'mercadolivre'} 
-              onClick={() => setActiveTab('mercadolivre')} 
               theme={theme}
             />
             <SidebarItem 
@@ -8161,8 +8192,6 @@ function AppContent() {
                 <Atendimento theme={theme} />
               ) : activeTab === 'frete' ? (
                 <FreteView theme={theme} />
-              ) : activeTab === 'mercadolivre' ? (
-                <MercadoLivre theme={theme} />
               ) : (
                 <div className={cn(
                   "flex flex-col items-center justify-center h-[60vh] transition-colors w-3/4 mx-auto",
