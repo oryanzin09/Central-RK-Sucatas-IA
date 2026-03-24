@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, ShoppingCart, Bike, Truck } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Bike, Truck, TrendingUp } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -10,9 +10,9 @@ export const MobileBottomNav = ({ activeTab, setActiveTab, theme }: any) => {
   const items = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Início' },
     { id: 'estoque', icon: Package, label: 'Estoque' },
+    { id: 'mercadolivre', icon: TrendingUp, label: 'M. Livre' },
     { id: 'vendas', icon: ShoppingCart, label: 'Vendas' },
     { id: 'motos', icon: Bike, label: 'Motos' },
-    { id: 'frete', icon: Truck, label: 'Frete' },
   ];
 
   return (

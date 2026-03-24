@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback } from 'react';
+import QuestionsDashboard from './components/QuestionsDashboard';
 import { 
   LayoutDashboard, 
   Package, 
@@ -1965,6 +1966,20 @@ const DashboardView = ({
                   <p className="text-zinc-500 font-medium">Nenhuma encomenda nesta categoria.</p>
                 </div>
               )}
+              {source === 'mercadolivre' && metrics.ultimasVendas.length > 0 && (
+                <div className="flex justify-center pt-4">
+                  <button 
+                    onClick={() => onTabChange('mercadolivre')}
+                    className={cn(
+                      "flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95",
+                      theme === 'dark' ? "bg-zinc-800 text-zinc-300 hover:text-white" : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
+                    )}
+                  >
+                    <ShoppingCart size={16} className="text-violet-500" />
+                    Ver todas as vendas no Mercado Livre
+                  </button>
+                </div>
+              )}
             </div>
           }
         </div>
@@ -1996,6 +2011,7 @@ const DashboardView = ({
                   <th className="px-4 py-3">{source === 'estoque' ? "Peça" : "Anúncio"}</th>
                   <th className="px-4 py-3 text-center">{source === 'estoque' ? "Qtd" : "Vendas"}</th>
                   <th className="px-4 py-3">{source === 'estoque' ? "Moto" : "Status"}</th>
+                  {source === 'mercadolivre' && <th className="px-4 py-3">Criado em</th>}
                   <th className="px-4 py-3">Valor</th>
                 </tr>
               </thead>
@@ -2017,7 +2033,7 @@ const DashboardView = ({
                         {source === 'mercadolivre' && item.thumbnail && (
                           <img src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                         )}
-                        <span className="truncate max-w-[200px]">{source === 'mercadolivre' ? (item.titulo || item.id) : (item.nome || item.title)}</span>
+                        <span className="">{source === 'mercadolivre' ? (item.titulo || item.id) : (item.nome || item.title)}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -2033,6 +2049,18 @@ const DashboardView = ({
                         {source === 'mercadolivre' ? (item.status === 'active' ? 'Ativo' : item.status) : (item.moto || item.status)}
                       </span>
                     </td>
+                    {source === 'mercadolivre' && (
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col">
+                          <span className={cn("text-[10px] font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>
+                            {item.date_created ? new Date(item.date_created).toLocaleDateString('pt-BR') : '-'}
+                          </span>
+                          <span className="text-[9px] text-zinc-500 italic">
+                            {item.date_created ? formatRelativeTime(item.date_created) : ''}
+                          </span>
+                        </div>
+                      </td>
+                    )}
                     <td className={cn("px-4 py-3 font-black", theme === 'dark' ? "text-zinc-100" : "text-zinc-900")}>
                       {formatCurrency(source === 'mercadolivre' ? (item.preco || 0) : (item.valor || 0))}
                     </td>
@@ -2088,6 +2116,7 @@ const DashboardView = ({
           </div>
         </div>
       </div>
+      <QuestionsDashboard theme={theme} />
 
       {/* Modal de Transações por Tipo */}
       <AnimatePresence>
@@ -7054,6 +7083,21 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
   );
 };
 
+// Helper to format relative time
+const formatRelativeTime = (dateString: string) => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInMs = now.getTime() - date.getTime();
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+  if (diffInDays === 0) return 'hoje';
+  if (diffInDays === 1) return 'ontem';
+  if (diffInDays < 30) return `há ${diffInDays} dias`;
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths === 1) return 'há 1 mês';
+  return `há ${diffInMonths} meses`;
+};
+
 export default function App() {
   return (
     <DataProvider>
@@ -7947,6 +7991,13 @@ function AppContent() {
               theme={theme}
             />
             <SidebarItem 
+              icon={TrendingUp} 
+              label={isSidebarOpen ? "Mercado Livre" : ""} 
+              active={activeTab === 'mercadolivre'} 
+              onClick={() => setActiveTab('mercadolivre')} 
+              theme={theme}
+            />
+            <SidebarItem 
               icon={MessageSquare} 
               label={isSidebarOpen ? "Atendimento" : ""} 
               active={activeTab === 'atendimento'} 
@@ -8110,6 +8161,8 @@ function AppContent() {
                 <Atendimento theme={theme} />
               ) : activeTab === 'frete' ? (
                 <FreteView theme={theme} />
+              ) : activeTab === 'mercadolivre' ? (
+                <MercadoLivre theme={theme} />
               ) : (
                 <div className={cn(
                   "flex flex-col items-center justify-center h-[60vh] transition-colors w-3/4 mx-auto",

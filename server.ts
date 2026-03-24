@@ -266,78 +266,93 @@ async function startServer() {
       let avgTicketValue = 0;
       let recentListings = [];
 
-      // 1. Buscar anúncios (Total e Ativos)
-      try {
-        const allListings = await mlClient.getListings('all', 'start_time_desc');
-        totalListingsCount = allListings.total;
-        
-        // Use all listings for recent listings to show the newest ones regardless of status
-        if (allListings.results && allListings.results.length > 0) {
-          try {
-            const recentIds = allListings.results.slice(0, 20);
-            const itemsToFetch: string[] = [];
-            const results: any[] = [];
+        // 1. Buscar anúncios (Total e Ativos)
+        try {
+          // 'start_time_desc' is the standard for newest items
+          console.log('🔍 Buscando IDs dos anúncios mais recentes (start_time_desc)...');
+          const allListings = await mlClient.getListings('active', 'start_time_desc', 100);
+          totalListingsCount = allListings.total;
+          
+          if (allListings.results && allListings.results.length > 0) {
+            try {
+              const recentIds = allListings.results.slice(0, 50);
+              const itemsToFetch: string[] = recentIds; // Bypass cache for dashboard to be 100% sure
+              const results: any[] = [];
+  
+              if (itemsToFetch.length > 0) {
+                const chunks = [];
+                for (let i = 0; i < itemsToFetch.length; i += 20) {
+                  chunks.push(itemsToFetch.slice(i, i + 20));
+                }
 
-            recentIds.forEach((id: string) => {
-              const cached = mlItemCache.get(id);
-              if (cached && (Date.now() - cached.timestamp < ML_CACHE_TTL)) {
-                results.push(cached.data);
-              } else {
-                itemsToFetch.push(id);
+                for (const chunk of chunks) {
+                  const ids = chunk.join(',');
+                  const itemsResponse = await mlClient.request('/items', {
+                    params: { ids, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,available_quantity,sold_quantity' }
+                  });
+                  
+                  if (Array.isArray(itemsResponse)) {
+                    itemsResponse.forEach((item: any) => {
+                      const body = item.body;
+                      if (!body) return;
+                      const formatted = {
+                        id: body.id,
+                        titulo: body.title,
+                        preco: body.price,
+                        thumbnail: body.thumbnail,
+                        status: body.status,
+                        link: body.permalink,
+                        estoque: body.available_quantity,
+                        vendidos: body.sold_quantity,
+                        criado_em: body.date_created,
+                        fotos: body.pictures?.map((p: any) => p.url) || []
+                      };
+                      // Still update cache for other parts of the app
+                      mlItemCache.set(formatted.id, { data: formatted, timestamp: Date.now() });
+                      results.push(formatted);
+                    });
+                  }
+                }
               }
-            });
-
-            if (itemsToFetch.length > 0) {
-              const ids = itemsToFetch.join(',');
-              const itemsResponse = await mlClient.request('/items', {
-                params: { ids, attributes: 'id,title,price,thumbnail,status,permalink,pictures,date_created,available_quantity,sold_quantity' }
-              });
               
-              itemsResponse.forEach((item: any) => {
-                const body = item.body;
-                if (!body) return;
-                const formatted = {
-                  id: body.id,
-                  titulo: body.title,
-                  preco: body.price,
-                  thumbnail: body.thumbnail,
-                  status: body.status,
-                  link: body.permalink,
-                  estoque: body.available_quantity,
-                  vendidos: body.sold_quantity,
-                  criado_em: body.date_created,
-                  fotos: body.pictures?.map((p: any) => p.url) || []
-                };
-                mlItemCache.set(formatted.id, { data: formatted, timestamp: Date.now() });
-                results.push(formatted);
-              });
+              // Sort manually by date_created DESC
+              recentListings = results
+                .sort((a: any, b: any) => {
+                  const dateA = new Date(a.criado_em).getTime();
+                  const dateB = new Date(b.criado_em).getTime();
+                  return dateB - dateA;
+                })
+                .slice(0, 5)
+                .map((item: any) => {
+                  const highResImage = item.fotos && item.fotos.length > 0 
+                    ? item.fotos[0] 
+                    : item.thumbnail;
+                    
+                  return {
+                    id: item.id,
+                    titulo: item.titulo,
+                    preco: item.preco,
+                    thumbnail: highResImage,
+                    status: item.status,
+                    permalink: item.link,
+                    date_created: item.criado_em,
+                    estoque: item.estoque,
+                    vendidos: item.vendidos
+                  };
+                });
+              
+              if (recentListings.length > 0) {
+                console.log(`✅ Dashboard ML: Exibindo ${recentListings.length} anúncios. O mais recente é de: ${recentListings[0].date_created}`);
+              }
+            } catch (err) {
+              console.error('⚠️ Erro ao buscar detalhes dos anúncios recentes:', err);
             }
-            
-            recentListings = results.map((item: any) => {
-              const highResImage = item.fotos && item.fotos.length > 0 
-                ? item.fotos[0] 
-                : item.thumbnail;
-                
-              return {
-                id: item.id,
-                title: item.titulo,
-                price: item.preco,
-                thumbnail: highResImage,
-                status: item.status,
-                permalink: item.link,
-                date_created: item.criado_em
-              };
-            })
-              .sort((a: any, b: any) => new Date(b.date_created).getTime() - new Date(a.date_created).getTime())
-              .slice(0, 5);
-          } catch (err) {
-            console.error('⚠️ Erro ao buscar detalhes dos anúncios recentes:', err);
           }
-        }
-
-        // Also get active count just for the stat card
-        const activeListings = await mlClient.getListings('active', 'start_time_desc');
-        activeListingsCount = activeListings.total;
+  
+          // Also get total count just for the stat card
+          const totalListings = await mlClient.getListings('all', 'start_time_desc', 1);
+        totalListingsCount = totalListings.total;
+        activeListingsCount = allListings.total;
       } catch (err) {
         console.error('⚠️ Erro ao buscar anúncios:', err);
       }
@@ -376,12 +391,12 @@ async function startServer() {
         monthlySalesTotal = salesMetrics.total;
         avgTicketValue = salesMetrics.average;
 
-        // Buscar ordens recentes para a lista de vendas
+        // Buscar ordens recentes para a lista de vendas (aumentado para 50 para garantir que pegamos as pendentes)
         const ordersResponse = await mlClient.request('/orders/search', {
           params: {
             seller: await mlClient.ensureUserId(),
             sort: 'date_desc',
-            limit: 5,
+            limit: 50,
             'order.date_created.from': formatDate(startDate) + 'T00:00:00.000-00:00',
             'order.date_created.to': formatDate(endDate) + 'T23:59:59.000-00:00'
           }
@@ -389,12 +404,33 @@ async function startServer() {
 
         totalSalesCount = ordersResponse.paging?.total || ordersResponse.total || 0;
 
-        recentSales = (ordersResponse.results || []).map((order: any) => {
+        // Buscar detalhes de envio para as ordens recentes para ter o substatus correto
+        const orders = ordersResponse.results || [];
+        const shippingIds = orders.map((o: any) => o.shipping?.id).filter(Boolean);
+        const shipmentsMap = new Map();
+
+        if (shippingIds.length > 0) {
+          const shipmentPromises = shippingIds.slice(0, 20).map((id: any) => 
+            mlClient.request(`/shipments/${id}`, {
+              headers: { 'x-format-new': 'true' }
+            }).catch(() => null)
+          );
+          const shipments = await Promise.all(shipmentPromises);
+          shipments.forEach((s: any) => {
+            if (s && s.id) shipmentsMap.set(s.id, s);
+          });
+        }
+
+        recentSales = orders.map((order: any) => {
           const buyer = order.buyer || {};
           const nomeCliente = buyer.first_name && buyer.last_name 
             ? `${buyer.first_name} ${buyer.last_name}` 
             : (buyer.nickname || 'Cliente ML');
             
+          const shipmentDetails = order.shipping?.id ? shipmentsMap.get(order.shipping.id) : null;
+          const shippingStatus = shipmentDetails?.status || order.shipping?.status;
+          const shippingSubstatus = shipmentDetails?.substatus || order.shipping?.substatus;
+
           return {
             id: order.id,
             cliente: nomeCliente,
@@ -402,7 +438,8 @@ async function startServer() {
             valor: order.total_amount,
             data: order.date_created,
             status: order.status === 'paid' ? 'Pago' : order.status,
-            shipping_status: order.shipping?.status,
+            shipping_status: shippingStatus,
+            shipping_substatus: shippingSubstatus,
             itens: order.order_items?.map((i: any) => i.item?.title || i.item?.id || 'Produto ML').join(', '),
             thumbnail: order.order_items?.[0]?.item?.thumbnail,
             shipping_id: order.shipping?.id,
@@ -489,6 +526,7 @@ async function startServer() {
       const { status = 'UNANSWERED', limit = 50 } = req.query;
       
       const result = await mlClient.getQuestions(status as string, Number(limit));
+      console.log('🔍 Estrutura da primeira pergunta:', JSON.stringify(result.questions?.[0], null, 2));
       
       // Buscar detalhes dos itens para cada pergunta de forma resiliente usando cache
       const enrichedQuestions = await Promise.all(
@@ -735,9 +773,30 @@ async function startServer() {
         return { results: [] };
       });
 
-      const [recentOrdersResponse, pendingOrdersResponse] = await Promise.all([recentOrdersPromise, pendingOrdersPromise]);
+      // Busca especificamente ordens prontas para envio
+      const readyToShipOrdersPromise = mlClient.request(`/orders/search`, {
+        params: {
+          seller: userId,
+          'shipping.status': 'ready_to_ship',
+          sort: 'date_desc',
+          limit: 50
+        }
+      }).catch(err => {
+        console.error("⚠️ Erro ao buscar ordens prontas para envio:", err.message);
+        return { results: [] };
+      });
+
+      const [recentOrdersResponse, pendingOrdersResponse, readyToShipOrdersResponse] = await Promise.all([
+        recentOrdersPromise, 
+        pendingOrdersPromise,
+        readyToShipOrdersPromise
+      ]);
       
-      const allOrders = [...(recentOrdersResponse.results || []), ...(pendingOrdersResponse.results || [])];
+      const allOrders = [
+        ...(recentOrdersResponse.results || []), 
+        ...(pendingOrdersResponse.results || []),
+        ...(readyToShipOrdersResponse.results || [])
+      ];
       
       // Remove duplicatas
       const uniqueOrdersMap = new Map();

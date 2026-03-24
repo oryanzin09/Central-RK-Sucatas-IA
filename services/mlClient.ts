@@ -173,7 +173,8 @@ class MLClient {
           const response = await this.request(`/users/${this.userId}/items/search`, {
             params: {
               status: status === 'all' ? undefined : status,
-              sort,
+              sort_by: 'DATE',
+              order_by: 'DESC',
               limit: currentLimit,
               offset: currentOffset
             }
@@ -195,7 +196,8 @@ class MLClient {
       const params: any = {
         limit: limit,
         offset: offset,
-        sort: sort
+        sort_by: 'DATE',
+        order_by: 'DESC'
       };
       
       if (status !== 'all') {
@@ -225,13 +227,18 @@ class MLClient {
       await this.ensureUserId();
 
       console.log(`🔍 Buscando perguntas (${status})...`);
+      
+      const params: any = {
+        seller_id: this.userId,
+        limit: Math.min(limit, 50)
+      };
+
+      if (status.toUpperCase() !== 'ALL') {
+        params.status = status.toLowerCase();
+      }
+
       const response = await this.request('/questions/search', {
-        params: {
-          seller_id: this.userId,
-          status,
-          limit: Math.min(limit, 50),
-          sort: 'date_desc'
-        }
+        params
       });
       
       return {
