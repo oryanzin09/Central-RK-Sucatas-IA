@@ -79,7 +79,6 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
-import { FloatingAIChat } from './components/FloatingAIChat';
 import { BudgetModal } from './components/BudgetModal';
 import { GlobalSearch } from './components/GlobalSearch';
 import { CustomDropdown } from './components/CustomDropdown';
@@ -8128,11 +8127,6 @@ function AppContent() {
       
       {/* Grupo de ações flutuantes */}
       <div className="fixed bottom-[80px] md:bottom-6 right-6 z-[60] flex flex-col gap-3">
-        <FloatingAIChat 
-          theme={theme} 
-          isSearchOpen={isSearchOpen} 
-        />
-        
         <GlobalSearch 
           theme={theme} 
           onSelectItem={setSelectedDetailItem} 

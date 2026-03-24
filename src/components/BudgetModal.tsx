@@ -76,9 +76,30 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
   const finalTotal = Math.max(0, total - discountAmount);
 
   const copyBudget = () => {
-    const budgetText = selectedItems.map(item => 
-      `• ${item.nome} (${item.moto}) - ${item.quantity}x R$ ${item.valor.toFixed(2)} = R$ ${(item.valor * item.quantity).toFixed(2)}`
-    ).join('\n');
+    const budgetText = selectedItems.map(item => {
+      // Extract moto name from part name to avoid duplication
+      let cleanName = item.nome;
+      const motoName = item.moto;
+      
+      // Case-insensitive replacement of moto name in part name
+      // We also try to catch common separators around the moto name
+      const separators = ['-', '/', '\\|', ':', '—'];
+      const sepRegex = new RegExp(`\\s*(${separators.join('|')})?\\s*${motoName}\\s*(${separators.join('|')})?\\s*`, 'gi');
+      
+      cleanName = cleanName.replace(sepRegex, ' ').trim();
+      
+      // Final cleanup of any double spaces or trailing/leading separators
+      cleanName = cleanName.replace(/\s+/g, ' ')
+                          .replace(/^[\s\-\/|:—]+|[\s\-\/|:—]+$/g, '')
+                          .trim();
+
+      const itemTotal = item.valor * item.quantity;
+      const priceDisplay = item.quantity > 1 
+        ? `${item.quantity}x R$ ${item.valor.toFixed(2)} = R$ ${itemTotal.toFixed(2)}`
+        : `R$ ${item.valor.toFixed(2)}`;
+
+      return `• ${cleanName} (${motoName}) - ${priceDisplay}`;
+    }).join('\n');
 
     const fullText = `📋 *ORÇAMENTO - RK SUCATAS*\n\n${budgetText}\n\n` +
       `--------------------------\n` +
@@ -288,34 +309,42 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
 
             {/* Footer / Summary */}
             <div className={cn(
-              "p-3 md:p-6 border-t space-y-2 md:space-y-4 shrink-0",
-              theme === 'dark' ? "bg-zinc-900/95 border-zinc-800 backdrop-blur-xl" : "bg-zinc-50/95 border-zinc-200 backdrop-blur-xl"
+              "p-3 md:p-8 border-t space-y-3 md:space-y-6 shrink-0",
+              theme === 'dark' ? "bg-zinc-950/95 border-zinc-800/50 backdrop-blur-2xl" : "bg-zinc-50/95 border-zinc-200 backdrop-blur-2xl"
             )}>
               {/* Discount Section */}
               <div className={cn(
-                "p-2 rounded-xl border flex items-center justify-between gap-2",
-                theme === 'dark' ? "bg-black/20 border-white/5" : "bg-white border-zinc-200 shadow-sm"
+                "group p-3 md:p-4 rounded-[1.2rem] md:rounded-[1.5rem] border transition-all duration-300",
+                theme === 'dark' 
+                  ? "bg-zinc-900/50 border-zinc-800/50 hover:border-violet-500/30 hover:bg-zinc-900/80" 
+                  : "bg-white border-zinc-200 shadow-sm hover:border-violet-200"
               )}>
-                <div className="flex items-center gap-1.5">
-                  <div className="p-1 bg-violet-500/10 rounded-lg">
-                    <Tag size={12} className="text-violet-500" />
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 md:gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-1.5 md:p-2 rounded-xl transition-colors",
+                      theme === 'dark' ? "bg-violet-500/10 text-violet-400" : "bg-violet-50 text-violet-600"
+                    )}>
+                      <Tag size={14} className="md:w-4 md:h-4 animate-pulse" />
+                    </div>
+                    <div>
+                      <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 block mb-0.5">Desconto Especial</span>
+                      <p className="text-[8px] md:text-[9px] text-zinc-400 font-medium">Fixo ou porcentagem</p>
+                    </div>
                   </div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Desconto</span>
-                </div>
-                
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-1.5">
+                  
+                  <div className="flex items-center justify-between sm:justify-end gap-2 md:gap-3">
                     {/* Toggle Fixed/Percent */}
                     <div className={cn(
-                      "flex p-0.5 rounded-lg border",
-                      theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-zinc-100 border-zinc-200"
+                      "flex p-0.5 md:p-1 rounded-lg md:rounded-xl border",
+                      theme === 'dark' ? "bg-black border-zinc-800" : "bg-zinc-100 border-zinc-200"
                     )}>
                       <button 
                         onClick={() => setDiscountType('fixed')}
                         className={cn(
-                          "px-1.5 py-0.5 rounded-md text-[8px] font-bold transition-all",
+                          "px-2 md:px-3 py-1 md:py-1.5 rounded-md md:rounded-lg text-[9px] md:text-[10px] font-black transition-all duration-300",
                           discountType === 'fixed' 
-                            ? "bg-violet-600 text-white shadow-lg" 
+                            ? "bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.4)]" 
                             : "text-zinc-500 hover:text-zinc-300"
                         )}
                       >
@@ -324,9 +353,9 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
                       <button 
                         onClick={() => setDiscountType('percent')}
                         className={cn(
-                          "px-1.5 py-0.5 rounded-md text-[8px] font-bold transition-all",
+                          "px-2 md:px-3 py-1 md:py-1.5 rounded-md md:rounded-lg text-[9px] md:text-[10px] font-black transition-all duration-300",
                           discountType === 'percent' 
-                            ? "bg-violet-600 text-white shadow-lg" 
+                            ? "bg-violet-600 text-white shadow-[0_0_15px_rgba(124,58,237,0.4)]" 
                             : "text-zinc-500 hover:text-zinc-300"
                         )}
                       >
@@ -334,63 +363,112 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
                       </button>
                     </div>
 
-                    <div className="relative">
+                    <div className="relative group/input flex-1 sm:flex-none">
+                      <div className={cn(
+                        "absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none",
+                        theme === 'dark' ? "text-violet-400" : "text-violet-600"
+                      )}>
+                        <span className="text-[10px] font-black">
+                          {discountType === 'fixed' ? 'R$' : '%'}
+                        </span>
+                      </div>
                       <input 
                         type="number"
                         className={cn(
-                          "w-16 px-2 py-1 rounded-lg border text-[10px] font-black text-right outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
-                          theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200"
+                          "w-full sm:w-24 pl-8 pr-4 py-2 md:py-2.5 rounded-xl border text-xs font-black text-right outline-none transition-all duration-300 focus:ring-2 focus:ring-violet-500/50",
+                          theme === 'dark' 
+                            ? "bg-black border-zinc-800 text-white focus:border-violet-500/50" 
+                            : "bg-white border-zinc-200 text-zinc-900 focus:border-violet-500"
                         )}
                         value={discount || ''}
                         onChange={(e) => setDiscount(Number(e.target.value))}
-                        placeholder="0"
+                        placeholder="0.00"
                       />
+                      {discount > 0 && (
+                        <button 
+                          onClick={() => setDiscount(0)}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 md:w-5 md:h-5 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform"
+                        >
+                          <X size={8} className="md:w-2.5 md:h-2.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  {discountType === 'percent' && (
-                    <div className="flex gap-1">
-                      {[5, 10, 15].map(val => (
-                        <button
-                          key={val}
-                          onClick={() => setDiscount(val)}
-                          className={cn(
-                            "px-2 py-0.5 rounded-md text-[8px] font-bold transition-all border",
-                            discount === val 
-                              ? "bg-violet-500/20 text-violet-400 border-violet-500/30" 
-                              : "bg-transparent text-zinc-500 border-zinc-800 hover:border-zinc-700"
-                          )}
-                        >
-                          {val}%
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
+
+                {discountType === 'percent' && (
+                  <div className="flex gap-1.5 md:gap-2 mt-2 md:mt-3 pt-2 md:pt-3 border-t border-zinc-800/30">
+                    {[5, 10, 15, 20].map(val => (
+                      <button
+                        key={val}
+                        onClick={() => setDiscount(val)}
+                        className={cn(
+                          "flex-1 py-1.5 md:py-2 rounded-lg md:rounded-xl text-[8px] md:text-[10px] font-black transition-all duration-300 border",
+                          discount === val 
+                            ? "bg-violet-600 text-white border-violet-500 shadow-lg" 
+                            : theme === 'dark'
+                              ? "bg-zinc-950 text-zinc-500 border-zinc-800 hover:border-zinc-700 hover:text-zinc-300"
+                              : "bg-white text-zinc-500 border-zinc-200 hover:border-violet-200 hover:text-violet-600"
+                        )}
+                      >
+                        {val}%
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="flex items-center justify-between pt-0.5">
-                <div>
-                  <p className="text-[8px] text-zinc-500 uppercase tracking-[0.1em] font-black mb-0">Total Final</p>
-                  <p className="text-lg md:text-3xl font-black text-emerald-400 [text-shadow:0_0_15px_rgba(52,211,153,0.3)]">
-                    R$ {finalTotal.toFixed(2)}
-                  </p>
+              <div className="flex flex-col gap-4 pt-1">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] md:text-[10px] text-zinc-500 uppercase tracking-[0.3em] font-black mb-0.5 md:mb-1">Valor Total Final</span>
+                    <div className="flex items-baseline gap-1.5 md:gap-2">
+                      <span className="text-zinc-400 text-[10px] md:text-xs font-bold">R$</span>
+                      <span className="text-2xl md:text-5xl font-black text-emerald-400 tracking-tighter [text-shadow:0_0_30px_rgba(52,211,153,0.4)]">
+                        {finalTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                  {discountAmount > 0 && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="text-right"
+                    >
+                      <p className="text-[8px] md:text-[10px] font-black text-rose-400 flex items-center justify-end gap-1">
+                        <Tag size={8} /> ECONOMIA
+                      </p>
+                      <p className="text-[10px] md:text-xs font-black text-rose-400">
+                        - R$ {discountAmount.toFixed(2)}
+                      </p>
+                    </motion.div>
+                  )}
                 </div>
+
                 <button 
                   onClick={copyBudget}
                   disabled={selectedItems.length === 0}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2.5 md:px-7 md:py-4 rounded-xl md:rounded-2xl font-black transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none text-[10px] md:text-sm uppercase tracking-widest",
+                    "relative group overflow-hidden flex items-center justify-center gap-2 md:gap-3 px-6 py-3.5 md:px-12 md:py-6 rounded-2xl md:rounded-[1.5rem] font-black transition-all duration-500 active:scale-95 disabled:opacity-50 disabled:pointer-events-none text-[10px] md:text-sm uppercase tracking-[0.2em] shadow-2xl w-full",
                     copied 
-                      ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20" 
-                      : "bg-violet-600 text-white hover:bg-violet-500 shadow-xl shadow-violet-500/25"
+                      ? "bg-emerald-500 text-white shadow-emerald-500/30" 
+                      : "bg-violet-600 text-white hover:bg-violet-500 shadow-violet-600/40 hover:shadow-violet-600/60"
                   )}
                 >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? "Copiado!" : "Gerar Orçamento"}
+                  {/* Glossy Effect */}
+                  <div className="absolute inset-0 bg-gradient-to-tr from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  
+                  {/* Animated Border/Glow */}
+                  <div className="absolute -inset-[100%] bg-gradient-to-r from-transparent via-white/10 to-transparent group-hover:animate-[shimmer_2s_infinite] pointer-events-none" />
+
+                  <div className="relative flex items-center gap-2 md:gap-3">
+                    {copied ? <Check size={16} className="animate-bounce" /> : <Copy size={16} className="group-hover:rotate-12 transition-transform" />}
+                    <span>{copied ? "Copiado com Sucesso!" : "Gerar Orçamento"}</span>
+                  </div>
                 </button>
               </div>
             </div>
+
           </motion.div>
         </div>
       )}

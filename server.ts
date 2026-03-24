@@ -173,6 +173,7 @@ async function fetchAllFromNotion(databaseId: string) {
 }
 
 import mlClient from './services/mlClient.js';
+export { mlClient };
 import storageService from './src/services/storageService.js';
 
 async function startServer() {
@@ -708,16 +709,41 @@ async function startServer() {
       const trintaDiasAtras = new Date();
       trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
       
-      const ordersResponse = await mlClient.request(`/orders/search`, {
+      const userId = await mlClient.ensureUserId();
+
+      // Busca as ordens recentes (últimos 30 dias)
+      const recentOrdersPromise = mlClient.request(`/orders/search`, {
         params: { 
-          seller: await mlClient.ensureUserId(), 
+          seller: userId, 
           'order.date_created.from': trintaDiasAtras.toISOString(),
           sort: 'date_desc', 
           limit: 50 
         }
       });
+
+      // Busca especificamente ordens pendentes (não entregues) para garantir que não percamos nenhuma
+      const pendingOrdersPromise = mlClient.request(`/orders/search`, {
+        params: {
+          seller: userId,
+          'order.status': 'paid',
+          tags: 'not_delivered',
+          sort: 'date_desc',
+          limit: 50
+        }
+      }).catch(err => {
+        console.error("⚠️ Erro ao buscar ordens pendentes:", err.message);
+        return { results: [] };
+      });
+
+      const [recentOrdersResponse, pendingOrdersResponse] = await Promise.all([recentOrdersPromise, pendingOrdersPromise]);
       
-      const orders = ordersResponse.results || [];
+      const allOrders = [...(recentOrdersResponse.results || []), ...(pendingOrdersResponse.results || [])];
+      
+      // Remove duplicatas
+      const uniqueOrdersMap = new Map();
+      allOrders.forEach(order => uniqueOrdersMap.set(order.id, order));
+      const orders = Array.from(uniqueOrdersMap.values());
+
       const shippingIds = Array.from(new Set(orders.map((o: any) => o.shipping?.id).filter(Boolean)));
       
       const shipmentsMap = new Map();
@@ -756,6 +782,10 @@ async function startServer() {
         const shipmentDetails = order.shipping?.id ? shipmentsMap.get(order.shipping.id) : null;
         const shippingStatus = shipmentDetails?.status || order.shipping?.status;
         const shippingSubstatus = shipmentDetails?.substatus || order.shipping?.substatus;
+        
+        if (order.id === 2000015614957750 || order.id === '2000015614957750') {
+          import('fs').then(fs => fs.writeFileSync('raw-order.json', JSON.stringify({ order, shipmentDetails }, null, 2)));
+        }
         
         // Mapeamento preciso para o frontend
         
@@ -2506,7 +2536,6 @@ async function startServer() {
   });
 
   // ==================== WHATSAPP INTEGRATION (VERSÃO ULTRA ESTÁVEL 2026) ====================
-  /*
   const BAILEY_CONFIG = {
     connectTimeoutMs: 120000,           // mais tolerante
     defaultQueryTimeoutMs: 60000,
@@ -3195,7 +3224,6 @@ async function startServer() {
       res.status(500).json({ success: false, error: error.message });
     }
   });
-  */
 
   // Error handler for API routes
   app.use('/api', (err: any, req: any, res: any, next: any) => {
@@ -3233,7 +3261,6 @@ async function startServer() {
     console.log(`🚀 Server running on http://localhost:${PORT} [PID:${process.pid}]`);
     console.log(`🔗 APP_URL: ${process.env.APP_URL || 'Não definida (usando localhost)'}`);
     
-    /*
     console.log("📱 Inicializando WhatsApp (Baileys)...");
     // Pequeno delay para evitar conflitos se o servidor estiver reiniciando rápido
     setTimeout(() => {
@@ -3241,13 +3268,11 @@ async function startServer() {
         console.error("❌ Erro ao inicializar WhatsApp:", err);
       });
     }, 10000);
-    */
   });
 
   // Graceful shutdown
   const shutdown = async () => {
     console.log('🛑 Encerrando servidor...');
-    /*
     const sock = (app as any).whatsappSock;
     if (sock) {
       try {
@@ -3256,7 +3281,6 @@ async function startServer() {
         console.log('✅ Socket WhatsApp encerrado.');
       } catch (e) {}
     }
-    */
     process.exit(0);
   };
 

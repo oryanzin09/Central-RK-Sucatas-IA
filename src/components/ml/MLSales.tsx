@@ -81,11 +81,16 @@ export const MLSales = ({ theme }: { theme: string }) => {
     try {
       const res = await fetch(`/api/ml/shipment-label/${shippingId}`);
       if (!res.ok) throw new Error('Falha ao baixar etiqueta');
+      
+      const contentType = res.headers.get('Content-Type');
+      const isZip = contentType === 'application/zip';
+      const extension = isZip ? 'zip' : 'pdf';
+      
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `etiqueta-${shippingId}.pdf`;
+      a.download = `etiqueta-${shippingId}.${extension}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -101,20 +106,16 @@ export const MLSales = ({ theme }: { theme: string }) => {
   const tabs = [
     { 
       id: 'pending', 
-      label: 'Envios pendentes', 
+      label: 'Prontas para Envio', 
       filter: (s: any) => {
-        const isCancelled = s.is_cancelled || s.status === 'cancelled' || s.shipping_status === 'cancelled' || s.shipping_status === 'not_delivered_returning_to_sender' || s.shipping_substatus === 'cancelled' || s.shipping_substatus === 'not_delivered';
-        const isShipped = ['shipped', 'delivered'].includes(s.shipping_status) || String(s.shipping_status).startsWith('shipped_') || String(s.shipping_status).startsWith('delivered_');
-        
-        // Include ready_to_ship and pending statuses
+        const isCancelled = s.is_cancelled || s.status === 'cancelled' || String(s.shipping_status).startsWith('cancelled') || String(s.shipping_status).startsWith('not_delivered');
         const isReadyToShip = String(s.shipping_status).startsWith('ready_to_ship') || s.shipping_status === 'pending';
-        
-        return isReadyToShip && !isCancelled && !isShipped && !s.has_dispute;
+        return isReadyToShip && !isCancelled && !s.has_dispute;
       }
     },
     { id: 'dispute', label: 'Aguardando', filter: (s: any) => s.has_dispute },
-    { id: 'shipped', label: 'Em trânsito', filter: (s: any) => s.shipping_status === 'shipped' },
-    { id: 'delivered', label: 'Finalizadas', filter: (s: any) => s.shipping_status === 'delivered' },
+    { id: 'shipped', label: 'Em trânsito', filter: (s: any) => String(s.shipping_status).startsWith('shipped') },
+    { id: 'delivered', label: 'Finalizadas', filter: (s: any) => String(s.shipping_status).startsWith('delivered') },
   ];
 
   const filteredSales = sales.filter(s => {

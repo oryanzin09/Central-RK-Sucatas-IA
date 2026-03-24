@@ -36,20 +36,20 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ options, value, 
   const selectedOption = options.find(opt => opt.value === value);
   const isDefault = value === 'Todas' || value === 'criado_em' || value === '';
 
-  // Estilo "Liquid Glass Pill" baseado na referência
+  // Estilo padronizado (fundo branco, borda #eef2f6, border-radius 12px)
   const pillStyles = cn(
-    "flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 border text-[11px] font-bold uppercase tracking-wider whitespace-nowrap shadow-sm backdrop-blur-md",
-    !isDefault 
-      ? "bg-violet-500/10 border-violet-500/30 text-violet-500 shadow-violet-500/10" 
-      : "bg-zinc-500/5 border-zinc-500/10 text-zinc-500 hover:bg-zinc-500/10"
+    "flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-300 border text-sm font-medium whitespace-nowrap shadow-sm",
+    theme === 'dark'
+      ? "bg-zinc-900 border-zinc-800 text-zinc-200 hover:border-zinc-700"
+      : "bg-white border-[#eef2f6] text-zinc-700 hover:border-zinc-300"
   );
 
   // Estilo "Form" para modais
   const formStyles = cn(
     "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none transition-all flex items-center justify-between",
     theme === 'dark' 
-      ? "bg-zinc-950 border-zinc-800 text-zinc-200 hover:border-zinc-700" 
-      : "bg-white border-zinc-200 text-zinc-900 hover:border-zinc-300",
+      ? "bg-zinc-900 border-zinc-800 text-zinc-200 hover:border-zinc-700" 
+      : "bg-white border-[#eef2f6] text-zinc-700 hover:border-zinc-300",
     isOpen && "border-violet-500 ring-1 ring-violet-500/20"
   );
 
@@ -60,9 +60,9 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ options, value, 
         onClick={() => setIsOpen(!isOpen)}
         title={selectedOption?.label}
         className={cn(
-          variant === 'form' ? formStyles : (compact ? "w-10 h-10 rounded-full flex items-center justify-center border transition-all shadow-sm backdrop-blur-md" : pillStyles),
+          variant === 'form' ? formStyles : (compact ? "w-10 h-10 rounded-xl flex items-center justify-center border transition-all shadow-sm" : pillStyles),
           isOpen && variant !== 'form' && "ring-2 ring-violet-500/20 border-violet-500/50",
-          compact && !isDefault ? "bg-violet-500/10 border-violet-500/30 text-violet-500" : compact ? "bg-zinc-500/5 border-zinc-500/10 text-zinc-500" : ""
+          compact && !isDefault ? "bg-violet-50 border-violet-200 text-violet-600 dark:bg-violet-500/10 dark:border-violet-500/30 dark:text-violet-500" : compact ? (theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400" : "bg-white border-[#eef2f6] text-zinc-500") : ""
         )}
       >
         <div className="flex items-center justify-between w-full gap-2">
