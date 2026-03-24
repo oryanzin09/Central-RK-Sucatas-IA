@@ -8126,40 +8126,48 @@ function AppContent() {
       </main>
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
       
-      {/* Budget FAB */}
-      <motion.button
-        initial={{ scale: 0, bottom: '0px' }}
-        animate={{ scale: 1, bottom: '75px' }}
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setIsBudgetModalOpen(true)}
-        className={cn(
-          "fixed right-6 w-14 h-14 rounded-full flex items-center justify-center z-[60] transition-all duration-300 shadow-2xl group border",
-          theme === 'dark' 
-            ? "bg-zinc-800 hover:bg-zinc-700 border-zinc-700" 
-            : "bg-white hover:bg-gray-50 border-zinc-200"
-        )}
-      >
-        <DollarSign className={cn(
-          "w-6 h-6 transition-transform group-hover:scale-110",
-          theme === 'dark' ? "text-violet-400" : "text-violet-600"
-        )} />
-      </motion.button>
+      {/* Grupo de ações flutuantes */}
+      <div className="fixed bottom-[80px] md:bottom-6 right-6 z-[60] flex flex-col gap-3">
+        <FloatingAIChat 
+          theme={theme} 
+          isSearchOpen={isSearchOpen} 
+        />
+        
+        <GlobalSearch 
+          theme={theme} 
+          onSelectItem={setSelectedDetailItem} 
+          isOpen={isSearchOpen} 
+          setIsOpen={setIsSearchOpen}
+          customClick={() => {
+            setIsSearchOpen(true);
+          }}
+        />
+
+        {/* Budget FAB */}
+        <motion.button
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setIsBudgetModalOpen(true)}
+          className={cn(
+            "relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl group border",
+            theme === 'dark' 
+              ? "bg-zinc-800 hover:bg-zinc-700 border-zinc-700" 
+              : "bg-white hover:bg-gray-50 border-zinc-200"
+          )}
+        >
+          <DollarSign className={cn(
+            "w-6 h-6 transition-transform group-hover:scale-110",
+            theme === 'dark' ? "text-violet-400" : "text-violet-600"
+          )} />
+        </motion.button>
+      </div>
 
       <BudgetModal 
         isOpen={isBudgetModalOpen} 
         onClose={() => setIsBudgetModalOpen(false)} 
         theme={theme} 
-      />
-
-      <GlobalSearch 
-        theme={theme} 
-        onSelectItem={setSelectedDetailItem} 
-        isOpen={isSearchOpen} 
-        setIsOpen={setIsSearchOpen}
-        customClick={() => {
-          setIsSearchOpen(true);
-        }}
       />
       
       {/* Modal de Detalhes Global */}

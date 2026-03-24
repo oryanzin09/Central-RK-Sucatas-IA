@@ -219,7 +219,7 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
     <>
       <motion.button
         className={cn(
-          "fixed right-6 w-14 h-14 rounded-full flex items-center justify-center z-[60] transition-all duration-300 group",
+          "relative w-14 h-14 rounded-full flex items-center justify-center z-[60] transition-all duration-300 group",
           theme === 'dark' 
             ? "bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 shadow-xl" 
             : "bg-white hover:bg-gray-50 border border-zinc-200 shadow-xl"
@@ -231,11 +231,8 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
           e.stopPropagation();
           handleOpen();
         }}
-        initial={{ scale: 0, bottom: '0px' }}
-        animate={{ 
-          scale: 1,
-          bottom: '130px'
-        }}
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
       >
         <Sparkles className={cn(
           "w-6 h-6 transition-transform group-hover:rotate-12",
