@@ -6,6 +6,26 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+.pt-safe { padding-top: var(--safe-top); }
+.pb-safe { padding-bottom: var(--safe-bottom); }
+.pb-nav-safe { padding-bottom: calc(4rem + var(--safe-bottom)); }
+.bottom-fab-safe { bottom: calc(5rem + var(--safe-bottom)); }
+.pl-safe { padding-left: var(--safe-left); }
+.pr-safe { padding-right: var(--safe-right); }
+.mt-safe { margin-top: var(--safe-top); }
+.mb-safe { margin-bottom: var(--safe-bottom); }
+.top-safe { top: var(--safe-top); }
+.bottom-safe { bottom: var(--safe-bottom); }
+.left-safe { left: var(--safe-left); }
+.right-safe { right: var(--safe-right); }
+
 body {
   @apply font-sans antialiased bg-[#0a0a0c] text-zinc-200;
   background: radial-gradient(ellipse at top, #1a1b1f, #0a0a0c);

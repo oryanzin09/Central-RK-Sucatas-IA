@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { cn } from '../utils';
 import { 
   Sparkles, 
   Send, 
@@ -246,7 +247,10 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="fixed inset-4 z-[100] rounded-2xl shadow-2xl overflow-hidden border flex flex-col md:top-1/2 md:left-1/2 md:transform md:-translate-x-1/2 md:-translate-y-1/2 md:w-[500px] md:h-[650px]"
+            className={cn(
+              "fixed z-[100] rounded-2xl shadow-2xl overflow-hidden border flex flex-col md:top-1/2 md:left-1/2 md:transform md:-translate-x-1/2 md:-translate-y-1/2 md:w-[500px] md:h-[650px]",
+              isMobile ? "top-safe bottom-safe left-4 right-4 mt-4 mb-20" : "inset-4"
+            )}
             style={{
               backgroundColor: theme === 'dark' ? '#18181b' : '#ffffff',
               borderColor: theme === 'dark' ? '#27272a' : '#e5e7eb'

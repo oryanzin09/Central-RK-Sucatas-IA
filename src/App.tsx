@@ -7152,7 +7152,7 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
   const itemName = item.nome || item.titulo || item.peca || item.title || 'Sem Nome';
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-0 md:p-4 bg-black/90 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-0 md:p-4 bg-black/90 backdrop-blur-xl pt-safe pb-safe">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -7996,10 +7996,10 @@ function AppContent() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 pb-16 md:pb-0">
+      <main className="flex-1 flex flex-col min-w-0 pb-nav-safe md:pb-0">
         {/* Header */}
         <header className={cn(
-          "h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 transition-colors",
+          "min-h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 transition-colors pt-safe",
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
         )}>
           <div className="flex items-center gap-2 md:gap-4">
@@ -8126,7 +8126,7 @@ function AppContent() {
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
       
       {/* Grupo de ações flutuantes */}
-      <div className="fixed bottom-[80px] md:bottom-6 right-6 z-[60] flex flex-col gap-3">
+      <div className="fixed bottom-fab-safe md:bottom-6 right-6 z-[60] flex flex-col gap-3">
         <GlobalSearch 
           theme={theme} 
           onSelectItem={setSelectedDetailItem} 

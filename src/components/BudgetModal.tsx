@@ -133,7 +133,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className={cn(
-              "relative h-[92vh] md:h-[85vh] w-full rounded-t-[2rem] md:rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden",
+              "relative h-[92vh] md:h-[85vh] w-full rounded-t-[2rem] md:rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden pb-safe",
               theme === 'dark' ? "bg-zinc-950 text-white border-t border-zinc-800" : "bg-white text-zinc-900 border-t border-zinc-200"
             )}
           >

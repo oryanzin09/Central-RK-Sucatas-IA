@@ -275,7 +275,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
               className={cn(
                 "fixed z-[110] rounded-lg shadow-2xl overflow-hidden border flex flex-col",
                 isMobile 
-                  ? "bottom-20 left-4 right-4 max-h-[60vh]" 
+                  ? "bottom-fab-safe left-4 right-4 max-h-[60vh]" 
                   : "bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl max-h-[70vh]",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-indigo-600/10"
               )}
