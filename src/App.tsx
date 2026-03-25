@@ -461,34 +461,35 @@ const SidebarItem = ({
   theme: 'light' | 'dark',
   badge?: number
 }) => (
-  <button
+  <motion.button
+    whileHover={{ x: 4 }}
+    whileTap={{ scale: 0.98 }}
     onClick={onClick}
     className={cn(
-      "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group relative overflow-hidden",
+      "w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-500 group relative overflow-hidden",
       active 
-        ? "bg-zinc-900 text-white border border-zinc-800 shadow-lg" 
+        ? "bg-violet-600 text-white shadow-[0_10px_30px_rgba(139,92,246,0.3)]" 
         : theme === 'dark' 
           ? "text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300"
           : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
     )}
   >
     {active && (
-      <div className="absolute left-0 top-2 bottom-2 w-1 bg-zinc-100 rounded-r-full" />
+      <motion.div 
+        layoutId="activeTabGlow"
+        className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0"
+        animate={{ x: ['-100%', '100%'] }}
+        transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+      />
     )}
-    <Icon size={20} className={cn(active ? "text-zinc-100" : "group-hover:text-zinc-300 transition-colors")} />
-    {label && <span className="font-bold tracking-tight whitespace-nowrap">{label}</span>}
+    <Icon size={20} strokeWidth={active ? 3 : 2} className="relative z-10" />
+    {label && <span className="font-black text-xs uppercase tracking-[0.2em] whitespace-nowrap relative z-10">{label}</span>}
     {badge !== undefined && (
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-lg shadow-rose-500/20">
+      <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full min-w-[20px] text-center shadow-lg shadow-rose-500/40 relative z-10">
         {badge}
       </span>
     )}
-    {active && label && (
-      <motion.div 
-        layoutId="active-pill"
-        className="ml-auto w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_#fff]"
-      />
-    )}
-  </button>
+  </motion.button>
 );
 
 const SkeletonRow = ({ theme }: { theme: 'light' | 'dark', key?: any }) => (
@@ -521,57 +522,64 @@ const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onC
 
   return (
     <motion.div 
-      whileHover={{ y: -2, scale: 1.01 }}
+      whileHover={{ y: -4, scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
       className={cn(
-        "group relative border p-4 sm:p-5 rounded-2xl transition-all duration-300 cursor-pointer overflow-hidden flex flex-col justify-between h-full",
+        "group relative border p-5 sm:p-6 rounded-[2rem] transition-all duration-500 cursor-pointer overflow-hidden flex flex-col justify-between h-full",
         theme === 'dark' 
-          ? "bg-zinc-900/40 border-zinc-800/50 shadow-lg hover:border-violet-500/30" 
-          : "bg-white border-zinc-200 shadow-sm hover:shadow-md"
+          ? "bg-zinc-900/40 border-zinc-800/50 shadow-2xl hover:border-violet-500/40 hover:bg-zinc-900/60" 
+          : "bg-white border-zinc-200 shadow-xl hover:shadow-2xl hover:border-violet-200"
       )}
     >
-      {/* Background Glow */}
+      {/* Dynamic Glow Effect */}
       <div className={cn(
-        "absolute -right-4 -top-4 w-20 h-20 rounded-full blur-3xl opacity-5 transition-opacity group-hover:opacity-15",
+        "absolute -right-8 -top-8 w-32 h-32 rounded-full blur-[60px] opacity-0 transition-opacity duration-500 group-hover:opacity-20",
         color || "bg-violet-500"
       )} />
 
-      <div className="flex items-center justify-between mb-2 sm:mb-3">
+      <div className="flex items-center justify-between mb-4">
         <div className={cn(
-          "p-2 rounded-xl transition-all duration-300",
-          theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 group-hover:text-white" : "bg-zinc-100 text-zinc-500 group-hover:text-zinc-900"
+          "p-3 rounded-2xl transition-all duration-500 shadow-lg",
+          theme === 'dark' 
+            ? "bg-zinc-800/80 text-zinc-400 group-hover:text-white group-hover:bg-violet-600/20 group-hover:scale-110" 
+            : "bg-zinc-100 text-zinc-500 group-hover:text-zinc-900 group-hover:bg-violet-50"
         )}>
-          <Icon size={16} strokeWidth={2.5} />
+          <Icon size={20} strokeWidth={2.5} />
         </div>
         {displayTrend !== null && (
           <div className={cn(
-            "flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider",
-            displayTrend > 0 ? "bg-emerald-500/10 text-emerald-500" : "bg-rose-500/10 text-rose-500"
+            "flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black tracking-wider shadow-sm",
+            displayTrend > 0 
+              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
+              : "bg-rose-500/10 text-rose-500 border border-rose-500/20"
           )}>
-            {displayTrend > 0 ? <TrendingUp size={8} /> : <TrendingDown size={8} />}
+            {displayTrend > 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
             {Math.abs(displayTrend)}%
           </div>
         )}
       </div>
 
-      <div className="space-y-0.5">
-        <span className={cn("text-[8px] font-black uppercase tracking-[0.2em] opacity-60", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+      <div className="space-y-1">
+        <span className={cn(
+          "text-[10px] font-black uppercase tracking-[0.25em] opacity-50", 
+          theme === 'dark' ? "text-zinc-400" : "text-zinc-500"
+        )}>
           {label}
         </span>
         <div className="flex items-baseline gap-2">
           <h3 className={cn(
-            "text-lg sm:text-xl font-black tracking-tighter transition-all duration-300",
+            "text-2xl sm:text-3xl font-black tracking-tighter transition-all duration-500",
             theme === 'dark' ? "text-white" : "text-zinc-900",
-            isSensitive && !showSensitiveInfo && "blur-md select-none",
-            (label.includes('Valor') || label.includes('Vendas')) && "text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.3)]",
-            label.includes('Saídas') && "text-rose-400 drop-shadow-[0_0_10px_rgba(244,63,94,0.3)]"
+            isSensitive && !showSensitiveInfo && "blur-xl select-none",
+            (label.includes('Valor') || label.includes('Vendas')) && "text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.4)]",
+            label.includes('Saídas') && "text-rose-400 drop-shadow-[0_0_15px_rgba(244,63,94,0.4)]"
           )}>
             {displayValue}
           </h3>
         </div>
         {subValue && (
-          <p className="text-[8px] font-bold text-zinc-500 uppercase tracking-wider truncate opacity-80">
+          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest truncate opacity-70 mt-1">
             {subValue}
           </p>
         )}
@@ -581,32 +589,45 @@ const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onC
 };
 
 const ChartCard = ({ label, data, theme, color, icon: Icon, className }: any) => (
-  <div className={cn(
-    "border rounded-2xl p-5 transition-all duration-300 relative overflow-hidden flex flex-col gap-3 h-full",
-    theme === 'dark' 
-      ? "bg-zinc-900/40 border-zinc-800/50 shadow-lg hover:border-violet-500/30" 
-      : "bg-white border-zinc-200 shadow-sm",
-    className
-  )}>
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2.5">
+  <motion.div 
+    whileHover={{ y: -4, scale: 1.02 }}
+    className={cn(
+      "border rounded-[2rem] p-6 transition-all duration-500 relative overflow-hidden flex flex-col gap-4 h-full group",
+      theme === 'dark' 
+        ? "bg-zinc-900/40 border-zinc-800/50 shadow-2xl hover:border-violet-500/40 hover:bg-zinc-900/60" 
+        : "bg-white border-zinc-200 shadow-xl hover:shadow-2xl hover:border-violet-200",
+      className
+    )}
+  >
+    <div className={cn(
+      "absolute -right-10 -top-10 w-32 h-32 rounded-full blur-[60px] opacity-0 transition-opacity duration-500 group-hover:opacity-20",
+      color ? `bg-[${color}]` : "bg-violet-500"
+    )} />
+
+    <div className="flex items-center justify-between relative z-10">
+      <div className="flex items-center gap-3">
         <div className={cn(
-          "p-2.5 rounded-xl",
-          theme === 'dark' ? "bg-zinc-800/50 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+          "p-3 rounded-2xl transition-all duration-500 shadow-lg",
+          theme === 'dark' 
+            ? "bg-zinc-800/80 text-zinc-400 group-hover:text-white group-hover:bg-violet-600/20" 
+            : "bg-zinc-100 text-zinc-500 group-hover:text-zinc-900 group-hover:bg-violet-50"
         )}>
-          <Icon size={18} strokeWidth={2.5} />
+          <Icon size={20} strokeWidth={2.5} />
         </div>
-        <span className={cn("text-[9px] font-black uppercase tracking-[0.2em] opacity-60", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+        <span className={cn(
+          "text-[10px] font-black uppercase tracking-[0.25em] opacity-50", 
+          theme === 'dark' ? "text-zinc-400" : "text-zinc-500"
+        )}>
           {label}
         </span>
       </div>
     </div>
-    <div className="h-[70px] w-full mt-auto">
+    <div className="h-[80px] w-full mt-auto relative z-10">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data}>
           <defs>
             <linearGradient id={`gradient-${label}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={color || "#8b5cf6"} stopOpacity={0.3}/>
+              <stop offset="5%" stopColor={color || "#8b5cf6"} stopOpacity={0.4}/>
               <stop offset="95%" stopColor={color || "#8b5cf6"} stopOpacity={0}/>
             </linearGradient>
           </defs>
@@ -614,15 +635,15 @@ const ChartCard = ({ label, data, theme, color, icon: Icon, className }: any) =>
             type="monotone" 
             dataKey="vendas" 
             stroke={color || "#8b5cf6"} 
-            strokeWidth={2.5} 
+            strokeWidth={3} 
             fillOpacity={1} 
             fill={`url(#gradient-${label})`} 
-            animationDuration={1500}
+            animationDuration={2000}
           />
         </AreaChart>
       </ResponsiveContainer>
     </div>
-  </div>
+  </motion.div>
 );
 
 
@@ -8119,10 +8140,14 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     className={cn(
-                      "absolute left-0 mt-2 w-48 rounded-xl shadow-2xl border z-50 overflow-hidden",
-                      theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+                      "absolute left-0 mt-3 w-56 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border z-50 overflow-hidden backdrop-blur-2xl",
+                      theme === 'dark' ? "bg-zinc-900/90 border-zinc-800" : "bg-white/90 border-zinc-200"
                     )}
                   >
+                    <div className="p-3 border-b border-zinc-800/50 mb-1">
+                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Conta</p>
+                      <p className="text-sm font-bold truncate">Oryan Silva</p>
+                    </div>
                     <div className="p-2 space-y-1">
                       <button
                         onClick={() => {
@@ -8130,11 +8155,11 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                           setIsProfileDropdownOpen(false);
                         }}
                         className={cn(
-                          "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                          theme === 'dark' ? "hover:bg-zinc-800 text-zinc-300" : "hover:bg-zinc-100 text-zinc-700"
+                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                          theme === 'dark' ? "hover:bg-violet-600/20 hover:text-violet-400 text-zinc-300" : "hover:bg-violet-50 hover:text-violet-600 text-zinc-700"
                         )}
                       >
-                        <Camera size={16} />
+                        <Camera size={18} />
                         Editar foto
                       </button>
                       <button
@@ -8143,12 +8168,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                           setIsProfileDropdownOpen(false);
                         }}
                         className={cn(
-                          "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-rose-500",
+                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all text-rose-500",
                           theme === 'dark' ? "hover:bg-rose-500/10" : "hover:bg-rose-50"
                         )}
                       >
-                        <Trash2 size={16} />
-                        Sair
+                        <Trash2 size={18} />
+                        Sair da conta
                       </button>
                     </div>
                   </motion.div>
