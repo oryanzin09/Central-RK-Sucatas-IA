@@ -7812,6 +7812,21 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [dashboardSource, setDashboardSource] = useState<'estoque' | 'mercadolivre'>('estoque');
   const [mlPeriod, setMlPeriod] = useState('30d');
   const [mlCustomDate, setMlCustomDate] = useState({ start: '', end: '' });
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const [profilePhoto, setProfilePhoto] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('profilePhoto');
@@ -8069,51 +8084,6 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
               badge={unreadCount > 0 ? unreadCount : undefined}
             />
           </nav>
-
-          {/* User Profile Section */}
-          <div className={cn(
-            "mt-auto pt-4 border-t",
-            theme === 'dark' ? "border-zinc-800/50" : "border-zinc-100"
-          )}>
-            <div className={cn(
-              "flex items-center gap-3 p-2 rounded-xl transition-all",
-              isSidebarOpen ? "hover:bg-zinc-800/30" : "justify-center"
-            )}>
-              <div className="relative group">
-                <label className="relative cursor-pointer group shrink-0">
-                  <div className={cn(
-                    "w-10 h-10 rounded-full overflow-hidden border-2 transition-all",
-                    theme === 'dark' ? "border-zinc-800 group-hover:border-violet-500" : "border-zinc-200 group-hover:border-violet-400"
-                  )}>
-                    {profilePhoto ? (
-                      <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-500">
-                        <User size={20} />
-                      </div>
-                    )}
-                  </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoUpload} />
-                  <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                    <Camera size={12} className="text-white" />
-                  </div>
-                </label>
-                <button 
-                  onClick={onLogout}
-                  className="absolute top-12 right-0 bg-white text-zinc-900 px-3 py-1 rounded-lg shadow-lg border border-zinc-200 text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
-                >
-                  Sair
-                </button>
-              </div>
-              
-              {isSidebarOpen && (
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-bold truncate">Oryan Silva</span>
-                  <span className="text-[10px] text-zinc-500 truncate">Administrador</span>
-                </div>
-              )}
-            </div>
-          </div>
         </div>
       </aside>
 
@@ -8125,15 +8095,73 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
         )}>
           <div className="flex items-center gap-2 md:gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className={cn(
-                "p-2 rounded-lg transition-colors",
-                theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-600"
-              )}
-            >
-              <Menu size={20} />
-            </button>
+            <div className="relative" ref={dropdownRef}>
+              <button 
+                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                className={cn(
+                  "relative w-10 h-10 rounded-full overflow-hidden border-2 transition-all flex items-center justify-center shrink-0",
+                  theme === 'dark' 
+                    ? "border-zinc-800 hover:border-violet-500 bg-zinc-900" 
+                    : "border-zinc-200 hover:border-violet-400 bg-zinc-100"
+                )}
+              >
+                {profilePhoto ? (
+                  <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <User size={20} className={theme === 'dark' ? "text-zinc-500" : "text-zinc-400"} />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {isProfileDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className={cn(
+                      "absolute left-0 mt-2 w-48 rounded-xl shadow-2xl border z-50 overflow-hidden",
+                      theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+                    )}
+                  >
+                    <div className="p-2 space-y-1">
+                      <button
+                        onClick={() => {
+                          fileInputRef.current?.click();
+                          setIsProfileDropdownOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                          theme === 'dark' ? "hover:bg-zinc-800 text-zinc-300" : "hover:bg-zinc-100 text-zinc-700"
+                        )}
+                      >
+                        <Camera size={16} />
+                        Editar foto
+                      </button>
+                      <button
+                        onClick={() => {
+                          onLogout();
+                          setIsProfileDropdownOpen(false);
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors text-rose-500",
+                          theme === 'dark' ? "hover:bg-rose-500/10" : "hover:bg-rose-50"
+                        )}
+                      >
+                        <Trash2 size={16} />
+                        Sair
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                accept="image/*" 
+                className="hidden" 
+                onChange={handleProfilePhotoUpload} 
+              />
+            </div>
             <h2 className={cn(
               "text-base md:text-lg font-semibold capitalize transition-colors truncate max-w-[120px] md:max-w-none",
               theme === 'dark' ? "text-white" : "text-zinc-900"
