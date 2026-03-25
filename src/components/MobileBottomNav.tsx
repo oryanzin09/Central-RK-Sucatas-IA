@@ -7,13 +7,16 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export const MobileBottomNav = ({ activeTab, setActiveTab, theme }: any) => {
-  const items = [
-    { id: 'dashboard', icon: LayoutDashboard, label: 'Início' },
-    { id: 'estoque', icon: Package, label: 'Estoque' },
-    { id: 'mercadolivre', icon: TrendingUp, label: 'M. Livre' },
-    { id: 'vendas', icon: ShoppingCart, label: 'Vendas' },
-    { id: 'motos', icon: Bike, label: 'Motos' },
+  const userRole = localStorage.getItem('user_role') || 'client';
+  
+  const allItems = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Início', roles: ['admin'] },
+    { id: 'estoque', icon: Package, label: userRole === 'admin' ? 'Estoque' : 'Catálogo', roles: ['admin', 'client'] },
+    { id: 'vendas', icon: ShoppingCart, label: 'Vendas', roles: ['admin'] },
+    { id: 'motos', icon: Bike, label: 'Motos', roles: ['admin', 'client'] },
   ];
+
+  const items = allItems.filter(item => item.roles.includes(userRole));
 
   return (
     <div className={cn(

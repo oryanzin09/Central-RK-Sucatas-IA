@@ -27,6 +27,7 @@ try {
 const NOTION_TOKEN = process.env.NOTION_TOKEN || "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";
 const DATABASE_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ESTOQUE || "2f4dfa25a52880c1b315f7e8953f5889";
 const MOTOS_DATABASE_ID = process.env.NOTION_DB_MOTOS || "317dfa25a528805f9663ff0e6ebf0318";
+const CLIENTS_DATABASE_ID = "32edfa25a52880dfb4c6e96c41fcf822";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
 
@@ -245,28 +246,114 @@ async function startServer() {
     res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Rota de login
+  // Gerenciamento de usuários persistente
+  const USERS_FILE = path.join(process.cwd(), 'users.json');
+  
+  const getUsers = () => {
+    try {
+      if (fs.existsSync(USERS_FILE)) {
+        return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+      }
+    } catch (err) {
+      console.error('Erro ao ler usuários:', err);
+    }
+    return [];
+  };
+
+  const saveUser = (user: any) => {
+    const users = getUsers();
+    users.push(user);
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  };
+
+  // Rota de registro
+  app.post('/api/register', (req, res) => {
+    const { phone, password, name } = req.body;
+    
+    if (!phone || !password) {
+      return res.status(400).json({ success: false, error: 'Dados incompletos' });
+    }
+
+    const users = getUsers();
+    if (users.find((u: any) => u.phone === phone)) {
+      return res.status(400).json({ success: false, error: 'Este número já está cadastrado' });
+    }
+
+    // Validação de senha (mínimo 8 caracteres, 2 números)
+    const hasMinLength = password.length >= 8;
+    const hasTwoNumbers = (password.match(/\d/g) || []).length >= 2;
+
+    if (!hasMinLength || !hasTwoNumbers) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'A senha deve ter no mínimo 8 caracteres e 2 números' 
+      });
+    }
+
+    const newUser = { phone, password, name, role: 'client', createdAt: new Date().toISOString() };
+    saveUser(newUser);
+    
+    // Também cadastrar no Notion como cliente
+    try {
+      fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({
+          parent: { database_id: CLIENTS_DATABASE_ID },
+          properties: {
+            Nome: { title: [{ text: { content: name || `Cliente ${phone}` } }] },
+            Numero: { rich_text: [{ text: { content: phone } }] },
+            'ID de Usuario': { rich_text: [{ text: { content: phone } }] },
+            'Senha': { rich_text: [{ text: { content: password } }] }
+          }
+        })
+      }).then(() => invalidateCache(CLIENTS_DATABASE_ID));
+    } catch (e) {
+      console.error('Erro ao cadastrar cliente no Notion durante registro:', e);
+    }
+    
+    console.log(`👤 Novo usuário registrado: ${phone}`);
+    const token = generateToken({ role: 'client', phone });
+    res.json({ success: true, token, role: 'client' });
+  });
+
+  // Rota de login atualizada
   app.post('/api/login', (req, res) => {
     const { password, phone } = req.body;
+    const ADMIN_PHONE = '83982039490';
+    const DEFAULT_ADMIN_PASSWORD = 'rksucatasadm115935';
     const ENV_PASSWORD = (process.env.ADMIN_PASSWORD || '').trim();
-    const DEFAULT_PASSWORD = 'rksucatasadm115935';
     
-    // Log detalhado para debug
-    console.log(`🔑 Tentativa de login. Telefone: ${phone || 'não enviado'}, Senha recebida: "${password ? '***' : 'vazia'}" (Length: ${password?.length || 0})`);
+    console.log(`🔑 Tentativa de login. Telefone: ${phone || 'não enviado'}`);
     
-    // Aceita se a senha bater com o ENV OU com a senha padrão do código
-    const isPasswordCorrect = 
-      (password && String(password).trim() === ENV_PASSWORD) || 
-      (password && String(password).trim() === DEFAULT_PASSWORD);
-    
-    if (isPasswordCorrect) {
-      console.log(`✅ Login bem-sucedido para o número: ${phone || 'desconhecido'}`);
+    // 1. Verificar se é o administrador mestre
+    const isMasterAdmin = 
+      phone === ADMIN_PHONE && 
+      (password === DEFAULT_ADMIN_PASSWORD || (ENV_PASSWORD && password === ENV_PASSWORD));
+
+    if (isMasterAdmin) {
+      console.log(`✅ Login de Administrador Mestre bem-sucedido: ${phone}`);
       const token = generateToken({ role: 'admin', phone });
-      res.json({ success: true, token });
-    } else {
-      console.log('❌ Falha no login: senha incorreta');
-      res.status(401).json({ success: false, error: 'Senha incorreta' });
+      return res.json({ success: true, token, role: 'admin' });
     }
+
+    // 2. Verificar se é um usuário registrado (cliente)
+    const users = getUsers();
+    const registeredUser = users.find((u: any) => u.phone === phone && u.password === password);
+    
+    if (registeredUser) {
+      console.log(`✅ Login de Cliente bem-sucedido: ${phone}`);
+      const token = generateToken({ role: registeredUser.role || 'client', phone });
+      return res.json({ success: true, token, role: registeredUser.role || 'client' });
+    }
+
+    // 3. Falha no login
+    console.log('❌ Falha no login: credenciais incorretas');
+    res.status(401).json({ success: false, error: 'Telefone ou senha incorretos' });
   });
 
   // Rota pública para estatísticas (usada na tela de login)
@@ -1410,6 +1497,112 @@ async function startServer() {
     
     return result;
   }
+
+  // --- ROTAS DE CLIENTES ---
+  app.get('/api/clients', autenticar, async (req, res) => {
+    try {
+      const results = await fetchAllFromNotion(CLIENTS_DATABASE_ID);
+      const clients = results.map((page: any) => {
+        const p = page.properties;
+        return {
+          id: page.id,
+          nome: p.Nome?.title?.[0]?.plain_text || '',
+          endereco: p.Endereco?.rich_text?.[0]?.plain_text || '',
+          numero: p.Numero?.rich_text?.[0]?.plain_text || '',
+          cpf: p.CPF?.rich_text?.[0]?.plain_text || '',
+          senha: p.Senha?.rich_text?.[0]?.plain_text || '',
+          itensComprados: p['Itens Comprados']?.rich_text?.[0]?.plain_text || '',
+          userId: p['ID de Usuario']?.rich_text?.[0]?.plain_text || ''
+        };
+      });
+      res.json({ success: true, data: clients });
+    } catch (error: any) {
+      console.error('Erro ao buscar clientes:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.post('/api/clients', autenticar, async (req, res) => {
+    try {
+      const { nome, endereco, numero, cpf, itensComprados, userId, senha } = req.body;
+      const response = await fetch('https://api.notion.com/v1/pages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({
+          parent: { database_id: CLIENTS_DATABASE_ID },
+          properties: {
+            Nome: { title: [{ text: { content: nome || '' } }] },
+            Endereco: { rich_text: [{ text: { content: endereco || '' } }] },
+            Numero: { rich_text: [{ text: { content: numero || '' } }] },
+            CPF: { rich_text: [{ text: { content: cpf || '' } }] },
+            Senha: { rich_text: [{ text: { content: senha || '' } }] },
+            'Itens Comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
+            'ID de Usuario': { rich_text: [{ text: { content: userId || '' } }] }
+          }
+        })
+      });
+      if (!response.ok) throw new Error('Erro ao criar cliente no Notion');
+      invalidateCache(CLIENTS_DATABASE_ID);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.put('/api/clients/:id', autenticar, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { nome, endereco, numero, cpf, itensComprados, userId, senha } = req.body;
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({
+          properties: {
+            Nome: { title: [{ text: { content: nome || '' } }] },
+            Endereco: { rich_text: [{ text: { content: endereco || '' } }] },
+            Numero: { rich_text: [{ text: { content: numero || '' } }] },
+            CPF: { rich_text: [{ text: { content: cpf || '' } }] },
+            Senha: { rich_text: [{ text: { content: senha || '' } }] },
+            'Itens Comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
+            'ID de Usuario': { rich_text: [{ text: { content: userId || '' } }] }
+          }
+        })
+      });
+      if (!response.ok) throw new Error('Erro ao atualizar cliente no Notion');
+      invalidateCache(CLIENTS_DATABASE_ID);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  app.delete('/api/clients/:id', autenticar, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${NOTION_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Notion-Version': NOTION_VERSION
+        },
+        body: JSON.stringify({ archived: true })
+      });
+      if (!response.ok) throw new Error('Erro ao deletar cliente no Notion');
+      invalidateCache(CLIENTS_DATABASE_ID);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 
   // API Route for Notion Inventory
   app.get("/api/inventory", async (req, res) => {

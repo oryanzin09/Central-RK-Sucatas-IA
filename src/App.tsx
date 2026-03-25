@@ -88,6 +88,7 @@ import { MobileBottomNav } from './components/MobileBottomNav';
 import { FreteView } from './components/FreteView';
 import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
+import { Clients } from './pages/Clients';
 import { io } from 'socket.io-client';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor } from '@capacitor/core';
@@ -452,14 +453,16 @@ const SidebarItem = ({
   active, 
   onClick,
   theme,
-  badge
+  badge,
+  className
 }: { 
   icon: any, 
   label: string, 
   active: boolean, 
   onClick: () => void,
   theme: 'light' | 'dark',
-  badge?: number
+  badge?: number,
+  className?: string
 }) => (
   <motion.button
     whileHover={{ x: 4 }}
@@ -471,7 +474,8 @@ const SidebarItem = ({
         ? "bg-violet-600 text-white shadow-[0_10px_30px_rgba(139,92,246,0.3)]" 
         : theme === 'dark' 
           ? "text-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-300"
-          : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+          : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900",
+      className
     )}
   >
     {active && (
@@ -980,7 +984,7 @@ const DashboardView = ({
               <button
                 onClick={() => onToggleSource('mercadolivre')}
                 className={cn(
-                  "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
+                  "hidden md:flex px-4 py-1.5 rounded-full text-xs font-bold transition-all items-center gap-2",
                   source === 'mercadolivre'
                     ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
                     : "text-zinc-500 hover:text-zinc-300"
@@ -2468,11 +2472,12 @@ const DashboardView = ({
   );
 };
 
-const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { 
+const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { 
   theme: 'light' | 'dark', 
   onSelectItem: (item: any) => void,
   onRegisterActions?: (actions: { edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void }) => void,
-  isSearchOpen?: boolean
+  isSearchOpen?: boolean,
+  readOnly?: boolean
 }) => {
   const { inventory: items, loading, setInventory, refreshData } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
@@ -2900,7 +2905,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
     { key: 'criado_em', label: 'Criado em' },
     { key: 'imagem', label: 'Imagem' },
     { key: 'ml_link', label: 'ML LINK' },
-    { key: 'actions', label: 'Ações' },
+    ...(!readOnly ? [{ key: 'actions', label: 'Ações' }] : []),
   ];
 
   const formatCurrency = (value: any) => {
@@ -2937,7 +2942,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
           <input 
             ref={searchInputRef}
             type="text" 
-            placeholder="Buscar no estoque..." 
+            placeholder={readOnly ? "Buscar no catálogo..." : "Buscar no estoque..."} 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className={cn(
@@ -3015,32 +3020,34 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
               <span className="hidden sm:inline">Sincronizar</span>
             </button>
 
-            <button 
-              onClick={() => {
-                setEditingItem(null);
-                setFormData({
-                  nome: '',
-                  categoria: '',
-                  novaCategoria: '',
-                  moto: '',
-                  outraMoto: '',
-                  valor: 0,
-                  estoque: 1,
-                  rk_id: '',
-                  imagens: []
-                });
-                setIsModalOpen(true);
-              }}
-              className={cn(
-                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-6 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-md",
-                theme === 'dark'
-                  ? "bg-violet-600 border-violet-500 text-white hover:bg-violet-500 shadow-violet-500/20"
-                  : "bg-violet-600 border-violet-500 text-white hover:bg-violet-500 shadow-violet-500/30"
-              )}
-            >
-              <Plus size={16} />
-              <span>Novo Item</span>
-            </button>
+            {!readOnly && (
+              <button 
+                onClick={() => {
+                  setEditingItem(null);
+                  setFormData({
+                    nome: '',
+                    categoria: '',
+                    novaCategoria: '',
+                    moto: '',
+                    outraMoto: '',
+                    valor: 0,
+                    estoque: 1,
+                    rk_id: '',
+                    imagens: []
+                  });
+                  setIsModalOpen(true);
+                }}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-6 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-md",
+                  theme === 'dark'
+                    ? "bg-violet-600 border-violet-500 text-white hover:bg-violet-500 shadow-violet-500/20"
+                    : "bg-violet-600 border-violet-500 text-white hover:bg-violet-500 shadow-violet-500/30"
+                )}
+              >
+                <Plus size={16} />
+                <span>Novo Item</span>
+              </button>
+            )}
 
             {(searchTerm || selectedCategory !== 'Todas' || selectedMoto !== 'Todas') && (
               <button 
@@ -3255,7 +3262,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                       <td key={`${item.id}-${col.key}`} className={cn(
                         "px-3 py-2 text-xs transition-colors",
                         theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
-                      )} onDoubleClick={() => handleInventoryInlineEdit(item.id, col.key)}>
+                      )} onDoubleClick={() => !readOnly && handleInventoryInlineEdit(item.id, col.key)}>
                         {editingCell?.itemId === item.id && editingCell?.field === col.key ? (
                           <input 
                             defaultValue={item[col.key]}
@@ -3387,35 +3394,37 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }:
                 </div>
 
                 {/* Actions Menu */}
-                <div className="absolute top-3 right-3 z-10 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEditModal(item);
-                    }}
-                    className={cn(
-                      "p-2 rounded-xl backdrop-blur-md transition-all shadow-lg",
-                      theme === 'dark' ? "bg-zinc-900/90 text-violet-400 hover:bg-violet-500 hover:text-white" : "bg-white/90 text-violet-600 hover:bg-violet-600 hover:text-white"
-                    )}
-                    title="Editar item"
-                  >
-                    <Edit2 size={14} />
-                  </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setItemToDelete(item.id);
-                      setIsDeleteConfirmOpen(true);
-                    }}
-                    className={cn(
-                      "p-2 rounded-xl backdrop-blur-md transition-all shadow-lg",
-                      theme === 'dark' ? "bg-zinc-900/90 text-rose-400 hover:bg-rose-500 hover:text-white" : "bg-white/90 text-rose-600 hover:bg-rose-600 hover:text-white"
-                    )}
-                    title="Excluir item"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                {!readOnly && (
+                  <div className="absolute top-3 right-3 z-10 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEditModal(item);
+                      }}
+                      className={cn(
+                        "p-2 rounded-xl backdrop-blur-md transition-all shadow-lg",
+                        theme === 'dark' ? "bg-zinc-900/90 text-violet-400 hover:bg-violet-500 hover:text-white" : "bg-white/90 text-violet-600 hover:bg-violet-600 hover:text-white"
+                      )}
+                      title="Editar item"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setItemToDelete(item.id);
+                        setIsDeleteConfirmOpen(true);
+                      }}
+                      className={cn(
+                        "p-2 rounded-xl backdrop-blur-md transition-all shadow-lg",
+                        theme === 'dark' ? "bg-zinc-900/90 text-rose-400 hover:bg-rose-500 hover:text-white" : "bg-white/90 text-rose-600 hover:bg-rose-600 hover:text-white"
+                      )}
+                      title="Excluir item"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                )}
 
                 {/* Image Section - Hidden on Mobile for sleek list view */}
                 <div className={cn(
@@ -5353,7 +5362,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
 // MOTOS VIEW COMPONENT
 // =============================================================================
 
-const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean }) => {
+const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean, readOnly?: boolean }) => {
   const { motos: items, loading, refreshData, setMotos } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -6139,18 +6148,20 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
               <span className="hidden md:inline">Sincronizar</span>
             </button>
 
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className={cn(
-                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
-                theme === 'dark' 
-                  ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
-                  : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
-              )}
-            >
-              <Plus size={16} />
-              <span>Nova Moto</span>
-            </button>
+            {!readOnly && (
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  theme === 'dark' 
+                    ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
+                    : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
+                )}
+              >
+                <Plus size={16} />
+                <span>Nova Moto</span>
+              </button>
+            )}
 
             {(searchTerm || brandFilter !== 'Todas' || statusFilter !== 'Todos' || cilindradaFilter !== 'Todas' || anoMinFilter || valorMinFilter || valorMaxFilter) && (
               <button 
@@ -6308,7 +6319,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Lote</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Status</th>
                   <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500">Valor</th>
-                  <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500 text-right">Ações</th>
+                  {!readOnly && <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-zinc-500 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody className={cn(
@@ -6466,48 +6477,50 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                      {editingRowId === item.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button 
-                            onClick={saveInlineEdit}
-                            className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all"
-                          >
-                            <Check size={14} />
-                          </button>
-                          <button 
-                            onClick={() => { setEditingRowId(null); setInlineEditData(null); }}
-                            className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button 
-                            onClick={() => handleEditMoto(item)}
-                            className={cn(
-                              "p-2 rounded-lg transition-all",
-                              theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-700" : "text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
-                            )}
-                          >
-                            <Edit size={16} />
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setItemToDelete(item.id);
-                              setIsDeleteConfirmOpen(true);
-                            }}
-                            className={cn(
-                              "p-2 rounded-lg transition-all",
-                              theme === 'dark' ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20" : "text-zinc-400 hover:text-rose-600 hover:bg-rose-50"
-                            )}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </td>
+                    {!readOnly && (
+                      <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        {editingRowId === item.id ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={saveInlineEdit}
+                              className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-all"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button 
+                              onClick={() => { setEditingRowId(null); setInlineEditData(null); }}
+                              className="p-1.5 rounded-lg bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 transition-all"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => handleEditMoto(item)}
+                              className={cn(
+                                "p-2 rounded-lg transition-all",
+                                theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 hover:text-white hover:bg-zinc-700" : "text-zinc-400 hover:text-zinc-900 hover:bg-zinc-100"
+                              )}
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setItemToDelete(item.id);
+                                setIsDeleteConfirmOpen(true);
+                              }}
+                              className={cn(
+                                "p-2 rounded-lg transition-all",
+                                theme === 'dark' ? "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20" : "text-zinc-400 hover:text-rose-600 hover:bg-rose-50"
+                              )}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -6526,6 +6539,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
               setItemToDelete={setItemToDelete}
               setIsDeleteConfirmOpen={setIsDeleteConfirmOpen}
               getStatusColor={getStatusColor}
+              readOnly={readOnly}
             />
           ))}
         </div>
@@ -7292,7 +7306,7 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
   const itemName = item.nome || item.titulo || item.peca || item.title || 'Sem Nome';
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-0 md:p-4 bg-black/90 backdrop-blur-xl pt-safe pb-safe">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-0 md:p-4 bg-black/90 backdrop-blur-xl pt-safe pb-safe">
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -7568,7 +7582,7 @@ const getMotoColor = (colorName: string) => {
   return MOTO_COLORS[normalized] || 'transparent';
 };
 
-const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, setIsDeleteConfirmOpen, getStatusColor }: any) => {
+const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, setIsDeleteConfirmOpen, getStatusColor, readOnly = false }: any) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imgError, setImgError] = useState(false);
   const [imgLoading, setImgLoading] = useState(true);
@@ -7719,20 +7733,22 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
         </div>
 
         {/* Quick Actions - Repositioned to top right */}
-        <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
-          <button 
-            onClick={(e) => { e.stopPropagation(); handleEditMoto(item); }}
-            className="p-2.5 rounded-xl bg-white/90 backdrop-blur-sm text-zinc-900 hover:bg-violet-500 hover:text-white transition-all shadow-xl border border-zinc-200/50"
-          >
-            <Edit size={16} />
-          </button>
-          <button 
-            onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); setIsDeleteConfirmOpen(true); }}
-            className="p-2.5 rounded-xl bg-white/90 backdrop-blur-sm text-zinc-900 hover:bg-rose-500 hover:text-white transition-all shadow-xl border border-zinc-200/50"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-x-2 group-hover:translate-x-0">
+            <button 
+              onClick={(e) => { e.stopPropagation(); handleEditMoto(item); }}
+              className="p-2.5 rounded-xl bg-white/90 backdrop-blur-sm text-zinc-900 hover:bg-violet-500 hover:text-white transition-all shadow-xl border border-zinc-200/50"
+            >
+              <Edit size={16} />
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setItemToDelete(item.id); setIsDeleteConfirmOpen(true); }}
+              className="p-2.5 rounded-xl bg-white/90 backdrop-blur-sm text-zinc-900 hover:bg-rose-500 hover:text-white transition-all shadow-xl border border-zinc-200/50"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -7804,7 +7820,10 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete'>('dashboard');
+  const userRole = localStorage.getItem('user_role') || 'client';
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients'>(
+    userRole === 'admin' ? 'dashboard' : 'estoque'
+  );
   const contentRef = useRef<HTMLDivElement>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
   const [showPaymentFilter, setShowPaymentFilter] = useState(false);
@@ -7834,6 +7853,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [mlPeriod, setMlPeriod] = useState('30d');
   const [mlCustomDate, setMlCustomDate] = useState({ start: '', end: '' });
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -8061,27 +8081,41 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           </div>
 
           <nav className="flex-1 space-y-2">
-            <SidebarItem 
-              icon={LayoutDashboard} 
-              label={isSidebarOpen ? "Dashboard" : ""} 
-              active={activeTab === 'dashboard'} 
-              onClick={() => setActiveTab('dashboard')} 
-              theme={theme}
-            />
+            {userRole === 'admin' && (
+              <SidebarItem 
+                icon={LayoutDashboard} 
+                label={isSidebarOpen ? "Dashboard" : ""} 
+                active={activeTab === 'dashboard'} 
+                onClick={() => setActiveTab('dashboard')} 
+                theme={theme}
+              />
+            )}
             <SidebarItem 
               icon={Package} 
-              label={isSidebarOpen ? "Estoque" : ""} 
+              label={isSidebarOpen ? (userRole === 'admin' ? "Estoque" : "Catálogo") : ""} 
               active={activeTab === 'estoque'} 
               onClick={() => setActiveTab('estoque')} 
               theme={theme}
             />
-            <SidebarItem 
-              icon={ShoppingCart} 
-              label={isSidebarOpen ? "Vendas" : ""} 
-              active={activeTab === 'vendas'} 
-              onClick={() => setActiveTab('vendas')} 
-              theme={theme}
-            />
+            {userRole === 'admin' && (
+              <>
+                <SidebarItem 
+                  icon={ShoppingCart} 
+                  label={isSidebarOpen ? "Vendas" : ""} 
+                  active={activeTab === 'vendas'} 
+                  onClick={() => setActiveTab('vendas')} 
+                  theme={theme}
+                />
+                <SidebarItem 
+                  icon={TrendingUp} 
+                  label={isSidebarOpen ? "Mercado Livre" : ""} 
+                  active={activeTab === 'mercadolivre'} 
+                  onClick={() => setActiveTab('mercadolivre')} 
+                  theme={theme}
+                  className="hidden md:flex"
+                />
+              </>
+            )}
             <SidebarItem 
               icon={Bike} 
               label={isSidebarOpen ? "Motos" : ""} 
@@ -8089,21 +8123,32 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
               onClick={() => setActiveTab('motos')} 
               theme={theme}
             />
-            <SidebarItem 
-              icon={Truck} 
-              label={isSidebarOpen ? "Frete" : ""} 
-              active={activeTab === 'frete'} 
-              onClick={() => setActiveTab('frete')} 
-              theme={theme}
-            />
-            <SidebarItem 
-              icon={MessageSquare} 
-              label={isSidebarOpen ? "Atendimento" : ""} 
-              active={activeTab === 'atendimento'} 
-              onClick={() => setActiveTab('atendimento')} 
-              theme={theme}
-              badge={unreadCount > 0 ? unreadCount : undefined}
-            />
+            {userRole === 'admin' && (
+              <>
+                <SidebarItem 
+                  icon={Truck} 
+                  label={isSidebarOpen ? "Frete" : ""} 
+                  active={activeTab === 'frete'} 
+                  onClick={() => setActiveTab('frete')} 
+                  theme={theme}
+                />
+                <SidebarItem 
+                  icon={MessageSquare} 
+                  label={isSidebarOpen ? "Atendimento" : ""} 
+                  active={activeTab === 'atendimento'} 
+                  onClick={() => setActiveTab('atendimento')} 
+                  theme={theme}
+                  badge={unreadCount > 0 ? unreadCount : undefined}
+                />
+                <SidebarItem 
+                  icon={Users} 
+                  label={isSidebarOpen ? "Clientes" : ""} 
+                  active={activeTab === 'clients'} 
+                  onClick={() => setActiveTab('clients')} 
+                  theme={theme}
+                />
+              </>
+            )}
           </nav>
         </div>
       </aside>
@@ -8164,7 +8209,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                       </button>
                       <button
                         onClick={() => {
-                          onLogout();
+                          setIsLogoutModalOpen(true);
                           setIsProfileDropdownOpen(false);
                         }}
                         className={cn(
@@ -8276,15 +8321,26 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                   onSelectItem={setSelectedDetailItem} 
                   onRegisterActions={setInventoryActions}
                   isSearchOpen={isSearchOpen}
+                  readOnly={userRole === 'client'}
                 />
               ) : activeTab === 'vendas' ? (
                 <SalesView theme={theme} onSelectItem={setSelectedDetailItem} onRegisterActions={setSalesActions} isSearchOpen={isSearchOpen} />
               ) : activeTab === 'motos' ? (
-                <MotosView theme={theme} onSelectItem={setSelectedDetailItem} onRegisterActions={setMotosActions} isSearchOpen={isSearchOpen} />
+                <MotosView 
+                  theme={theme} 
+                  onSelectItem={setSelectedDetailItem} 
+                  onRegisterActions={setMotosActions} 
+                  isSearchOpen={isSearchOpen} 
+                  readOnly={userRole === 'client'}
+                />
+              ) : activeTab === 'mercadolivre' ? (
+                <MercadoLivre theme={theme} />
               ) : activeTab === 'atendimento' ? (
                 <Atendimento theme={theme} />
               ) : activeTab === 'frete' ? (
                 <FreteView theme={theme} />
+              ) : activeTab === 'clients' ? (
+                <Clients theme={theme} />
               ) : (
                 <div className={cn(
                   "flex flex-col items-center justify-center h-[60vh] transition-colors w-3/4 mx-auto",
@@ -8349,6 +8405,57 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
             onEdit={itemActions.edit}
             onDelete={itemActions.delete}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Logout */}
+      <AnimatePresence>
+        {isLogoutModalOpen && (
+          <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLogoutModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className={cn(
+                "relative w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl p-8 text-center",
+                theme === 'dark' ? "bg-zinc-950 border border-zinc-800" : "bg-white"
+              )}
+            >
+              <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 mx-auto mb-6">
+                <Trash2 size={40} />
+              </div>
+              <h2 className={cn("text-2xl font-black tracking-tight mb-2", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+                Sair da Conta?
+              </h2>
+              <p className="text-zinc-500 text-sm font-medium mb-8">
+                Tem certeza que deseja encerrar sua sessão atual? Você precisará entrar novamente.
+              </p>
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={() => onLogout()}
+                  className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-xl shadow-rose-500/20"
+                >
+                  Sim, Sair Agora
+                </button>
+                <button 
+                  onClick={() => setIsLogoutModalOpen(false)}
+                  className={cn(
+                    "w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all",
+                    theme === 'dark' ? "text-zinc-400 hover:bg-zinc-900" : "text-zinc-500 hover:bg-zinc-100"
+                  )}
+                >
+                  Cancelar
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>
