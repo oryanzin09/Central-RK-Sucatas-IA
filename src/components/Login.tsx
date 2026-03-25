@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { cn } from '../utils';
-import { Eye, EyeOff, Loader2, Package, Bike, Tag } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
+import { CATEGORIAS_OFICIAIS } from '../constants/lists';
 
 interface LoginProps {
   onLogin: (token: string) => void;
@@ -75,6 +76,37 @@ export const Login = ({ onLogin }: LoginProps) => {
     loginRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const Marquee = ({ items, variant = 'default', speed = 40 }: { items: string[], variant?: 'default' | 'violet', speed?: number }) => {
+    return (
+      <div className="relative w-full overflow-hidden py-1" style={{ maskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)' }}>
+        <motion.div
+          animate={{ x: ["0%", "-50%"] }}
+          transition={{ repeat: Infinity, duration: speed, ease: "linear" }}
+          className="flex gap-3 w-max pr-3"
+        >
+          {[...items, ...items].map((item, i) => (
+            <span 
+              key={i} 
+              className={cn(
+                "px-4 md:px-5 py-2 rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-wider border whitespace-nowrap transition-colors",
+                variant === 'violet' 
+                  ? "bg-violet-600/10 text-violet-400 border-violet-500/20" 
+                  : "bg-zinc-900/50 text-zinc-500 border-zinc-800/50"
+              )}
+            >
+              {item}
+            </span>
+          ))}
+        </motion.div>
+      </div>
+    );
+  };
+
+  const allBrands = Array.from(new Set([
+    'HONDA', 'YAMAHA', 'SUZUKI', 'SHINERAY', 
+    ...(stats.marcas || []).map((m: string) => m.toUpperCase())
+  ])).sort((a, b) => a.localeCompare(b));
+
   return (
     <div className="min-h-screen bg-[#09090b] font-sans relative overflow-x-hidden">
       {/* Efeito Aura de Fundo */}
@@ -124,22 +156,19 @@ export const Login = ({ onLogin }: LoginProps) => {
                 </div>
               </div>
 
-              <div>
-                <div className="text-[10px] md:text-xs font-bold text-zinc-600 uppercase tracking-[0.2em] mb-4 md:mb-6 flex items-center gap-2">
-                  Principais Marcas
+              <div className="space-y-6 md:space-y-8">
+                <div>
+                  <div className="text-[10px] md:text-xs font-bold text-zinc-600 uppercase tracking-[0.2em] mb-3 md:mb-4 flex items-center gap-2">
+                    Principais Marcas
+                  </div>
+                  <Marquee items={allBrands} variant="violet" speed={35} />
                 </div>
-                <div className="flex flex-wrap gap-2 md:gap-3">
-                  {['HONDA', 'YAMAHA', 'SUZUKI', 'SHINERAY'].map(m => (
-                    <span key={m} className="bg-violet-600/10 px-4 md:px-6 py-2 rounded-full text-[9px] md:text-[11px] font-black text-violet-400 border border-violet-500/20 uppercase tracking-wider">
-                      {m}
-                    </span>
-                  ))}
-                  
-                  {stats.marcas.filter((m: string) => !['HONDA', 'YAMAHA', 'SUZUKI', 'SHINERAY'].includes(m.toUpperCase())).slice(0, 3).map((m: string) => (
-                    <span key={m} className="bg-zinc-900/50 px-4 md:px-6 py-2 rounded-full text-[9px] md:text-[11px] font-black text-zinc-500 border border-zinc-800/50 uppercase tracking-wider">
-                      {m}
-                    </span>
-                  ))}
+
+                <div>
+                  <div className="text-[10px] md:text-xs font-bold text-zinc-600 uppercase tracking-[0.2em] mb-3 md:mb-4 flex items-center gap-2">
+                    Categorias em Destaque
+                  </div>
+                  <Marquee items={CATEGORIAS_OFICIAIS} speed={120} />
                 </div>
               </div>
             </div>
