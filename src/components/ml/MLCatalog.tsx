@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Package, ExternalLink, RefreshCw, ChevronLeft, ChevronRight, Eye, Tag, ShoppingBag, Edit2, Plus, X, Image as ImageIcon, Loader2 } from 'lucide-react';
-import { mlApiFetch } from '../../utils/api';
+import { api } from '../../utils/api';
 import { cn } from '../../utils';
 import { CustomDropdown } from '../CustomDropdown';
 import { CATEGORIAS_OFICIAIS, MOTOS_OFICIAIS } from '../../constants/lists';
@@ -34,7 +34,7 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
     setLoading(true);
     try {
       if (forceRefresh) {
-        await mlApiFetch('/api/ml/cache/clear', { method: 'POST' });
+        await api.post('/api/ml/cache/clear', {});
       }
 
       const offset = (currentPage - 1) * itemsPerPage;
@@ -47,7 +47,7 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
         url += `&moto=${encodeURIComponent(selectedMoto)}`;
       }
 
-      const result = await mlApiFetch(url);
+      const result = await api.get(url);
       if (result.success) {
         setListings(result.data);
         setTotal(result.total || 0);
@@ -62,8 +62,8 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
   const fetchNotionData = async () => {
     try {
       const [catRes, motoRes] = await Promise.all([
-        mlApiFetch('/api/notion/categories'),
-        mlApiFetch('/api/notion/motos')
+        api.get('/api/notion/categories'),
+        api.get('/api/notion/motos')
       ]);
       if (catRes.success) setCategories(catRes.data);
       if (motoRes.success) setMotos(motoRes.data);
@@ -110,10 +110,7 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
         status: editingItem.status
       };
       
-      const result = await mlApiFetch(`/api/ml/listings/${editingItem.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(updateData)
-      });
+      const result = await api.put(`/api/ml/listings/${editingItem.id}`, updateData);
       
       if (result.success) {
         setIsEditModalOpen(false);
@@ -135,16 +132,13 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
     
     setSaving(true);
     try {
-      const result = await mlApiFetch('/api/inventory', {
-        method: 'POST',
-        body: JSON.stringify({
+      const result = await api.post('/api/inventory', {
           nome: newItem.title,
           categoria: newItem.category,
           moto: newItem.moto,
           valor: newItem.price,
           estoque: newItem.stock,
           descricao: newItem.description
-        })
       });
       
       if (result.success) {

@@ -106,9 +106,16 @@ const parseJson = async (res: Response) => {
 };
 
 const fetchWithRetry = async (url: string, retries = 8) => {
+  const token = localStorage.getItem('auth_token');
+  const headers: HeadersInit = token ? {
+    'Authorization': `Bearer ${token}`
+  } : {};
+  
+  console.log(`🔍 Fetching ${url} with headers:`, headers);
+  
   for (let i = 0; i <= retries; i++) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { headers });
       
       // Se o status for 503 ou 502, é provável que o servidor esteja iniciando
       if (res.status === 503 || res.status === 502) {
@@ -117,18 +124,20 @@ const fetchWithRetry = async (url: string, retries = 8) => {
 
       // Verifica o corpo da resposta mesmo se o status for 200
       // O proxy da plataforma às vezes retorna 200 com o HTML de "Starting Server"
-      const contentType = res.headers.get('content-type');
-      if (contentType && (contentType.includes('text/html') || contentType.includes('text/plain'))) {
-        const clone = res.clone();
-        const text = await clone.text();
-        if (
-          text.includes('<title>Starting Server...</title>') || 
-          text.includes('Starting Server...') ||
-          text.trim().startsWith('<!doctype html>') ||
-          text.trim().startsWith('<!DOCTYPE html>')
-        ) {
-          throw new Error('Servidor ainda iniciando (HTML recebido)');
-        }
+      const text = await res.clone().text();
+      if (
+        text.includes('<title>Starting Server...</title>') || 
+        text.includes('Starting Server...') ||
+        text.trim().startsWith('<!doctype html>') ||
+        text.trim().startsWith('<!DOCTYPE html>')
+      ) {
+        throw new Error('Servidor ainda iniciando (HTML recebido)');
+      }
+
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token');
+        window.location.href = '/login';
+        throw new Error('Sessão expirada. Faça login novamente.');
       }
 
       if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -7141,10 +7150,33 @@ const formatRelativeTime = (dateString: string) => {
   return `há ${diffInMonths} meses`;
 };
 
+import { Login } from './components/Login';
+
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    setIsAuthenticated(false);
+  };
+
+  if (!isAuthenticated) {
+    return <Login onLogin={(token) => {
+      localStorage.setItem('auth_token', token);
+      setIsAuthenticated(true);
+    }} />;
+  }
+
   return (
     <DataProvider>
-      <AppContent />
+      <AppContent onLogout={handleLogout} />
     </DataProvider>
   );
 }
@@ -7747,7 +7779,7 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
   );
 };
 
-function AppContent() {
+function AppContent({ onLogout }: { onLogout: () => void }) {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
@@ -7942,7 +7974,7 @@ function AppContent() {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300 flex font-sans max-w-[1800px] w-full shadow-2xl shadow-black/20",
+      "min-h-screen transition-colors duration-300 flex font-sans max-w-[1800px] w-full shadow-2xl shadow-black/20 relative",
       theme === 'dark' 
         ? "bg-[radial-gradient(ellipse_at_top,_#1a1b1f,_#09090b)] text-zinc-100" 
         : "bg-zinc-50 text-zinc-900"
@@ -8047,24 +8079,32 @@ function AppContent() {
               "flex items-center gap-3 p-2 rounded-xl transition-all",
               isSidebarOpen ? "hover:bg-zinc-800/30" : "justify-center"
             )}>
-              <label className="relative cursor-pointer group shrink-0">
-                <div className={cn(
-                  "w-10 h-10 rounded-full overflow-hidden border-2 transition-all",
-                  theme === 'dark' ? "border-zinc-800 group-hover:border-violet-500" : "border-zinc-200 group-hover:border-violet-400"
-                )}>
-                  {profilePhoto ? (
-                    <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-500">
-                      <User size={20} />
-                    </div>
-                  )}
-                </div>
-                <input type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoUpload} />
-                <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                  <Camera size={12} className="text-white" />
-                </div>
-              </label>
+              <div className="relative group">
+                <label className="relative cursor-pointer group shrink-0">
+                  <div className={cn(
+                    "w-10 h-10 rounded-full overflow-hidden border-2 transition-all",
+                    theme === 'dark' ? "border-zinc-800 group-hover:border-violet-500" : "border-zinc-200 group-hover:border-violet-400"
+                  )}>
+                    {profilePhoto ? (
+                      <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-500">
+                        <User size={20} />
+                      </div>
+                    )}
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleProfilePhotoUpload} />
+                  <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Camera size={12} className="text-white" />
+                  </div>
+                </label>
+                <button 
+                  onClick={onLogout}
+                  className="absolute top-12 right-0 bg-white text-zinc-900 px-3 py-1 rounded-lg shadow-lg border border-zinc-200 text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
+                >
+                  Sair
+                </button>
+              </div>
               
               {isSidebarOpen && (
                 <div className="flex flex-col min-w-0">

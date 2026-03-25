@@ -3,7 +3,7 @@ import { Package, MessageSquare, TrendingUp, ShoppingCart, DollarSign, RefreshCw
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { mlApiFetch } from '../../utils/api';
+import { api } from '../../utils/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -18,10 +18,10 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
     setLoading(true);
     try {
       if (forceRefresh) {
-        await mlApiFetch('/api/ml/cache/clear', { method: 'POST' });
+        await api.post('/api/ml/cache/clear', {});
       }
       console.log(`🔍 Buscando dados do período: ${period}`);
-      const result = await mlApiFetch(`/api/ml/dashboard?period=${period}`);
+      const result = await api.get(`/api/ml/dashboard?period=${period}`);
       console.log('📦 Resposta da API:', result);
       
       if (result.success) {

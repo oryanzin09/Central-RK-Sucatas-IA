@@ -3,7 +3,7 @@ import { Package, MessageSquare, TrendingUp, ShoppingCart, ExternalLink } from '
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { mlApiFetch } from '../../utils/api';
+import { api } from '../../utils/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -17,7 +17,7 @@ export const MobileDashboard = ({ theme }: { theme: string }) => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const result = await mlApiFetch(`/api/ml/dashboard?period=30d`);
+        const result = await api.get(`/api/ml/dashboard?period=30d`);
         if (result.success) {
           setData(result.data);
         }

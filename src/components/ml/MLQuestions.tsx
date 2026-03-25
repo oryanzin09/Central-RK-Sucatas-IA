@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MessageSquare, RefreshCw, Send, CheckCircle, Clock, ExternalLink, Package, User, ChevronRight, AlertCircle } from 'lucide-react';
-import { mlApiFetch } from '../../utils/api';
+import { api } from '../../utils/api';
 import { cn } from '../../utils';
 
 export const MLQuestions = ({ theme }: { theme: string }) => {
@@ -14,7 +14,7 @@ export const MLQuestions = ({ theme }: { theme: string }) => {
   const fetchQuestions = async () => {
     setLoading(true);
     try {
-      const result = await mlApiFetch(`/api/ml/questions?status=${status}&limit=50`);
+      const result = await api.get(`/api/ml/questions?status=${status}&limit=50`);
       if (result.success) {
         setQuestions(result.data);
       }
@@ -34,10 +34,7 @@ export const MLQuestions = ({ theme }: { theme: string }) => {
     
     setIsSubmitting(true);
     try {
-      const result = await mlApiFetch(`/api/ml/questions/${questionId}/answer`, {
-        method: 'POST',
-        body: JSON.stringify({ answer: answerText })
-      });
+      const result = await api.post(`/api/ml/questions/${questionId}/answer`, { answer: answerText });
       
       if (result.success) {
         setQuestions(prev => prev.filter(q => q.id !== questionId));

@@ -1,35 +1,44 @@
-const VITE_API_URL = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
-export async function mlApiFetch(endpoint: string, options: RequestInit = {}) {
-  // Garantir que não haja barras duplas se VITE_API_URL terminar com barra e endpoint começar com barra
-  const baseUrl = VITE_API_URL.endsWith('/') ? VITE_API_URL.slice(0, -1) : VITE_API_URL;
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const url = `${baseUrl}${cleanEndpoint}`;
-
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-      }
-    });
-    
-    const contentType = response.headers.get('content-type');
-    if (!contentType || !contentType.includes('application/json')) {
-      const text = await response.text();
-      console.error(`❌ Resposta não é JSON em ${url}:`, text.substring(0, 100));
-      throw new Error(`Resposta do servidor não é JSON (recebeu ${contentType})`);
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erro ${response.status}`);
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error(`❌ Erro ao buscar ${url}:`, error);
-    throw error;
+async function apiRequest(endpoint: string, options: RequestInit = {}) {
+  const token = localStorage.getItem('auth_token');
+  
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
+  
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers
+  });
+  
+  // Se não autorizado, redirecionar para login (exceto se for a própria rota de login)
+  const isLoginRoute = endpoint.includes('/login');
+  console.log(`📡 API Response Status: ${response.status}, Endpoint: ${endpoint}, isLoginRoute: ${isLoginRoute}`);
+  
+  if (response.status === 401 && !isLoginRoute) {
+    localStorage.removeItem('auth_token');
+    window.location.href = '/login';
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
+  
+  return response.json();
 }
+
+export const api = {
+  get: (endpoint: string) => apiRequest(endpoint),
+  post: (endpoint: string, data: any) => apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  put: (endpoint: string, data: any) => apiRequest(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  delete: (endpoint: string) => apiRequest(endpoint, { method: 'DELETE' })
+};

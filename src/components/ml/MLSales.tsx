@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Package, Printer, RefreshCw, Truck, AlertCircle, Search, Clock, CheckCircle } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { mlApiFetch } from '../../utils/api';
+import { api } from '../../utils/api';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -61,8 +61,8 @@ export const MLSales = ({ theme }: { theme: string }) => {
     setLoading(true);
     try {
       const [salesRes, listingsRes] = await Promise.all([
-        mlApiFetch('/api/ml/sales'),
-        mlApiFetch('/api/ml/listings?status=active&limit=5')
+        api.get('/api/ml/sales'),
+        api.get('/api/ml/listings?status=active&limit=5')
       ]);
       if (salesRes.success) setSales(salesRes.data);
       if (listingsRes.success) setListings(listingsRes.data);

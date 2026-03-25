@@ -9,6 +9,8 @@ import { Server } from "socket.io";
 import QRCode from 'qrcode';
 import axios from 'axios';
 import multer from 'multer';
+import { autenticar } from './middleware/auth.js';
+import { generateToken } from './utils/jwt.js';
 
 dotenv.config();
 
@@ -228,6 +230,10 @@ async function startServer() {
     allowedHeaders: ['Content-Type', 'Authorization']
   }));
 
+  // Middleware para interpretar JSON no corpo das requisições
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
   // Middleware de log para API
   app.use('/api', (req, res, next) => {
     console.log(`📡 API Request: ${req.method} ${req.url}`);
@@ -239,17 +245,54 @@ async function startServer() {
     res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // ==================== MERCADO LIVRE ROUTES ====================
-
-  // Endpoint de teste
-  app.get('/api/ml/test', async (req, res) => {
-    try {
-      const result = await mlClient.testConnection();
-      res.json(result);
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+  // Rota de login
+  app.post('/api/login', (req, res) => {
+    const { password, phone } = req.body;
+    const ENV_PASSWORD = (process.env.ADMIN_PASSWORD || '').trim();
+    const DEFAULT_PASSWORD = 'rksucatasadm115935';
+    
+    // Log detalhado para debug
+    console.log(`🔑 Tentativa de login. Telefone: ${phone || 'não enviado'}, Senha recebida: "${password ? '***' : 'vazia'}" (Length: ${password?.length || 0})`);
+    
+    // Aceita se a senha bater com o ENV OU com a senha padrão do código
+    const isPasswordCorrect = 
+      (password && String(password).trim() === ENV_PASSWORD) || 
+      (password && String(password).trim() === DEFAULT_PASSWORD);
+    
+    if (isPasswordCorrect) {
+      console.log(`✅ Login bem-sucedido para o número: ${phone || 'desconhecido'}`);
+      const token = generateToken({ role: 'admin', phone });
+      res.json({ success: true, token });
+    } else {
+      console.log('❌ Falha no login: senha incorreta');
+      res.status(401).json({ success: false, error: 'Senha incorreta' });
     }
   });
+
+  // Rota pública para estatísticas (usada na tela de login)
+  app.get('/api/public-stats', async (req, res) => {
+    try {
+      // Reutiliza a lógica existente para buscar dados do Notion
+      const estoque = await fetchAllFromNotion(DATABASE_ID);
+      const motos = await fetchAllFromNotion(MOTOS_DATABASE_ID);
+      
+      // Calcula estatísticas simples
+      const totalPecas = estoque.length;
+      const totalMotos = motos.length;
+      const marcas = [...new Set(motos.map((m: any) => m.properties?.Marca?.select?.name).filter(Boolean))];
+      
+      res.json({
+        totalPecas,
+        totalMotos,
+        marcas: marcas.slice(0, 3) // Top 3 marcas
+      });
+    } catch (error) {
+      res.status(500).json({ error: 'Erro ao buscar estatísticas' });
+    }
+  });
+
+  // Middleware de autenticação global para todas as rotas de API subsequentes
+  app.use('/api', autenticar);
 
   // Dashboard - Métricas principais
   app.get('/api/ml/dashboard', async (req, res) => {
@@ -755,7 +798,7 @@ async function startServer() {
           seller: userId, 
           'order.date_created.from': trintaDiasAtras.toISOString(),
           sort: 'date_desc', 
-          limit: 50 
+          limit: 100 
         }
       });
 
@@ -766,7 +809,7 @@ async function startServer() {
           'order.status': 'paid',
           tags: 'not_delivered',
           sort: 'date_desc',
-          limit: 50
+          limit: 100
         }
       }).catch(err => {
         console.error("⚠️ Erro ao buscar ordens pendentes:", err.message);
@@ -779,7 +822,7 @@ async function startServer() {
           seller: userId,
           'shipping.status': 'ready_to_ship',
           sort: 'date_desc',
-          limit: 50
+          limit: 100
         }
       }).catch(err => {
         console.error("⚠️ Erro ao buscar ordens prontas para envio:", err.message);
@@ -808,24 +851,33 @@ async function startServer() {
       const shipmentsMap = new Map();
       if (shippingIds.length > 0) {
         try {
-          // Fetch shipments individually in parallel to ensure x-format-new header works correctly
-          const shipmentPromises = shippingIds.map((id: any) => 
-            mlClient.request(`/shipments/${id}`, {
-              headers: { 'x-format-new': 'true' }
-            }).catch(err => {
-              console.error(`⚠️ Erro ao buscar envio ${id}:`, err.message);
-              return null;
-            })
-          );
+          console.log(`🚚 Buscando detalhes de ${shippingIds.length} envios com x-format-new em chunks...`);
           
-          const shipments = await Promise.all(shipmentPromises);
-          shipments.forEach((s: any) => {
-            if (s && s.id) {
-              shipmentsMap.set(s.id, s);
+          const chunkSize = 10;
+          for (let i = 0; i < shippingIds.length; i += chunkSize) {
+            const chunk = shippingIds.slice(i, i + chunkSize);
+            const shipmentPromises = chunk.map((id: any) => 
+              mlClient.request(`/shipments/${id}`, {
+                headers: { 'x-format-new': 'true' }
+              }).catch(err => {
+                console.error(`⚠️ Erro ao buscar envio ${id}:`, err.message);
+                return null;
+              })
+            );
+            
+            const shipments = await Promise.all(shipmentPromises);
+            shipments.forEach((s: any) => {
+              if (s && s.id) {
+                shipmentsMap.set(s.id, s);
+              }
+            });
+            
+            if (shippingIds.length > chunkSize) {
+              await new Promise(resolve => setTimeout(resolve, 100));
             }
-          });
+          }
         } catch (err) {
-          console.error('⚠️ Erro ao buscar detalhes de envios (multiget):', err);
+          console.error('⚠️ Erro ao buscar detalhes de envios:', err);
         }
       }
 
@@ -842,8 +894,9 @@ async function startServer() {
         const shippingStatus = shipmentDetails?.status || order.shipping?.status;
         const shippingSubstatus = shipmentDetails?.substatus || order.shipping?.substatus;
         
-        if (order.id === 2000015614957750 || order.id === '2000015614957750') {
-          import('fs').then(fs => fs.writeFileSync('raw-order.json', JSON.stringify({ order, shipmentDetails }, null, 2)));
+        // Log para debug da venda específica se necessário
+        if (order.id === 2000015614957750 || String(order.id) === '2000015614957750') {
+          console.log(`🎯 Venda Carcaça CG 150 encontrada! Status: ${order.status}, Shipping Status: ${shippingStatus}, Substatus: ${shippingSubstatus}`);
         }
         
         // Mapeamento preciso para o frontend
