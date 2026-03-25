@@ -8160,8 +8160,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           "min-h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 transition-colors pt-safe",
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
         )}>
-          <div className="flex items-center gap-2 md:gap-4">
-            <div className="relative" ref={dropdownRef}>
+          <div className="flex items-center gap-2 md:gap-4 relative z-50">
+            <div className="relative z-50" ref={dropdownRef}>
               <button 
                 onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
                 className={cn(

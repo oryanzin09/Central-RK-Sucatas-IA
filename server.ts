@@ -27,7 +27,7 @@ try {
 const NOTION_TOKEN = process.env.NOTION_TOKEN || "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";
 const DATABASE_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ESTOQUE || "2f4dfa25a52880c1b315f7e8953f5889";
 const MOTOS_DATABASE_ID = process.env.NOTION_DB_MOTOS || "317dfa25a528805f9663ff0e6ebf0318";
-const CLIENTS_DATABASE_ID = "32edfa25a52880dfb4c6e96c41fcf822";
+const CLIENTS_DATABASE_ID = process.env.NOTION_DB_CLIENTS || "32edfa25a52880dfb4c6e96c41fcf822";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
 
@@ -66,7 +66,13 @@ async function getCachedDbStructure(databaseId: string) {
     }
   });
 
-  if (!response.ok) throw new Error(`Não foi possível carregar a estrutura do banco: ${response.statusText}`);
+  if (!response.ok) {
+    if (response.status === 404) {
+      console.warn(`⚠️ Estrutura do banco não encontrada (ID: ${databaseId}). Retornando estrutura vazia.`);
+      return { properties: {} };
+    }
+    throw new Error(`Não foi possível carregar a estrutura do banco: ${response.statusText}`);
+  }
   const data = await response.json();
   dbStructureCache[databaseId] = { data, timestamp: Date.now() };
   return data;
@@ -151,6 +157,12 @@ async function fetchAllFromNotion(databaseId: string) {
         if (!response.ok) {
           const error = await response.text();
           console.error(`❌ Erro Notion ${response.status}:`, error);
+          
+          if (response.status === 404) {
+            console.warn(`⚠️ Banco de dados não encontrado (ID: ${databaseId}). Verifique se ele foi compartilhado com a integração.`);
+            return []; // Retorna array vazio para não quebrar o app
+          }
+          
           throw new Error(`Notion API error (${response.status}): ${error.substring(0, 200)}`);
         }
 
@@ -267,7 +279,7 @@ async function startServer() {
   };
 
   // Rota de registro
-  app.post('/api/register', (req, res) => {
+  app.post('/api/register', async (req, res) => {
     const { phone, password, name } = req.body;
     
     if (!phone || !password) {
@@ -295,7 +307,7 @@ async function startServer() {
     
     // Também cadastrar no Notion como cliente
     try {
-      fetch('https://api.notion.com/v1/pages', {
+      const response = await fetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${NOTION_TOKEN}`,
@@ -311,9 +323,17 @@ async function startServer() {
             'Senha': { rich_text: [{ text: { content: password } }] }
           }
         })
-      }).then(() => invalidateCache(CLIENTS_DATABASE_ID));
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Erro retornado pelo Notion ao cadastrar cliente:', errorData);
+      } else {
+        invalidateCache(CLIENTS_DATABASE_ID);
+        console.log(`✅ Cliente cadastrado no Notion com sucesso: ${phone}`);
+      }
     } catch (e) {
-      console.error('Erro ao cadastrar cliente no Notion durante registro:', e);
+      console.error('Erro de rede ao cadastrar cliente no Notion durante registro:', e);
     }
     
     console.log(`👤 Novo usuário registrado: ${phone}`);
@@ -322,7 +342,7 @@ async function startServer() {
   });
 
   // Rota de login atualizada
-  app.post('/api/login', (req, res) => {
+  app.post('/api/login', async (req, res) => {
     const { password, phone } = req.body;
     const ADMIN_PHONE = '83982039490';
     const DEFAULT_ADMIN_PASSWORD = 'rksucatasadm115935';
@@ -341,19 +361,71 @@ async function startServer() {
       return res.json({ success: true, token, role: 'admin' });
     }
 
-    // 2. Verificar se é um usuário registrado (cliente)
+    // 2. Verificar se é um usuário registrado (cliente) em users.json
     const users = getUsers();
-    const registeredUser = users.find((u: any) => u.phone === phone && u.password === password);
+    let registeredUser = users.find((u: any) => u.phone === phone);
+    
+    // 3. Se não encontrou no users.json, busca no Notion
+    if (!registeredUser) {
+      try {
+        console.log(`🔍 Buscando usuário ${phone} no Notion...`);
+        const response = await fetch(`https://api.notion.com/v1/databases/${CLIENTS_DATABASE_ID}/query`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({
+            filter: {
+              property: 'Numero',
+              rich_text: {
+                equals: phone
+              }
+            }
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.results && data.results.length > 0) {
+            const page = data.results[0];
+            const p = page.properties;
+            const notionPassword = p.Senha?.rich_text?.[0]?.plain_text || '';
+            const notionName = p.Nome?.title?.[0]?.plain_text || '';
+            
+            if (notionPassword) {
+              registeredUser = {
+                phone,
+                password: notionPassword,
+                name: notionName,
+                role: 'client'
+              };
+              // Salva no users.json para próximos logins serem mais rápidos
+              saveUser(registeredUser);
+              console.log(`✅ Usuário ${phone} encontrado no Notion e sincronizado.`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao buscar usuário no Notion durante login:', error);
+      }
+    }
     
     if (registeredUser) {
-      console.log(`✅ Login de Cliente bem-sucedido: ${phone}`);
-      const token = generateToken({ role: registeredUser.role || 'client', phone });
-      return res.json({ success: true, token, role: registeredUser.role || 'client' });
+      if (registeredUser.password === password) {
+        console.log(`✅ Login de Cliente bem-sucedido: ${phone}`);
+        const token = generateToken({ role: registeredUser.role || 'client', phone });
+        return res.json({ success: true, token, role: registeredUser.role || 'client' });
+      } else {
+        console.log(`❌ Falha no login: senha incorreta para ${phone}`);
+        return res.status(401).json({ success: false, error: 'Senha incorreta' });
+      }
     }
 
-    // 3. Falha no login
-    console.log('❌ Falha no login: credenciais incorretas');
-    res.status(401).json({ success: false, error: 'Telefone ou senha incorretos' });
+    // 4. Falha no login (conta não encontrada)
+    console.log(`❌ Falha no login: conta não encontrada para ${phone}`);
+    res.status(401).json({ success: false, error: 'Conta não encontrada. Por favor, registre-se.' });
   });
 
   // Rota pública para estatísticas (usada na tela de login)
@@ -1545,7 +1617,11 @@ async function startServer() {
           }
         })
       });
-      if (!response.ok) throw new Error('Erro ao criar cliente no Notion');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Erro ao criar cliente no Notion:', errorText);
+        throw new Error('Erro ao criar cliente no Notion');
+      }
       invalidateCache(CLIENTS_DATABASE_ID);
       res.json({ success: true });
     } catch (error: any) {
