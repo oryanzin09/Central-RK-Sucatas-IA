@@ -27,7 +27,7 @@ try {
 const NOTION_TOKEN = process.env.NOTION_TOKEN || "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";
 const DATABASE_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ESTOQUE || "2f4dfa25a52880c1b315f7e8953f5889";
 const MOTOS_DATABASE_ID = process.env.NOTION_DB_MOTOS || "317dfa25a528805f9663ff0e6ebf0318";
-const CLIENTS_DATABASE_ID = process.env.NOTION_DB_CLIENTS || "32edfa25a52880dfb4c6e96c41fcf822";
+const CLIENTS_DATABASE_ID = process.env.DATABASE_CLIENTES || process.env.NOTION_DB_CLIENTS || "32edfa25a52880dfb4c6e96c41fcf822";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
 
@@ -280,10 +280,10 @@ async function startServer() {
 
   // Rota de registro
   app.post('/api/register', async (req, res) => {
-    const { phone, password, name } = req.body;
+    const { phone, password, name, cpf } = req.body;
     
-    if (!phone || !password) {
-      return res.status(400).json({ success: false, error: 'Dados incompletos' });
+    if (!phone || !password || !name) {
+      return res.status(400).json({ success: false, error: 'Nome, telefone e senha são obrigatórios' });
     }
 
     const users = getUsers();
@@ -302,7 +302,7 @@ async function startServer() {
       });
     }
 
-    const newUser = { phone, password, name, role: 'client', createdAt: new Date().toISOString() };
+    const newUser = { phone, password, name, cpf: cpf || '', role: 'client', createdAt: new Date().toISOString() };
     saveUser(newUser);
     
     // Também cadastrar no Notion como cliente (assíncrono para não travar o registro, mas com log robusto)
@@ -322,6 +322,8 @@ async function startServer() {
               Nome: { title: [{ text: { content: name || `Cliente ${phone}` } }] },
               'Número': { phone_number: phone },
               Senha: { rich_text: [{ text: { content: password } }] },
+              CPF: { number: cpf ? Number(cpf.replace(/\D/g, '')) : 0 },
+              'Itens comprados': { rich_text: [{ text: { content: '' } }] },
               Tipo: { select: { name: 'CLIENTE' } }
             }
           })
@@ -341,7 +343,7 @@ async function startServer() {
     
     console.log(`👤 Novo usuário registrado localmente: ${phone}`);
     const token = generateToken({ role: 'client', phone });
-    res.json({ success: true, token, role: 'client' });
+    res.json({ success: true, token, role: 'client', name });
   });
 
   // Rota de login atualizada
@@ -361,7 +363,7 @@ async function startServer() {
     if (isMasterAdmin) {
       console.log(`✅ Login de Administrador Mestre bem-sucedido: ${phone}`);
       const token = generateToken({ role: 'admin', phone });
-      return res.json({ success: true, token, role: 'admin' });
+      return res.json({ success: true, token, role: 'admin', name: 'Administrador' });
     }
 
     // 2. Verificar se é um usuário registrado (cliente) em users.json
@@ -396,13 +398,16 @@ async function startServer() {
             const p = page.properties;
             const notionPassword = p.Senha?.rich_text?.[0]?.plain_text || '';
             const notionName = p.Nome?.title?.[0]?.plain_text || '';
+            const notionCpf = p.CPF?.number || 0;
+            const notionRole = p.Tipo?.select?.name === 'ADM' ? 'admin' : 'client';
             
             if (notionPassword) {
               registeredUser = {
                 phone,
                 password: notionPassword,
                 name: notionName,
-                role: 'client'
+                cpf: notionCpf,
+                role: notionRole
               };
               // Salva no users.json para próximos logins serem mais rápidos
               saveUser(registeredUser);
@@ -419,7 +424,12 @@ async function startServer() {
       if (registeredUser.password === password) {
         console.log(`✅ Login de Cliente bem-sucedido: ${phone}`);
         const token = generateToken({ role: registeredUser.role || 'client', phone });
-        return res.json({ success: true, token, role: registeredUser.role || 'client' });
+        return res.json({ 
+          success: true, 
+          token, 
+          role: registeredUser.role || 'client',
+          name: registeredUser.name || `Cliente ${phone}`
+        });
       } else {
         console.log(`❌ Falha no login: senha incorreta para ${phone}`);
         return res.status(401).json({ success: false, error: 'Senha incorreta' });
@@ -1615,17 +1625,19 @@ async function startServer() {
   app.get('/api/clients', autenticar, async (req, res) => {
     try {
       const results = await fetchAllFromNotion(CLIENTS_DATABASE_ID);
+      if (results.length > 0) {
+        console.log('📄 Exemplo de propriedades do cliente no Notion:', JSON.stringify(results[0].properties, null, 2));
+      }
       const clients = results.map((page: any) => {
         const p = page.properties;
         return {
           id: page.id,
           nome: p.Nome?.title?.[0]?.plain_text || '',
-          endereco: p.Endereco?.rich_text?.[0]?.plain_text || '',
-          numero: p.Numero?.rich_text?.[0]?.plain_text || '',
-          cpf: p.CPF?.rich_text?.[0]?.plain_text || '',
+          numero: p['Número']?.phone_number || '',
+          cpf: p.CPF?.number?.toString() || '',
           senha: p.Senha?.rich_text?.[0]?.plain_text || '',
-          itensComprados: p['Itens Comprados']?.rich_text?.[0]?.plain_text || '',
-          userId: p['ID de Usuario']?.rich_text?.[0]?.plain_text || ''
+          itensComprados: p['Itens comprados']?.rich_text?.[0]?.plain_text || '',
+          userId: p.ID?.unique_id ? (p.ID.unique_id.prefix ? `${p.ID.unique_id.prefix}-${p.ID.unique_id.number}` : p.ID.unique_id.number.toString()) : ''
         };
       });
       res.json({ success: true, data: clients });
@@ -1637,7 +1649,7 @@ async function startServer() {
 
   app.post('/api/clients', autenticar, async (req, res) => {
     try {
-      const { nome, endereco, numero, cpf, itensComprados, userId, senha } = req.body;
+      const { nome, numero, cpf, itensComprados, senha } = req.body;
       const response = await fetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: {
@@ -1649,19 +1661,25 @@ async function startServer() {
           parent: { database_id: CLIENTS_DATABASE_ID },
           properties: {
             Nome: { title: [{ text: { content: nome || '' } }] },
-            Endereco: { rich_text: [{ text: { content: endereco || '' } }] },
-            Numero: { rich_text: [{ text: { content: numero || '' } }] },
-            CPF: { rich_text: [{ text: { content: cpf || '' } }] },
+            'Número': { phone_number: numero || '' },
+            'CPF': { number: cpf ? Number(cpf.replace(/\D/g, '')) : 0 },
             Senha: { rich_text: [{ text: { content: senha || '' } }] },
-            'Itens Comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
-            'ID de Usuario': { rich_text: [{ text: { content: userId || '' } }] }
+            'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
+            Tipo: { select: { name: 'CLIENTE' } }
           }
         })
       });
       if (!response.ok) {
         const errorText = await response.text();
+        let errorMessage = 'Erro ao criar cliente no Notion';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = `Erro Notion: ${errorJson.message || errorText}`;
+        } catch (e) {
+          errorMessage = `Erro Notion: ${errorText}`;
+        }
         console.error('Erro ao criar cliente no Notion:', errorText);
-        throw new Error('Erro ao criar cliente no Notion');
+        throw new Error(errorMessage);
       }
       invalidateCache(CLIENTS_DATABASE_ID);
       res.json({ success: true });
@@ -1673,7 +1691,7 @@ async function startServer() {
   app.put('/api/clients/:id', autenticar, async (req, res) => {
     try {
       const { id } = req.params;
-      const { nome, endereco, numero, cpf, itensComprados, userId, senha } = req.body;
+      const { nome, numero, cpf, itensComprados, senha } = req.body;
       const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
         method: 'PATCH',
         headers: {
@@ -1684,12 +1702,10 @@ async function startServer() {
         body: JSON.stringify({
           properties: {
             Nome: { title: [{ text: { content: nome || '' } }] },
-            Endereco: { rich_text: [{ text: { content: endereco || '' } }] },
-            Numero: { rich_text: [{ text: { content: numero || '' } }] },
-            CPF: { rich_text: [{ text: { content: cpf || '' } }] },
+            'Número': { phone_number: numero || '' },
+            'CPF': { number: Number(cpf.replace(/\D/g, '')) || 0 },
             Senha: { rich_text: [{ text: { content: senha || '' } }] },
-            'Itens Comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
-            'ID de Usuario': { rich_text: [{ text: { content: userId || '' } }] }
+            'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] }
           }
         })
       });

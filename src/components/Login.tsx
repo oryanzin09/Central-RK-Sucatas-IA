@@ -47,7 +47,7 @@ export const Login = ({ onLogin }: LoginProps) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Inicializa com dados do localStorage para evitar o "0" inicial
+  // Inicializa com dados do localStorage para evitar o \"0\" inicial
   const [stats, setStats] = useState(() => {
     const saved = localStorage.getItem('rk_public_stats');
     return saved ? JSON.parse(saved) : { totalPecas: 0, totalMotos: 0, marcas: [] };
@@ -111,6 +111,7 @@ export const Login = ({ onLogin }: LoginProps) => {
         if (result.success) {
           localStorage.setItem('auth_token', result.token);
           localStorage.setItem('user_role', result.role || 'client');
+          localStorage.setItem('user_name', result.name || name || 'Cliente');
           onLogin(result.token);
         } else {
           setError(result.error || 'Erro ao criar conta');
@@ -124,6 +125,7 @@ export const Login = ({ onLogin }: LoginProps) => {
         if (result.success) {
           localStorage.setItem('auth_token', result.token);
           localStorage.setItem('user_role', result.role || 'client');
+          localStorage.setItem('user_name', result.name || 'Cliente');
           onLogin(result.token);
         } else {
           setError(result.error || 'Telefone ou senha incorretos');

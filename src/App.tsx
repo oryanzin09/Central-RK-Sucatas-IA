@@ -62,7 +62,8 @@ import {
   Hash,
   TrendingDown,
   Copy,
-  ArrowDownAZ
+  ArrowDownAZ,
+  LogOut
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -8030,6 +8031,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     }
   };
 
+  const handleRemovePhoto = () => {
+    setProfilePhoto(null);
+    localStorage.removeItem('profilePhoto');
+    setIsProfileDropdownOpen(false);
+  };
+
   const fetchAllMlListings = async () => {
     setIsMlListingsLoading(true);
     try {
@@ -8223,7 +8230,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                   >
                     <div className="p-3 border-b border-zinc-800/50 mb-1">
                       <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Conta</p>
-                      <p className="text-sm font-bold truncate">Oryan Silva</p>
+                      <p className="text-sm font-bold truncate">{localStorage.getItem('user_name') || 'Usuário'}</p>
                     </div>
                     <div className="p-2 space-y-1">
                       <button
@@ -8237,8 +8244,20 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                         )}
                       >
                         <Camera size={18} />
-                        Editar foto
+                        {profilePhoto ? 'Trocar foto' : 'Escolher foto'}
                       </button>
+                      {profilePhoto && (
+                        <button
+                          onClick={handleRemovePhoto}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
+                            theme === 'dark' ? "hover:bg-rose-500/10 text-rose-400" : "hover:bg-rose-50 text-rose-600"
+                          )}
+                        >
+                          <Trash2 size={18} />
+                          Remover foto
+                        </button>
+                      )}
                       <button
                         onClick={() => {
                           setIsLogoutModalOpen(true);
@@ -8249,7 +8268,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                           theme === 'dark' ? "hover:bg-rose-500/10" : "hover:bg-rose-50"
                         )}
                       >
-                        <Trash2 size={18} />
+                        <LogOut size={18} />
                         Sair da conta
                       </button>
                     </div>

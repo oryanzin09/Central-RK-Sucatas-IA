@@ -13,7 +13,9 @@ import {
   CreditCard,
   ShoppingBag,
   User as UserIcon,
-  Lock
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../utils';
@@ -22,9 +24,7 @@ import { DataContext } from '../App';
 interface Client {
   id: string;
   nome: string;
-  endereco: string;
   numero: string;
-  cpf: string;
   senha?: string;
   itensComprados: string;
   userId: string;
@@ -36,11 +36,10 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     nome: '',
-    endereco: '',
     numero: '',
-    cpf: '',
     senha: '',
     itensComprados: '',
     userId: ''
@@ -67,13 +66,12 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
   }, []);
 
   const handleOpenModal = (client?: Client) => {
+    setShowPassword(false);
     if (client) {
       setEditingClient(client);
       setFormData({
         nome: client.nome || '',
-        endereco: client.endereco || '',
         numero: client.numero || '',
-        cpf: client.cpf || '',
         senha: client.senha || '',
         itensComprados: client.itensComprados || '',
         userId: client.userId || ''
@@ -82,9 +80,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
       setEditingClient(null);
       setFormData({
         nome: '',
-        endereco: '',
         numero: '',
-        cpf: '',
         senha: '',
         itensComprados: '',
         userId: ''
@@ -93,8 +89,18 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
     setIsModalOpen(true);
   };
 
+  const formatPhone = (val: string) => {
+    const cleaned = val.replace(/\D/g, '').slice(0, 11);
+    const match = cleaned.match(/^(\d{2})(\d{5})(\d{4})$/) || cleaned.match(/^(\d{2})(\d{4,5})(\d{0,4})$/);
+    if (match) {
+      return `(${match[1]}) ${match[2]}${match[3] ? '-' + match[3] : ''}`;
+    }
+    return cleaned;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Submitting client form:', formData);
     const token = localStorage.getItem('auth_token');
     const method = editingClient ? 'PUT' : 'POST';
     const url = editingClient ? `/api/clients/${editingClient.id}` : '/api/clients';
@@ -112,9 +118,12 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
       if (data.success) {
         setIsModalOpen(false);
         fetchClients();
+      } else {
+        alert('Erro ao salvar cliente: ' + (data.error || 'Erro desconhecido'));
       }
     } catch (error) {
       console.error('Erro ao salvar cliente:', error);
+      alert('Erro de conexão ao salvar cliente');
     }
   };
 
@@ -135,7 +144,6 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
 
   const filteredClients = clients.filter(c => 
     c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.cpf.includes(searchTerm) ||
     c.userId.includes(searchTerm)
   );
 
@@ -180,8 +188,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                 theme === 'dark' ? "text-zinc-500 bg-zinc-950/50" : "text-zinc-400 bg-zinc-50"
               )}>
                 <th className="px-6 py-4">Cliente</th>
-                <th className="px-6 py-4">Contato / CPF</th>
-                <th className="px-6 py-4">Endereço</th>
+                <th className="px-6 py-4">Contato</th>
                 <th className="px-6 py-4">Itens</th>
                 <th className="px-6 py-4 text-right">Ações</th>
               </tr>
@@ -220,14 +227,6 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                       <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
                         <Phone size={12} /> {client.numero}
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
-                        <CreditCard size={12} /> {client.cpf}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium max-w-[200px] truncate">
-                      <MapPin size={12} className="shrink-0" /> {client.endereco}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -298,40 +297,15 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
-                        <UserIcon size={10} /> Nome Completo
-                      </label>
-                      <input 
-                        required
-                        placeholder="Ex: João Silva"
-                        value={formData.nome}
-                        onChange={e => setFormData({...formData, nome: e.target.value})}
-                        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
-                        <CreditCard size={10} /> CPF
-                      </label>
-                      <input 
-                        placeholder="000.000.000-00"
-                        value={formData.cpf}
-                        onChange={e => setFormData({...formData, cpf: e.target.value})}
-                        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700"
-                      />
-                    </div>
-                  </div>
-
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
-                      <MapPin size={10} /> Endereço Completo
+                      <UserIcon size={10} /> Nome Completo
                     </label>
                     <input 
-                      placeholder="Rua, Número, Bairro, Cidade"
-                      value={formData.endereco}
-                      onChange={e => setFormData({...formData, endereco: e.target.value})}
+                      required
+                      placeholder="Ex: João Silva"
+                      value={formData.nome}
+                      onChange={e => setFormData({...formData, nome: e.target.value})}
                       className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700"
                     />
                   </div>
@@ -344,7 +318,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                       <input 
                         placeholder="(00) 00000-0000"
                         value={formData.numero}
-                        onChange={e => setFormData({...formData, numero: e.target.value})}
+                        onChange={e => setFormData({...formData, numero: formatPhone(e.target.value)})}
                         className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700"
                       />
                     </div>
@@ -352,13 +326,22 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
                         <Lock size={10} /> Senha de Acesso
                       </label>
-                      <input 
-                        type="password"
-                        placeholder="********"
-                        value={formData.senha}
-                        onChange={e => setFormData({...formData, senha: e.target.value})}
-                        className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700"
-                      />
+                      <div className="relative">
+                        <input 
+                          type={showPassword ? "text" : "password"}
+                          placeholder="********"
+                          value={formData.senha}
+                          onChange={e => setFormData({...formData, senha: e.target.value})}
+                          className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700 pr-12"
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
