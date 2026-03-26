@@ -69,6 +69,7 @@ class MLClient {
           'Authorization': `Bearer ${this.accessToken}`,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'x-format-new': 'true', // Header obrigatório para obter substatus corretos
           ...(options.headers || {})
         }
       });
@@ -288,7 +289,7 @@ class MLClient {
           seller: this.userId,
           'order.date_created.from': `${dateFrom}T00:00:00.000-00:00`,
           'order.date_created.to': `${dateTo}T23:59:59.000-00:00`,
-          limit: 50 
+          limit: 15 
         }
       });
       

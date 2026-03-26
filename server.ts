@@ -35,7 +35,7 @@ const serverStartTime = new Date().toISOString();
 const dbStructureCache: Record<string, { data: any, timestamp: number }> = {};
 const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 5; // 5 minutos
-const DATA_CACHE_TTL = 1000 * 5; // 5 segundos para dados (RK Sucatas: sincronização quase instantânea)
+const DATA_CACHE_TTL = 1000 * 60 * 5; // 5 minutos para dados (RK Sucatas: cache otimizado)
 const fetchLocks: Record<string, Promise<any> | null> = {};
 
 // Cache para detalhes de itens do Mercado Livre para evitar re-fetch constante
@@ -305,38 +305,41 @@ async function startServer() {
     const newUser = { phone, password, name, role: 'client', createdAt: new Date().toISOString() };
     saveUser(newUser);
     
-    // Também cadastrar no Notion como cliente
-    try {
-      const response = await fetch('https://api.notion.com/v1/pages', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${NOTION_TOKEN}`,
-          'Content-Type': 'application/json',
-          'Notion-Version': NOTION_VERSION
-        },
-        body: JSON.stringify({
-          parent: { database_id: CLIENTS_DATABASE_ID },
-          properties: {
-            Nome: { title: [{ text: { content: name || `Cliente ${phone}` } }] },
-            Numero: { rich_text: [{ text: { content: phone } }] },
-            'ID de Usuario': { rich_text: [{ text: { content: phone } }] },
-            'Senha': { rich_text: [{ text: { content: password } }] }
-          }
-        })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('Erro retornado pelo Notion ao cadastrar cliente:', errorData);
-      } else {
-        invalidateCache(CLIENTS_DATABASE_ID);
-        console.log(`✅ Cliente cadastrado no Notion com sucesso: ${phone}`);
+    // Também cadastrar no Notion como cliente (assíncrono para não travar o registro, mas com log robusto)
+    // Usamos um timeout para garantir que o log local seja rápido, mas o Notion seja atualizado
+    setTimeout(async () => {
+      try {
+        const response = await fetch('https://api.notion.com/v1/pages', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({
+            parent: { database_id: CLIENTS_DATABASE_ID },
+            properties: {
+              Nome: { title: [{ text: { content: name || `Cliente ${phone}` } }] },
+              'Número': { phone_number: phone },
+              Senha: { rich_text: [{ text: { content: password } }] },
+              Tipo: { select: { name: 'CLIENTE' } }
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('❌ Erro retornado pelo Notion ao cadastrar cliente:', errorData);
+        } else {
+          invalidateCache(CLIENTS_DATABASE_ID);
+          console.log(`✅ Cliente cadastrado no Notion com sucesso: ${phone}`);
+        }
+      } catch (e) {
+        console.error('❌ Erro de rede ao cadastrar cliente no Notion durante registro:', e);
       }
-    } catch (e) {
-      console.error('Erro de rede ao cadastrar cliente no Notion durante registro:', e);
-    }
+    }, 100);
     
-    console.log(`👤 Novo usuário registrado: ${phone}`);
+    console.log(`👤 Novo usuário registrado localmente: ${phone}`);
     const token = generateToken({ role: 'client', phone });
     res.json({ success: true, token, role: 'client' });
   });
@@ -378,8 +381,8 @@ async function startServer() {
           },
           body: JSON.stringify({
             filter: {
-              property: 'Numero',
-              rich_text: {
+              property: 'Número',
+              phone_number: {
                 equals: phone
               }
             }
@@ -465,6 +468,7 @@ async function startServer() {
       let pendingQuestionsCount = 0;
       let monthlySalesTotal = 0;
       let totalSalesCount = 0;
+      let pendingShipmentsCount = 0;
       let avgTicketValue = 0;
       let recentListings = [];
 
@@ -593,30 +597,60 @@ async function startServer() {
         monthlySalesTotal = salesMetrics.total;
         avgTicketValue = salesMetrics.average;
 
-        // Buscar ordens recentes para a lista de vendas (aumentado para 50 para garantir que pegamos as pendentes)
-        const ordersResponse = await mlClient.request('/orders/search', {
-          params: {
-            seller: await mlClient.ensureUserId(),
-            sort: 'date_desc',
-            limit: 50,
-            'order.date_created.from': formatDate(startDate) + 'T00:00:00.000-00:00',
-            'order.date_created.to': formatDate(endDate) + 'T23:59:59.000-00:00'
-          }
-        });
+        // Buscar ordens recentes para a lista de vendas
+        // Buscar métricas e ordens em paralelo para maior performance
+        const [ordersResponse, readyToShipOrdersResponse] = await Promise.all([
+          mlClient.request(`/orders/search`, {
+            params: {
+              seller: await mlClient.ensureUserId(),
+              sort: 'date_desc',
+              limit: 15,
+              'order.date_created.from': formatDate(startDate) + 'T00:00:00.000-00:00',
+              'order.date_created.to': formatDate(endDate) + 'T23:59:59.000-00:00'
+            }
+          }),
+          mlClient.request(`/orders/search`, {
+            params: {
+              seller: await mlClient.ensureUserId(),
+              'shipping.status': 'ready_to_ship',
+              sort: 'date_desc',
+              limit: 15
+            }
+          }).catch(err => {
+            console.error("⚠️ Erro ao buscar ordens prontas para envio no dashboard:", err.message);
+            return { results: [] };
+          })
+        ]);
 
+        pendingShipmentsCount = readyToShipOrdersResponse.paging?.total || 0;
         totalSalesCount = ordersResponse.paging?.total || ordersResponse.total || 0;
 
-        // Buscar detalhes de envio para as ordens recentes para ter o substatus correto
-        const orders = ordersResponse.results || [];
+        // Mesclar ordens recentes e prontas para envio, removendo duplicatas
+        const allOrders = [
+          ...(ordersResponse.results || []),
+          ...(readyToShipOrdersResponse.results || [])
+        ];
+        
+        const uniqueOrdersMap = new Map();
+        allOrders.forEach((order: any) => {
+          if (!uniqueOrdersMap.has(order.id)) {
+            uniqueOrdersMap.set(order.id, order);
+          }
+        });
+        const orders = Array.from(uniqueOrdersMap.values());
+
+        // Buscar detalhes de envio para as ordens para ter o substatus correto
         const shippingIds = orders.map((o: any) => o.shipping?.id).filter(Boolean);
         const shipmentsMap = new Map();
 
         if (shippingIds.length > 0) {
-          const shipmentPromises = shippingIds.slice(0, 20).map((id: any) => 
+          // Buscar todos os detalhes de envio em paralelo para máxima velocidade
+          const shipmentPromises = shippingIds.map((id: any) => 
             mlClient.request(`/shipments/${id}`, {
               headers: { 'x-format-new': 'true' }
             }).catch(() => null)
           );
+          
           const shipments = await Promise.all(shipmentPromises);
           shipments.forEach((s: any) => {
             if (s && s.id) shipmentsMap.set(s.id, s);
@@ -632,6 +666,11 @@ async function startServer() {
           const shipmentDetails = order.shipping?.id ? shipmentsMap.get(order.shipping.id) : null;
           const shippingStatus = shipmentDetails?.status || order.shipping?.status;
           const shippingSubstatus = shipmentDetails?.substatus || order.shipping?.substatus;
+          
+          let statusFinal = shippingStatus;
+          if (shippingStatus === 'ready_to_ship' || shippingStatus === 'shipped' || shippingStatus === 'delivered' || shippingStatus === 'cancelled' || shippingStatus === 'not_delivered') {
+            statusFinal = shippingSubstatus ? `${shippingStatus}_${shippingSubstatus}` : shippingStatus;
+          }
 
           return {
             id: order.id,
@@ -640,7 +679,7 @@ async function startServer() {
             valor: order.total_amount,
             data: order.date_created,
             status: order.status === 'paid' ? 'Pago' : order.status,
-            shipping_status: shippingStatus,
+            shipping_status: statusFinal,
             shipping_substatus: shippingSubstatus,
             itens: order.order_items?.map((i: any) => i.item?.title || i.item?.id || 'Produto ML').join(', '),
             thumbnail: order.order_items?.[0]?.item?.thumbnail,
@@ -682,6 +721,7 @@ async function startServer() {
           pendingQuestions: pendingQuestionsCount,
           monthlySales: monthlySalesTotal,
           totalSalesCount: totalSalesCount,
+          pendingShipments: pendingShipmentsCount,
           avgTicket: avgTicketValue,
           recentListings,
           recentSales,
@@ -950,14 +990,15 @@ async function startServer() {
       trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
       
       const userId = await mlClient.ensureUserId();
-
+      console.log(`📡 Buscando vendas ML para o usuário: ${userId}`);
+      
       // Busca as ordens recentes (últimos 30 dias)
       const recentOrdersPromise = mlClient.request(`/orders/search`, {
         params: { 
           seller: userId, 
-          'order.date_created.from': trintaDiasAtras.toISOString(),
+          'order.date_created.from': trintaDiasAtras.toISOString().split('.')[0] + '-00:00',
           sort: 'date_desc', 
-          limit: 100 
+          limit: 15 
         }
       });
 
@@ -968,7 +1009,7 @@ async function startServer() {
           'order.status': 'paid',
           tags: 'not_delivered',
           sort: 'date_desc',
-          limit: 100
+          limit: 15
         }
       }).catch(err => {
         console.error("⚠️ Erro ao buscar ordens pendentes:", err.message);
@@ -981,7 +1022,7 @@ async function startServer() {
           seller: userId,
           'shipping.status': 'ready_to_ship',
           sort: 'date_desc',
-          limit: 100
+          limit: 15
         }
       }).catch(err => {
         console.error("⚠️ Erro ao buscar ordens prontas para envio:", err.message);
@@ -3642,6 +3683,16 @@ async function startServer() {
     console.log(`🚀 Server running on http://localhost:${PORT} [PID:${process.pid}]`);
     console.log(`🔗 APP_URL: ${process.env.APP_URL || 'Não definida (usando localhost)'}`);
     
+    // Warm-up do cache do Notion para login rápido
+    console.log('🔥 Iniciando warm-up do cache do Notion...');
+    Promise.all([
+      fetchAllFromNotion(DATABASE_ID).catch(() => null),
+      fetchAllFromNotion(MOTOS_DATABASE_ID).catch(() => null),
+      fetchAllFromNotion(CLIENTS_DATABASE_ID).catch(() => null)
+    ]).then(() => {
+      console.log('✅ Warm-up do cache do Notion concluído.');
+    });
+
     console.log("📱 Inicializando WhatsApp (Baileys)...");
     // Pequeno delay para evitar conflitos se o servidor estiver reiniciando rápido
     setTimeout(() => {

@@ -10,16 +10,24 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export const MobileDashboard = ({ theme }: { theme: string }) => {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_dashboard_mobile');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(!data);
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true);
+      if (!data) setLoading(true);
       try {
         const result = await api.get(`/api/ml/dashboard?period=30d`);
         if (result.success) {
           setData(result.data);
+          try { localStorage.setItem('rk_ml_dashboard_mobile', JSON.stringify(result.data)); } catch (e) {}
         }
       } catch (error) {
         console.error('Erro ao carregar dados ML:', error);

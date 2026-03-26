@@ -6,14 +6,28 @@ import { CustomDropdown } from '../CustomDropdown';
 import { CATEGORIAS_OFICIAIS, MOTOS_OFICIAIS } from '../../constants/lists';
 
 export const MLCatalog = ({ theme }: { theme: string }) => {
-  const [listings, setListings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [listings, setListings] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_listings');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(listings.length === 0);
   const [searchTerm, setSearchTerm] = useState('');
   const [status, setStatus] = useState('active');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedMoto, setSelectedMoto] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_total');
+      return saved ? parseInt(saved) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -31,7 +45,7 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
   const itemsPerPage = 20;
 
   const fetchListings = async (forceRefresh = false) => {
-    setLoading(true);
+    if (listings.length === 0 || forceRefresh) setLoading(true);
     try {
       if (forceRefresh) {
         await api.post('/api/ml/cache/clear', {});
@@ -51,6 +65,10 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
       if (result.success) {
         setListings(result.data);
         setTotal(result.total || 0);
+        try {
+          localStorage.setItem('rk_ml_listings', JSON.stringify(result.data));
+          localStorage.setItem('rk_ml_total', (result.total || 0).toString());
+        } catch (e) {}
       }
     } catch (error) {
       console.error('Erro ao buscar anúncios:', error);
@@ -95,7 +113,13 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
   };
 
   const handleEdit = (item: any) => {
-    setEditingItem({ ...item });
+    setEditingItem({ 
+      ...item,
+      titulo: item.titulo || '',
+      preco: item.preco || 0,
+      estoque: item.estoque || 0,
+      status: item.status || 'active'
+    });
     setIsEditModalOpen(true);
   };
 

@@ -70,13 +70,13 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
     if (client) {
       setEditingClient(client);
       setFormData({
-        nome: client.nome,
-        endereco: client.endereco,
-        numero: client.numero,
-        cpf: client.cpf,
+        nome: client.nome || '',
+        endereco: client.endereco || '',
+        numero: client.numero || '',
+        cpf: client.cpf || '',
         senha: client.senha || '',
-        itensComprados: client.itensComprados,
-        userId: client.userId
+        itensComprados: client.itensComprados || '',
+        userId: client.userId || ''
       });
     } else {
       setEditingClient(null);

@@ -10,12 +10,19 @@ function cn(...inputs: ClassValue[]) {
 }
 
 export const MLDashboard = ({ theme }: { theme: string }) => {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_dashboard');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [loading, setLoading] = useState(!data);
   const [period, setPeriod] = useState('30d');
 
   const fetchData = async (forceRefresh = false) => {
-    setLoading(true);
+    if (!data) setLoading(true);
     try {
       if (forceRefresh) {
         await api.post('/api/ml/cache/clear', {});
@@ -27,6 +34,7 @@ export const MLDashboard = ({ theme }: { theme: string }) => {
       if (result.success) {
         console.log('✅ Dados recebidos:', result.data);
         setData(result.data);
+        try { localStorage.setItem('rk_ml_dashboard', JSON.stringify(result.data)); } catch (e) {}
       } else {
         console.error('❌ Erro na resposta:', result.error);
       }

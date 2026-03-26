@@ -106,17 +106,20 @@ const parseJson = async (res: Response) => {
   }
 };
 
-const fetchWithRetry = async (url: string, retries = 8) => {
+const fetchWithRetry = async (url: string, init?: RequestInit, retries = 8) => {
   const token = localStorage.getItem('auth_token');
-  const headers: HeadersInit = token ? {
-    'Authorization': `Bearer ${token}`
-  } : {};
+  const isInternal = url.startsWith('/') || url.startsWith(window.location.origin);
   
-  console.log(`🔍 Fetching ${url} with headers:`, headers);
+  const headers: HeadersInit = {
+    ...(init?.headers || {}),
+    ...(token && isInternal ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+  
+  console.log(`🔍 Fetching ${url} with method ${init?.method || 'GET'} and headers:`, headers);
   
   for (let i = 0; i <= retries; i++) {
     try {
-      const res = await fetch(url, { headers });
+      const res = await fetch(url, { ...init, headers });
       
       // Se o status for 503 ou 502, é provável que o servidor esteja iniciando
       if (res.status === 503 || res.status === 502) {
@@ -249,9 +252,30 @@ export const DataContext = createContext<{
 });
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [inventory, setInventory] = useState<any[]>([]);
-  const [sales, setSales] = useState<any[]>([]);
-  const [motos, setMotos] = useState<any[]>([]);
+  const [inventory, setInventory] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_inventory');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [sales, setSales] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_sales');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [motos, setMotos] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_motos');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [lastFetch, setLastFetch] = useState(0);
   const lastMutationRef = useRef(0);
@@ -284,7 +308,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (results[0].status === 'fulfilled') {
         try {
           const data = await parseJson(results[0].value);
-          if (data.success) setInventory(data.data);
+          if (data.success) {
+            setInventory(data.data);
+            try { localStorage.setItem('rk_inventory', JSON.stringify(data.data)); } catch (e) { console.warn('Cache de estoque cheio'); }
+          }
         } catch (e) {
           console.error('❌ Erro ao processar estoque:', e);
         }
@@ -296,7 +323,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       if (results[1].status === 'fulfilled') {
         try {
           const data = await parseJson(results[1].value);
-          if (data.success) setSales(data.data);
+          if (data.success) {
+            setSales(data.data);
+            try { localStorage.setItem('rk_sales', JSON.stringify(data.data)); } catch (e) { console.warn('Cache de vendas cheio'); }
+          }
         } catch (e) {
           console.error('❌ Erro ao processar vendas:', e);
         }
@@ -314,6 +344,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             const isRecentMutation = (Date.now() - lastMutationRef.current) < 15000;
             if (!silent || !isRecentMutation || motos.length === 0) {
               setMotos(data.data);
+              try { localStorage.setItem('rk_motos', JSON.stringify(data.data)); } catch (e) { console.warn('Cache de motos cheio'); }
             } else {
               console.log('⏳ Pulando atualização de motos devido a mutação recente');
             }
@@ -750,6 +781,7 @@ const DashboardView = ({
         activeListings: Number(mlData.activeListings) || 0,
         valorVendasMes: Number(mlData.monthlySales) || 0,
         totalVendasMes: Number(mlData.totalSalesCount) || 0,
+        pendingShipments: Number(mlData.pendingShipments) || 0,
         ticketMedio: Number(mlData.avgTicket) || 0,
         perguntasPendentes: Number(mlData.pendingQuestions) || 0,
         totalPerguntas: Number(mlData.totalQuestions) || 0,
@@ -865,7 +897,7 @@ const DashboardView = ({
       
       if (mlSalesSubTab === 'pending') {
         // Vendas pendentes: prontas para imprimir etiqueta, etiqueta já impressa ou aguardando NF
-        return !sale.has_dispute && !isCancelled && (sale.shipping_status?.startsWith('ready_to_ship') || sale.shipping_status === 'pending');
+        return !sale.has_dispute && !isCancelled && (sale.shipping_status?.startsWith('ready_to_ship') || sale.shipping_status === 'pending' || sale.shipping_status?.includes('ready_to_print') || sale.shipping_status?.includes('printed') || sale.shipping_status?.includes('invoice_pending'));
       }
       if (mlSalesSubTab === 'dispute') return sale.has_dispute;
       if (mlSalesSubTab === 'shipped') return sale.shipping_status === 'shipped' && !isCancelled;
@@ -944,13 +976,9 @@ const DashboardView = ({
       .sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
   }, [sales, selectedPaymentType]);
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
-        <Loader2 className="animate-spin text-violet-500" size={40} />
-        <p className="animate-pulse">Carregando dashboard...</p>
-      </div>
-    );
+  if (loading && inventory.length === 0 && sales.length === 0) {
+    // Retornar null ou não bloquear a tela para que inicie direto
+    // Apenas mostrar um indicador sutil se necessário
   }
 
   return (
@@ -1275,13 +1303,22 @@ const DashboardView = ({
     />
     <QuestionsModal isOpen={isQuestionsModalOpen} onClose={() => setIsQuestionsModalOpen(false)} theme={theme} />
     <StatCard 
-      icon={ShoppingBag} 
-      label="Ticket Médio ML" 
-      value={metrics.ticketMedio} 
-      subValue="valor médio por pedido"
+      icon={Truck} 
+      label="Prontas para Envio" 
+      value={metrics.pendingShipments} 
+      subValue="pedidos aguardando despacho"
       color="bg-amber-400" 
       theme={theme} 
-      isSensitive={true}
+      trend={metrics.pendingShipments > 0 ? 10 : 0}
+      isCurrency={false}
+      onClick={() => {
+        // Scroll to sales section and set tab to pending
+        const salesSection = document.getElementById('vendas-section');
+        if (salesSection) {
+          salesSection.scrollIntoView({ behavior: 'smooth' });
+          setMlSalesSubTab('pending');
+        }
+      }}
     />
           </>
         )}
@@ -1496,7 +1533,7 @@ const DashboardView = ({
           )}
         </div>
         {/* Últimas Vendas / Pedidos ML */}
-        <div className={cn(
+        <div id="vendas-section" className={cn(
           "lg:col-span-3 border rounded-2xl overflow-hidden transition-all duration-300 mt-6",
           theme === 'dark' 
             ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)]" 
@@ -1714,7 +1751,7 @@ const DashboardView = ({
                   )}>
                     {metrics.ultimasVendas.filter((s: any) => {
                       const isCancelled = s.is_cancelled || s.status === 'cancelled' || s.shipping_status?.startsWith('cancelled') || s.shipping_substatus === 'cancelled' || s.shipping_substatus === 'not_delivered';
-                      const isReadyToShip = s.shipping_status?.startsWith('ready_to_ship') || s.shipping_status === 'pending';
+                      const isReadyToShip = s.shipping_status?.startsWith('ready_to_ship') || s.shipping_status === 'pending' || s.shipping_status?.includes('ready_to_print') || s.shipping_status?.includes('printed') || s.shipping_status?.includes('invoice_pending');
                       return !s.has_dispute && isReadyToShip && !isCancelled;
                     }).length}
                   </span>
@@ -1830,8 +1867,8 @@ const DashboardView = ({
                       buttonAction: 'dispute'
                     };
                   }
-                  if (sale.shipping_status?.startsWith('ready_to_ship')) {
-                    if (sale.shipping_status.includes('ready_to_print') || sale.shipping_substatus === 'ready_to_print') {
+                  if (sale.shipping_status?.startsWith('ready_to_ship') || sale.shipping_status?.includes('ready_to_print') || sale.shipping_status?.includes('printed') || sale.shipping_status?.includes('invoice_pending')) {
+                    if (sale.shipping_status?.includes('ready_to_print') || sale.shipping_substatus === 'ready_to_print') {
                       return {
                         title: 'Pronta para gerar etiqueta',
                         titleColor: 'text-orange-500',
@@ -1960,7 +1997,7 @@ const DashboardView = ({
                             return;
                           }
                           try {
-                            const res = await fetch(`/api/ml/shipment-label/${sale.shipping_id}`);
+                            const res = await fetchWithRetry(`/api/ml/shipment-label/${sale.shipping_id}`);
                             if (!res.ok) throw new Error('Falha ao baixar etiqueta');
                             const blob = await res.blob();
                             const url = window.URL.createObjectURL(blob);
@@ -2501,7 +2538,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
     setInventory(prev => prev.map(item => item.id === itemId ? { ...item, ...updatedData } : item));
 
     try {
-      const response = await fetch(`/api/inventory/${itemId}`, {
+      const response = await fetchWithRetry(`/api/inventory/${itemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData)
@@ -2675,7 +2712,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
     setSelectedIds([]);
 
     try {
-      const response = await fetch('/api/inventory/bulk-delete', {
+      const response = await fetchWithRetry('/api/inventory/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: idsToRemove })
@@ -2701,7 +2738,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
     }));
 
     try {
-      const response = await fetch('/api/inventory/bulk-update-stock', {
+      const response = await fetchWithRetry('/api/inventory/bulk-update-stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: idsToUpdate, amount })
@@ -2731,7 +2768,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
     setBulkCategory('');
 
     try {
-      const response = await fetch('/api/inventory/bulk-update-category', {
+      const response = await fetchWithRetry('/api/inventory/bulk-update-category', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: idsToUpdate, categoria: newCategory })
@@ -2757,22 +2794,32 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
     try {
       if (editingItem) {
         // Update
-        const response = await fetch(`/api/inventory/${editingItem.id}`, {
+        const response = await fetchWithRetry(`/api/inventory/${editingItem.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error('Erro ao atualizar item');
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+          throw new Error(errorData.error || `Erro ao atualizar item (Status ${response.status})`);
+        }
+        
         const updatedItem = await response.json();
         setInventory(prev => prev.map(item => item.id === editingItem.id ? updatedItem : item));
       } else {
         // Create
-        const response = await fetch('/api/inventory', {
+        const response = await fetchWithRetry('/api/inventory', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        if (!response.ok) throw new Error('Erro ao salvar item');
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+          throw new Error(errorData.error || `Erro ao salvar item (Status ${response.status})`);
+        }
+        
         const newItem = await response.json();
         setInventory(prev => [newItem, ...prev]);
       }
@@ -2810,7 +2857,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
     setItemToDelete(null);
 
     try {
-      const response = await fetch(`/api/inventory/${targetId}`, {
+      const response = await fetchWithRetry(`/api/inventory/${targetId}`, {
         method: 'DELETE'
       });
       
@@ -2870,12 +2917,7 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
   }, []);
 
   if (loading && items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
-        <Loader2 className="animate-spin text-violet-500" size={40} />
-        <p className="animate-pulse">Sincronizando com Notion...</p>
-      </div>
-    );
+    // Não bloquear a tela
   }
 
   if (error) {
@@ -4098,7 +4140,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
     setSelectedIds([]);
 
     try {
-      const response = await fetch('/api/sales/bulk-delete', {
+      const response = await fetchWithRetry('/api/sales/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: idsToRemove })
@@ -4123,7 +4165,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
     setItemToDelete(null);
 
     try {
-      const response = await fetch(`/api/sales/${idToRemove}`, {
+      const response = await fetchWithRetry(`/api/sales/${idToRemove}`, {
         method: 'DELETE'
       });
       
@@ -4137,9 +4179,9 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
   const handleEditSale = (sale: any) => {
     setEditingSale(sale);
     setEditFormData({
-      nome: sale.nome,
-      moto: sale.moto,
-      valor: sale.valor.toString(),
+      nome: sale.nome || '',
+      moto: sale.moto || '',
+      valor: sale.valor?.toString() || '',
       tipo: sale.tipo || 'Pix',
       data: sale.data ? new Date(sale.data).toISOString().split('T')[0] : ''
     });
@@ -4162,7 +4204,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
     setSales(prev => prev.map(item => item.id === itemId ? { ...item, ...updatedData } : item));
 
     try {
-      const response = await fetch(`/api/sales/${itemId}`, {
+      const response = await fetchWithRetry(`/api/sales/${itemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData)
@@ -4192,7 +4234,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
     setEditingSale(null);
 
     try {
-      const response = await fetch(`/api/sales/${saleId}`, {
+      const response = await fetchWithRetry(`/api/sales/${saleId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editFormData)
@@ -4214,7 +4256,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
     e.preventDefault();
     setIsSaving(true);
     try {
-      const response = await fetch('/api/sales', {
+      const response = await fetchWithRetry('/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
@@ -4394,12 +4436,7 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
   };
 
   if (loading && items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
-        <Loader2 className="animate-spin text-violet-500" size={40} />
-        <p className="animate-pulse">Sincronizando vendas...</p>
-      </div>
-    );
+    // Não bloquear a tela
   }
 
   return (
@@ -5460,7 +5497,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
         console.log('📤 Enviando atualização com imagens:', motoData);
 
         try {
-          const updateResponse = await fetch(`/api/motos/${editingMoto.id}`, {
+          const updateResponse = await fetchWithRetry(`/api/motos/${editingMoto.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(motoData)
@@ -5516,7 +5553,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
         try {
           /* 
           // TENTATIVA 1: URL assinada (Desabilitado temporariamente devido a erro 500)
-          const requestRes = await fetch('/api/storage/request-upload', {
+          const requestRes = await fetchWithRetry('/api/storage/request-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -5535,7 +5572,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
           
           if (requestData.success) {
             const { uploadUrl, publicUrl } = requestData.data;
-            const uploadRes = await fetch(uploadUrl, {
+            const uploadRes = await fetchWithRetry(uploadUrl, {
               method: 'PUT',
               body: file,
               headers: { 'Content-Type': file.type }
@@ -5551,7 +5588,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
         // TENTATIVA 2: Upload direto (Fallback)
         const formData = new FormData();
         formData.append('file', file);
-        const directRes = await fetch('/api/storage/upload', {
+        const directRes = await fetchWithRetry('/api/storage/upload', {
           method: 'POST',
           body: formData
         });
@@ -5712,7 +5749,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
     setSelectedIds([]);
 
     try {
-      const response = await fetch('/api/motos/bulk-delete', {
+      const response = await fetchWithRetry('/api/motos/bulk-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: idsToRemove })
@@ -5735,7 +5772,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
     setItemToDelete(null);
 
     try {
-      const response = await fetch(`/api/motos/${idToRemove}`, {
+      const response = await fetchWithRetry(`/api/motos/${idToRemove}`, {
         method: 'DELETE'
       });
       
@@ -5806,7 +5843,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
       
       console.log('📤 Enviando atualização:', payload);
       
-      const response = await fetch(`/api/motos/${motoId}`, {
+      const response = await fetchWithRetry(`/api/motos/${motoId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -5846,7 +5883,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
     setInlineEditData(null);
 
     try {
-      const response = await fetch(`/api/motos/${motoId}`, {
+      const response = await fetchWithRetry(`/api/motos/${motoId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inlineEditData)
@@ -5894,7 +5931,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
         imagem: currentImagens[0] || ''
       };
 
-      const response = await fetch('/api/motos', {
+      const response = await fetchWithRetry('/api/motos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalData)
@@ -6052,12 +6089,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
   };
 
   if (loading && items.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-zinc-400 gap-4">
-        <Loader2 className="animate-spin text-violet-500" size={40} />
-        <p className="animate-pulse">Carregando motos do Notion...</p>
-      </div>
-    );
+    // Não bloquear a tela
   }
 
   return (
@@ -7925,7 +7957,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
     // A contagem agora pode vir das conversas globais, mas mantemos o fetch inicial por segurança
     /*
-    fetch('/api/whatsapp/messages')
+    fetchWithRetry('/api/whatsapp/messages')
       .then(res => res.json())
       .then(data => {
         if (data.success) {
@@ -7963,7 +7995,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       if (mlPeriod === 'custom' && mlCustomDate.start && mlCustomDate.end) {
         url += `&start=${mlCustomDate.start}&end=${mlCustomDate.end}`;
       }
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url);
       const data = await res.json();
       if (data.success) {
         setMlDashboardData(data.data);
@@ -8157,7 +8189,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       <main className="flex-1 flex flex-col min-w-0 pb-nav-safe md:pb-0">
         {/* Header */}
         <header className={cn(
-          "min-h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-40 transition-colors pt-safe",
+          "min-h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-[100] transition-colors pt-safe",
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
         )}>
           <div className="flex items-center gap-2 md:gap-4 relative z-50">

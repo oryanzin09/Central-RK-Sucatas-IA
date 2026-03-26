@@ -4,19 +4,29 @@ import { api } from '../../utils/api';
 import { cn } from '../../utils';
 
 export const MLQuestions = ({ theme }: { theme: string }) => {
-  const [questions, setQuestions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [questions, setQuestions] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_questions');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(questions.length === 0);
   const [status, setStatus] = useState('UNANSWERED');
   const [answeringId, setAnsweringId] = useState<number | null>(null);
   const [answerText, setAnswerText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchQuestions = async () => {
-    setLoading(true);
+    if (questions.length === 0) setLoading(true);
     try {
       const result = await api.get(`/api/ml/questions?status=${status}&limit=50`);
       if (result.success) {
         setQuestions(result.data);
+        if (status === 'UNANSWERED') {
+          try { localStorage.setItem('rk_ml_questions', JSON.stringify(result.data)); } catch (e) {}
+        }
       }
     } catch (error) {
       console.error('Erro ao buscar perguntas:', error);

@@ -52,20 +52,40 @@ export const getStatusInfo = (sale: any) => {
 };
 
 export const MLSales = ({ theme }: { theme: string }) => {
-  const [sales, setSales] = useState<any[]>([]);
-  const [listings, setListings] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [sales, setSales] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_sales');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [listings, setListings] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_ml_sales_listings');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(sales.length === 0);
   const [activeTab, setActiveTab] = useState('pending');
 
   const fetchData = async () => {
-    setLoading(true);
+    if (sales.length === 0) setLoading(true);
     try {
       const [salesRes, listingsRes] = await Promise.all([
         api.get('/api/ml/sales'),
         api.get('/api/ml/listings?status=active&limit=5')
       ]);
-      if (salesRes.success) setSales(salesRes.data);
-      if (listingsRes.success) setListings(listingsRes.data);
+      if (salesRes.success) {
+        setSales(salesRes.data);
+        try { localStorage.setItem('rk_ml_sales', JSON.stringify(salesRes.data)); } catch (e) {}
+      }
+      if (listingsRes.success) {
+        setListings(listingsRes.data);
+        try { localStorage.setItem('rk_ml_sales_listings', JSON.stringify(listingsRes.data)); } catch (e) {}
+      }
     } catch (error) {
       console.error('Erro ao carregar dados ML:', error);
     } finally {
@@ -109,7 +129,7 @@ export const MLSales = ({ theme }: { theme: string }) => {
       label: 'Prontas para Envio', 
       filter: (s: any) => {
         const isCancelled = s.is_cancelled || s.status === 'cancelled' || String(s.shipping_status).startsWith('cancelled') || String(s.shipping_status).startsWith('not_delivered');
-        const isReadyToShip = String(s.shipping_status).startsWith('ready_to_ship') || s.shipping_status === 'pending';
+        const isReadyToShip = String(s.shipping_status).startsWith('ready_to_ship') || s.shipping_status === 'pending' || String(s.shipping_status).includes('ready_to_print') || String(s.shipping_status).includes('printed') || String(s.shipping_status).includes('invoice_pending');
         return isReadyToShip && !isCancelled && !s.has_dispute;
       }
     },
