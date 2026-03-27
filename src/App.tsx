@@ -8587,7 +8587,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300 flex font-sans w-full relative",
+      "min-h-screen transition-colors duration-300 flex font-sans w-full relative overflow-x-hidden",
       theme === 'dark' 
         ? "bg-[radial-gradient(ellipse_at_top,_#1a1b1f,_#09090b)] text-zinc-100" 
         : "bg-zinc-50 text-zinc-900"
