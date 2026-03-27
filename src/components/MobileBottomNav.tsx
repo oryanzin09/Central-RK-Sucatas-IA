@@ -11,7 +11,7 @@ export const MobileBottomNav = ({ activeTab, setActiveTab, theme }: any) => {
   
   const allItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Início', roles: ['admin'] },
-    { id: 'estoque', icon: Package, label: userRole === 'admin' ? 'Estoque' : 'Catálogo', roles: ['admin', 'client'] },
+    { id: 'estoque', icon: Package, label: 'Estoque', roles: ['admin'] },
     { id: 'vendas', icon: ShoppingCart, label: 'Vendas', roles: ['admin'] },
     { id: 'motos', icon: Bike, label: 'Motos', roles: ['admin', 'client'] },
   ];

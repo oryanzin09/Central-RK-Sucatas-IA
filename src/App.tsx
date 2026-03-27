@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
 import QuestionsDashboard from './components/QuestionsDashboard';
 import { 
   LayoutDashboard, 
@@ -479,7 +479,7 @@ const categoryData = [
 const COLORS = ['#8b5cf6', '#34d399', '#fb7185', '#f59e0b', '#3b82f6'];
 
 // Components
-const SidebarItem = ({ 
+const SidebarItem = memo(({ 
   icon: Icon, 
   label, 
   active, 
@@ -501,7 +501,7 @@ const SidebarItem = ({
     whileTap={{ scale: 0.98 }}
     onClick={onClick}
     className={cn(
-      "w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-500 group relative overflow-hidden",
+      "w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-500 group relative overflow-hidden transform-gpu",
       active 
         ? "bg-violet-600 text-white shadow-[0_10px_30px_rgba(139,92,246,0.3)]" 
         : theme === 'dark' 
@@ -526,19 +526,19 @@ const SidebarItem = ({
       </span>
     )}
   </motion.button>
-);
+));
 
-const SkeletonRow = ({ theme }: { theme: 'light' | 'dark', key?: any }) => (
-  <tr className="animate-pulse">
+const SkeletonRow = memo(({ theme }: { theme: 'light' | 'dark', key?: any }) => (
+  <tr className="animate-pulse transform-gpu">
     <td className="px-6 py-4"><div className={cn("h-4 rounded w-16", theme === 'dark' ? "bg-zinc-800" : "bg-zinc-200")}></div></td>
     <td className="px-6 py-4"><div className={cn("h-4 rounded w-48", theme === 'dark' ? "bg-zinc-800" : "bg-zinc-200")}></div></td>
     <td className="px-6 py-4"><div className={cn("h-4 rounded w-32", theme === 'dark' ? "bg-zinc-800" : "bg-zinc-200")}></div></td>
     <td className="px-6 py-4"><div className={cn("h-4 rounded w-24", theme === 'dark' ? "bg-zinc-800" : "bg-zinc-200")}></div></td>
     <td className="px-6 py-4"><div className={cn("h-4 rounded w-20", theme === 'dark' ? "bg-zinc-800" : "bg-zinc-200")}></div></td>
   </tr>
-);
+));
 
-const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onClick, isSensitive, isCurrency = true }: any) => {
+const StatCard = memo(({ icon: Icon, label, value, trend, subValue, color, theme, onClick, isSensitive, isCurrency = true }: any) => {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   
@@ -605,7 +605,7 @@ const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onC
         </span>
         <div className="flex items-baseline gap-2">
           <h3 className={cn(
-            "text-2xl sm:text-3xl font-black tracking-tighter transition-all duration-500",
+            "text-xl sm:text-2xl font-black tracking-tighter transition-all duration-500",
             theme === 'dark' ? "text-white" : "text-zinc-900",
             isSensitive && !showSensitiveInfo && "blur-xl select-none",
             (label.includes('Valor') || label.includes('Vendas')) && "text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.4)]",
@@ -622,13 +622,13 @@ const StatCard = ({ icon: Icon, label, value, trend, subValue, color, theme, onC
       </div>
     </motion.div>
   );
-};
+});
 
-const ChartCard = ({ label, data, theme, color, icon: Icon, className }: any) => (
+const ChartCard = memo(({ label, data, theme, color, icon: Icon, className }: any) => (
   <motion.div 
     whileHover={{ y: -4, scale: 1.02 }}
     className={cn(
-      "border rounded-[2rem] p-6 transition-all duration-500 relative overflow-hidden flex flex-col gap-4 h-full group",
+      "border rounded-[2rem] p-6 transition-all duration-500 relative overflow-hidden flex flex-col gap-4 h-full group transform-gpu",
       theme === 'dark' 
         ? "bg-zinc-900/40 border-zinc-800/50 shadow-2xl hover:border-violet-500/40 hover:bg-zinc-900/60" 
         : "bg-white border-zinc-200 shadow-xl hover:shadow-2xl hover:border-violet-200",
@@ -680,10 +680,10 @@ const ChartCard = ({ label, data, theme, color, icon: Icon, className }: any) =>
       </ResponsiveContainer>
     </div>
   </motion.div>
-);
+));
 
 
-const QuestionsModal = ({ isOpen, onClose, theme }: { isOpen: boolean, onClose: () => void, theme: 'light' | 'dark' }) => {
+const QuestionsModal = memo(({ isOpen, onClose, theme }: { isOpen: boolean, onClose: () => void, theme: 'light' | 'dark' }) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
@@ -721,7 +721,7 @@ const QuestionsModal = ({ isOpen, onClose, theme }: { isOpen: boolean, onClose: 
       </motion.div>
     </div>
   );
-};
+});
 
 const DashboardView = ({ 
   theme, 
@@ -993,37 +993,6 @@ const DashboardView = ({
           </h2>
           
           <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
-            {/* Toggle de Fonte de Dados */}
-            <div className={cn(
-              "inline-flex p-1 rounded-full border transition-all w-fit",
-              theme === 'dark' ? "bg-zinc-900/80 border-zinc-800" : "bg-zinc-100 border-zinc-200"
-            )}>
-              <button
-                onClick={() => onToggleSource('estoque')}
-                className={cn(
-                  "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
-                  source === 'estoque'
-                    ? "bg-violet-600 text-white shadow-lg shadow-violet-600/20"
-                    : "text-zinc-500 hover:text-zinc-300"
-                )}
-              >
-                <Package size={14} />
-                Estoque
-              </button>
-              <button
-                onClick={() => onToggleSource('mercadolivre')}
-                className={cn(
-                  "hidden md:flex px-4 py-1.5 rounded-full text-xs font-bold transition-all items-center gap-2",
-                  source === 'mercadolivre'
-                    ? "bg-amber-500 text-white shadow-lg shadow-amber-500/20"
-                    : "text-zinc-500 hover:text-zinc-300"
-                )}
-              >
-                <TrendingUp size={14} />
-                M. Livre
-              </button>
-            </div>
-            
             <div className="flex items-center gap-2">
               {/* Toggle de Informações Sensíveis */}
               <button
@@ -1165,7 +1134,6 @@ const DashboardView = ({
             </div>
           </div>
         </div>
-      </div>
 
       {/* Grid de Métricas Principais */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6 px-4 sm:px-0">
@@ -1325,31 +1293,6 @@ const DashboardView = ({
         )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-        {/* Gráfico Principal */}
-        <div className={cn(
-          "lg:col-span-2 border p-6 rounded-2xl transition-all duration-300",
-          theme === 'dark' 
-            ? "bg-zinc-900/40 border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.12)] hover:border-violet-500/30" 
-            : "bg-white border-zinc-200 shadow-sm"
-        )}>
-          <div className="flex items-center justify-between mb-6">
-            <h3 className={cn("text-lg font-bold tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-              {source === 'estoque' ? "Fluxo de Caixa (30 dias)" : `Vendas Mercado Livre (${mlPeriod === 'custom' ? 'Período Específico' : `${mlPeriod.replace('d', '')} dias`})`}
-            </h3>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className={cn("w-3 h-3 rounded-full shadow-[0_0_8px_rgba(139,92,246,0.5)]", source === 'estoque' ? "bg-violet-500" : "bg-emerald-500")} />
-                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Vendas</span>
-              </div>
-              {source === 'estoque' && (
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]" />
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Saídas</span>
-                </div>
-              )}
-            </div>
-          </div>
           <div className="h-[300px] hidden sm:block">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
@@ -1432,7 +1375,6 @@ const DashboardView = ({
               Fluxo dos últimos 15 dias
             </p>
           </div>
-        </div>
 
         {/* Gráfico Secundário / Ações Rápidas */}
         <div className="space-y-6">
@@ -2478,8 +2420,8 @@ const DashboardView = ({
                       ))}
                     </tbody>
                   </table>
-                  </>
-                )}
+                </>
+              )}
               </div>
               
               <div className="p-4 border-t border-zinc-800/50 bg-zinc-900/30 flex justify-between items-center">
@@ -2510,7 +2452,151 @@ const DashboardView = ({
   );
 };
 
-const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { 
+const InventoryRow = memo(({ 
+  item, 
+  theme, 
+  selectedIds, 
+  toggleSelect, 
+  onSelectItem, 
+  readOnly, 
+  handleInventoryInlineEdit, 
+  editingCell, 
+  handleInventoryInlineSave, 
+  setEditingCell, 
+  columns, 
+  formatCurrency, 
+  formatDate,
+  openEditModal,
+  setItemToDelete,
+  setIsDeleteConfirmOpen
+}: any) => (
+  <tr 
+    key={item.id} 
+    onClick={() => onSelectItem(item)}
+    className={cn(
+      "transition-all duration-200 group cursor-pointer transform-gpu",
+      selectedIds.includes(item.id) 
+        ? theme === 'dark' ? "bg-violet-500/10" : "bg-violet-50"
+        : theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
+    )}
+  >
+    <td className="px-3 py-2">
+      <div 
+        className={cn(
+          "w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all",
+          selectedIds.includes(item.id) 
+            ? "bg-violet-600 border-violet-600 opacity-100" 
+            : cn(
+                "opacity-0 group-hover:opacity-100",
+                theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
+              )
+        )}
+        onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}
+      >
+        {selectedIds.includes(item.id) && <Check className="text-white" size={10} />}
+      </div>
+    </td>
+    {columns.map((col: any) => (
+      <td key={`${item.id}-${col.key}`} className={cn(
+        "px-3 py-2 text-xs transition-colors",
+        theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
+      )} onDoubleClick={() => !readOnly && handleInventoryInlineEdit(item.id, col.key)}>
+        {editingCell?.itemId === item.id && editingCell?.field === col.key ? (
+          <input 
+            defaultValue={item[col.key]}
+            onBlur={(e) => handleInventoryInlineSave(item.id, col.key, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleInventoryInlineSave(item.id, col.key, e.currentTarget.value);
+              if (e.key === 'Escape') setEditingCell(null);
+            }}
+            autoFocus
+            className="w-full bg-transparent border-b border-violet-500 outline-none"
+          />
+        ) : col.key === 'valor' ? (
+          <span className="font-bold text-emerald-500">{formatCurrency(item[col.key])}</span>
+        ) : col.key === 'criado_em' ? (
+          <span className="text-[10px] text-zinc-500">{formatDate(item[col.key])}</span>
+        ) : col.key === 'ml_link' && item[col.key] ? (
+          <a 
+            href={item[col.key]} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="p-1 rounded bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 inline-block"
+          >
+            <ExternalLink size={12} />
+          </a>
+        ) : col.key === 'imagem' && item[col.key] ? (
+          <div className={cn(
+            "w-8 h-8 rounded-lg overflow-hidden border relative",
+            theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
+          )}>
+            <img 
+              src={item[col.key]} 
+              alt={item.nome} 
+              className="w-full h-full object-cover" 
+              referrerPolicy="no-referrer" 
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+              <Package size={12} className="text-zinc-400 opacity-50" />
+            </div>
+          </div>
+        ) : col.key === 'categoria' ? (
+          <span className={cn(
+            "px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors",
+            theme === 'dark' ? "bg-violet-500/10 text-violet-400 border border-violet-500/20" : "bg-zinc-100 text-zinc-600"
+          )}>
+            {item[col.key]}
+          </span>
+        ) : col.key === 'moto' ? (
+          <span className={cn(
+            "px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-colors",
+            theme === 'dark' ? "bg-zinc-800 text-zinc-300 border-zinc-700" : "bg-zinc-100 text-zinc-600 border-zinc-200"
+          )}>
+            {item[col.key]}
+          </span>
+        ) : col.key === 'actions' ? (
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditModal(item);
+              }}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                theme === 'dark' ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "text-zinc-400 hover:text-violet-600 hover:bg-violet-50"
+              )}
+              title="Editar item"
+            >
+              <Edit2 size={16} />
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setItemToDelete(item.id);
+                setIsDeleteConfirmOpen(true);
+              }}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                theme === 'dark' ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "text-zinc-400 hover:text-red-600 hover:bg-red-50"
+              )}
+              title="Excluir item"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ) : (
+          <span className="truncate block max-w-[150px]">{item[col.key] || '-'}</span>
+        )}
+      </td>
+    ))}
+  </tr>
+));
+
+const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { 
   theme: 'light' | 'dark', 
   onSelectItem: (item: any) => void,
   onRegisterActions?: (actions: { edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void }) => void,
@@ -4066,9 +4152,117 @@ const InventoryView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, r
       </AnimatePresence>
     </div>
   );
-};
+});
 
-const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean }) => {
+const SalesRow = memo(({ 
+  item, 
+  theme, 
+  selectedIds, 
+  toggleSelect, 
+  onSelectItem, 
+  handleInlineEdit, 
+  editingCell, 
+  handleSaleInlineSave, 
+  setEditingCell, 
+  columns, 
+  formatCurrency, 
+  formatDate,
+  handleEditSale,
+  setItemToDelete,
+  setIsDeleteConfirmOpen
+}: any) => (
+  <tr 
+    key={item.id} 
+    onClick={() => onSelectItem(item)}
+    className={cn(
+      "transition-all duration-200 group cursor-pointer transform-gpu",
+      selectedIds.includes(item.id) 
+        ? theme === 'dark' ? "bg-violet-500/10" : "bg-violet-50"
+        : theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
+    )}
+  >
+    <td className="px-3 py-2">
+      <div 
+        className={cn(
+          "w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all",
+          selectedIds.includes(item.id) 
+            ? "bg-violet-600 border-violet-600 opacity-100" 
+            : cn(
+                "opacity-0 group-hover:opacity-100",
+                theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
+              )
+        )}
+        onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}
+      >
+        {selectedIds.includes(item.id) && <Check className="text-white" size={10} />}
+      </div>
+    </td>
+    {columns.map((col: any) => (
+      <td key={`${item.id}-${col.key}`} className={cn(
+        "px-3 py-2 text-xs transition-colors",
+        theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
+      )} onDoubleClick={() => handleInlineEdit(item.id, col.key)}>
+        {editingCell?.itemId === item.id && editingCell?.field === col.key ? (
+          <input 
+            defaultValue={item[col.key]}
+            onBlur={(e) => handleSaleInlineSave(item.id, col.key, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaleInlineSave(item.id, col.key, e.currentTarget.value);
+              if (e.key === 'Escape') setEditingCell(null);
+            }}
+            autoFocus
+            className="w-full bg-transparent border-b border-violet-500 outline-none"
+          />
+        ) : col.key === 'valor' ? (
+          <span className="font-bold text-emerald-500">{formatCurrency(item[col.key])}</span>
+        ) : col.key === 'data' ? (
+          <span className="text-[10px] text-zinc-500">{formatDate(item[col.key])}</span>
+        ) : col.key === 'tipo' ? (
+          <span className={cn(
+            "px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider",
+            theme === 'dark' ? "bg-violet-500/10 text-violet-400" : "bg-violet-50 text-violet-600"
+          )}>
+            {item[col.key]}
+          </span>
+        ) : col.key === 'actions' ? (
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditSale(item);
+              }}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                theme === 'dark' ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "text-zinc-400 hover:text-violet-600 hover:bg-violet-50"
+              )}
+              title="Editar venda"
+            >
+              <Edit2 size={16} />
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setItemToDelete(item.id);
+                setIsDeleteConfirmOpen(true);
+              }}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                theme === 'dark' ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "text-zinc-400 hover:text-red-600 hover:bg-red-50"
+              )}
+              title="Excluir venda"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ) : (
+          <span className="truncate block max-w-[150px]">{item[col.key] || '-'}</span>
+        )}
+      </td>
+    ))}
+  </tr>
+));
+
+const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean }) => {
   const { sales: items, loading, refreshData, setSales } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -5394,13 +5588,115 @@ const SalesView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen }: { t
       </AnimatePresence>
     </div>
   );
-};
+});
 
 // =============================================================================
 // MOTOS VIEW COMPONENT
 // =============================================================================
 
-const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean, readOnly?: boolean }) => {
+const MotoRow = memo(({ 
+  item, 
+  theme, 
+  selectedIds, 
+  toggleSelect, 
+  onSelectItem, 
+  readOnly, 
+  handleMotoInlineEdit, 
+  editingCell, 
+  handleMotoInlineSave, 
+  setEditingCell, 
+  columns, 
+  formatCurrency, 
+  formatDate,
+  handleEditMoto,
+  setItemToDelete,
+  setIsDeleteConfirmOpen
+}: any) => (
+  <tr 
+    key={item.id} 
+    onClick={() => onSelectItem(item)}
+    className={cn(
+      "transition-all duration-200 group cursor-pointer transform-gpu",
+      selectedIds.includes(item.id) 
+        ? theme === 'dark' ? "bg-violet-500/10" : "bg-violet-50"
+        : theme === 'dark' ? "hover:bg-zinc-800/20" : "hover:bg-zinc-50"
+    )}
+  >
+    <td className="px-3 py-2">
+      <div 
+        className={cn(
+          "w-4 h-4 rounded border flex items-center justify-center cursor-pointer transition-all",
+          selectedIds.includes(item.id) 
+            ? "bg-violet-600 border-violet-600 opacity-100" 
+            : cn(
+                "opacity-0 group-hover:opacity-100",
+                theme === 'dark' ? "border-zinc-700" : "border-zinc-300"
+              )
+        )}
+        onClick={(e) => { e.stopPropagation(); toggleSelect(item.id); }}
+      >
+        {selectedIds.includes(item.id) && <Check className="text-white" size={10} />}
+      </div>
+    </td>
+    {columns.map((col: any) => (
+      <td key={`${item.id}-${col.key}`} className={cn(
+        "px-3 py-2 text-xs transition-colors",
+        theme === 'dark' ? "text-zinc-400" : "text-zinc-600"
+      )} onDoubleClick={() => !readOnly && handleMotoInlineEdit(item.id, col.key)}>
+        {editingCell?.itemId === item.id && editingCell?.field === col.key ? (
+          <input 
+            defaultValue={item[col.key]}
+            onBlur={(e) => handleMotoInlineSave(item.id, col.key, e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleMotoInlineSave(item.id, col.key, e.currentTarget.value);
+              if (e.key === 'Escape') setEditingCell(null);
+            }}
+            autoFocus
+            className="w-full bg-transparent border-b border-violet-500 outline-none"
+          />
+        ) : col.key === 'valor' ? (
+          <span className="font-bold text-emerald-500">{formatCurrency(item[col.key])}</span>
+        ) : col.key === 'criado_em' ? (
+          <span className="text-[10px] text-zinc-500">{formatDate(item[col.key])}</span>
+        ) : col.key === 'actions' ? (
+          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditMoto(item);
+              }}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                theme === 'dark' ? "bg-violet-500/10 text-violet-400 hover:bg-violet-500/20" : "text-zinc-400 hover:text-violet-600 hover:bg-violet-50"
+              )}
+              title="Editar moto"
+            >
+              <Edit2 size={16} />
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setItemToDelete(item.id);
+                setIsDeleteConfirmOpen(true);
+              }}
+              className={cn(
+                "p-2 rounded-lg transition-all",
+                theme === 'dark' ? "bg-red-500/10 text-red-400 hover:bg-red-500/20" : "text-zinc-400 hover:text-red-600 hover:bg-red-50"
+              )}
+              title="Excluir moto"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        ) : (
+          <span className="truncate block max-w-[150px]">{item[col.key] || '-'}</span>
+        )}
+      </td>
+    ))}
+  </tr>
+));
+
+const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean, readOnly?: boolean }) => {
   const { motos: items, loading, refreshData, setMotos } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -5671,18 +5967,18 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
   const [anoMinFilter, setAnoMinFilter] = useState('');
   const [valorMinFilter, setValorMinFilter] = useState('');
   const [valorMaxFilter, setValorMaxFilter] = useState('');
-  const [viewMode, setViewMode] = useState<'table' | 'card'>('card');
+  const [viewMode, setViewMode] = useState<'table' | 'card'>(readOnly ? 'card' : 'card');
 
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 768) {
+      if (window.innerWidth < 768 || readOnly) {
         setViewMode('card');
       }
     };
     handleResize();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [readOnly]);
 
   const closeModals = () => {
     setIsModalOpen(false);
@@ -6097,7 +6393,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
     <div className="space-y-4">
       {/* Toolbar Profissional e Compacta */}
       <div className={cn(
-        "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
+        "relative z-50 p-2 md:p-4 rounded-2xl md:rounded-3xl flex flex-col gap-2 md:gap-3 transition-all duration-300 shadow-xl border overflow-visible",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
           : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
@@ -6105,7 +6401,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={18} />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={16} />
           <input 
             ref={searchInputRef}
             type="text" 
@@ -6116,7 +6412,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
               setCurrentPage(1);
             }}
             className={cn(
-              "w-full rounded-xl py-2.5 pl-11 pr-4 text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
+              "w-full rounded-xl py-2 md:py-2.5 pl-10 md:pl-11 pr-4 text-xs md:text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
               theme === 'dark' 
                 ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50" 
                 : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
@@ -6125,13 +6421,14 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
         </div>
 
         {/* Filtros e Ações Compactos */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-3 overflow-visible">
+          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap overflow-visible">
             <CustomDropdown
               theme={theme}
               icon={<Filter size={14} />}
+              label="Marca"
               value={brandFilter}
-              className="flex-1 md:flex-none"
+              className="flex-1 md:flex-none md:min-w-[120px]"
               onChange={(val) => {
                 setBrandFilter(val);
                 setCurrentPage(1);
@@ -6139,23 +6436,26 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
               options={brands.map(brand => ({ value: brand, label: brand }))}
             />
 
-            <CustomDropdown
-              theme={theme}
-              icon={<Layers size={14} />}
-              value={statusFilter}
-              className="flex-1 md:flex-none"
-              onChange={(val) => {
-                setStatusFilter(val);
-                setCurrentPage(1);
-              }}
-              options={statuses.map(s => ({ value: s, label: s }))}
-            />
+            {!readOnly && (
+              <CustomDropdown
+                theme={theme}
+                icon={<Layers size={14} />}
+                value={statusFilter}
+                className="flex-1 md:flex-none md:min-w-[120px]"
+                onChange={(val) => {
+                  setStatusFilter(val);
+                  setCurrentPage(1);
+                }}
+                options={statuses.map(s => ({ value: s, label: s }))}
+              />
+            )}
 
             <CustomDropdown
               theme={theme}
               icon={<ArrowDownAZ size={14} />}
+              label="Ordenar"
               value={sortOrder}
-              className="flex-1 md:flex-none"
+              className="flex-1 md:flex-none md:min-w-[120px]"
               onChange={(val) => setSortOrder(val)}
               options={[
                 { value: "Data de Criação", label: "Data" },
@@ -6163,38 +6463,42 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
                 { value: "Cilindrada", label: "Cilindrada" },
                 { value: "Ano", label: "Ano" },
                 { value: "Valor", label: "Valor" },
-                { value: "Lote", label: "Lote" },
+                ...(readOnly ? [] : [{ value: "Lote", label: "Lote" }]),
               ]}
             />
 
-            <button 
-              onClick={handleManualRefresh}
-              disabled={loading || isRefreshing}
-              className={cn(
-                "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
-                theme === 'dark' 
-                  ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
-                  : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              {!readOnly && (
+                <button 
+                  onClick={handleManualRefresh}
+                  disabled={loading || isRefreshing}
+                  className={cn(
+                    "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                    theme === 'dark' 
+                      ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
+                      : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
+                  )}
+                >
+                  <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
+                  <span className="hidden md:inline">Sincronizar</span>
+                </button>
               )}
-            >
-              <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
-              <span className="hidden md:inline">Sincronizar</span>
-            </button>
 
-            {!readOnly && (
-              <button 
-                onClick={() => setIsModalOpen(true)}
-                className={cn(
-                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
-                  theme === 'dark' 
-                    ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
-                    : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
-                )}
-              >
-                <Plus size={16} />
-                <span>Nova Moto</span>
-              </button>
-            )}
+              {!readOnly && (
+                <button 
+                  onClick={() => setIsModalOpen(true)}
+                  className={cn(
+                    "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                    theme === 'dark' 
+                      ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
+                      : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
+                  )}
+                >
+                  <Plus size={16} />
+                  <span>Nova Moto</span>
+                </button>
+              )}
+            </div>
 
             {(searchTerm || brandFilter !== 'Todas' || statusFilter !== 'Todos' || cilindradaFilter !== 'Todas' || anoMinFilter || valorMinFilter || valorMaxFilter) && (
               <button 
@@ -6209,7 +6513,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  "w-full md:w-auto flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
                   theme === 'dark' 
                     ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
                     : "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
@@ -6223,14 +6527,16 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
         </div>
       </div>
 
+      {/* Filtros Secundários Compactos */}
+      {!readOnly && (
         <div className={cn(
-          "flex flex-wrap items-center gap-4 p-3 rounded-2xl border transition-all duration-300",
+          "flex flex-wrap items-center gap-3 p-2 px-3 rounded-2xl border transition-all duration-300 overflow-visible",
           theme === 'dark' 
             ? "bg-zinc-900/50 border-zinc-800" 
             : "bg-zinc-50 border-zinc-200"
         )}>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Cilindrada:</span>
+            <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Cilindrada:</span>
             <CustomDropdown
               theme={theme}
               value={cilindradaFilter}
@@ -6239,31 +6545,32 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
                 setCurrentPage(1);
               }}
               options={cilindradas.map(c => ({ value: c, label: c }))}
-              className="w-28"
+              className="w-24"
+              compact={false}
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Ano Min:</span>
+            <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Ano:</span>
             <input 
               type="number"
-              placeholder="Ex: 2015"
+              placeholder="Mín"
               value={anoMinFilter}
               onChange={(e) => {
                 setAnoMinFilter(e.target.value);
                 setCurrentPage(1);
               }}
               className={cn(
-                "w-20 border rounded-lg py-1.5 px-3 text-xs outline-none transition-all",
+                "w-16 border rounded-xl py-1.5 px-2 text-[11px] font-bold outline-none transition-all",
                 theme === 'dark' 
                   ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                  : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                  : "bg-white border-zinc-200 text-zinc-900 focus:border-violet-500"
               )}
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Valor:</span>
+            <span className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">Valor:</span>
             <div className="flex items-center gap-1">
               <input 
                 type="number"
@@ -6274,13 +6581,13 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "w-20 border rounded-lg py-1.5 px-3 text-xs outline-none transition-all",
+                  "w-20 border rounded-xl py-1.5 px-2 text-[11px] font-bold outline-none transition-all",
                   theme === 'dark' 
                     ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                    : "bg-white border-zinc-200 text-zinc-900 focus:border-violet-500"
                 )}
               />
-              <span className="text-zinc-400 text-xs">-</span>
+              <span className="text-zinc-500">-</span>
               <input 
                 type="number"
                 placeholder="Max"
@@ -6290,10 +6597,10 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "w-20 border rounded-lg py-1.5 px-3 text-xs outline-none transition-all",
+                  "w-20 border rounded-xl py-1.5 px-2 text-[11px] font-bold outline-none transition-all",
                   theme === 'dark' 
                     ? "bg-zinc-950 border-zinc-800 text-zinc-200 focus:border-violet-500" 
-                    : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500"
+                    : "bg-white border-zinc-200 text-zinc-900 focus:border-violet-500"
                 )}
               />
             </div>
@@ -6317,6 +6624,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
             </button>
           )}
         </div>
+      )}
 
       {viewMode === 'table' ? (
         <div className={cn(
@@ -6561,7 +6869,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 md:gap-6">
           {paginatedItems.map((item) => (
             <MotoCard 
               key={item.id}
@@ -7201,7 +7509,7 @@ const MotosView = ({ theme, onSelectItem, onRegisterActions, isSearchOpen, readO
       </AnimatePresence>
     </div>
   );
-};
+});
 
 // Helper to format relative time
 const formatRelativeTime = (dateString: string) => {
@@ -7232,6 +7540,9 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('user_name');
+    localStorage.removeItem('user_phone');
     setIsAuthenticated(false);
   };
 
@@ -7253,16 +7564,19 @@ export default function App() {
 // DETAIL MODAL COMPONENT
 // =============================================================================
 
-const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: { 
+const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: { 
   item: any, 
   onClose: () => void, 
   theme: 'light' | 'dark',
+  userRole?: string,
   onEdit?: (item: any) => void,
   onDelete?: (id: string) => void
 }) => {
   if (!item) return null;
 
   const [copied, setCopied] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
   // Scroll Lock
   useEffect(() => {
@@ -7271,6 +7585,11 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
       document.body.style.overflow = 'unset';
     };
   }, []);
+
+  const images = useMemo(() => {
+    const imgs = item.imagens && item.imagens.length > 0 ? item.imagens : (item.imagem ? [item.imagem] : []);
+    return imgs.filter(Boolean);
+  }, [item.imagens, item.imagem]);
 
   const handleCopyLink = () => {
     const link = item.ml_link || item.permalink;
@@ -7282,8 +7601,8 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
   };
 
   const handleWhatsAppShare = () => {
-    const text = `Olá! Tenho interesse nesta peça: *${item.nome || item.titulo}*\nValor: ${formatCurrency(item.valor || item.preco)}\nLink: ${item.ml_link || item.permalink || 'N/A'}`;
-    window.open(`https://wa.me/5511940141635?text=${encodeURIComponent(text)}`, '_blank');
+    const text = `Olá! Tenho interesse nesta peça: *${item.nome || item.titulo}*\nValor: ${formatCurrency(item.valor || item.preco)}`;
+    window.open(`https://wa.me/5583982039490?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   const parseValue = (val: any) => {
@@ -7339,87 +7658,126 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
   const itemName = item.nome || item.titulo || item.peca || item.title || 'Sem Nome';
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-0 md:p-4 bg-black/90 backdrop-blur-xl pt-safe pb-safe">
+    <div className="fixed inset-0 z-[2000] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm">
       <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 200 }}
         className={cn(
-          "w-[96%] md:w-full h-auto max-h-[74vh] md:max-h-[90vh] md:max-w-xl overflow-hidden rounded-lg border shadow-2xl flex flex-col relative",
-          theme === 'dark' ? "bg-zinc-950 border-zinc-800/50" : "bg-white border-zinc-200"
+          "w-full md:max-w-2xl h-[92vh] md:h-auto md:max-h-[90vh] rounded-t-[2.5rem] md:rounded-[2.5rem] overflow-hidden border-t md:border shadow-2xl flex flex-col relative",
+          theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200"
         )}
       >
-        {/* Close Button Floating */}
+        {/* Handle for mobile */}
+        <div className="md:hidden w-full flex justify-center pt-4 pb-2">
+          <div className="w-12 h-1.5 rounded-full bg-zinc-800/50" />
+        </div>
+
+        {/* Close Button */}
         <button 
           onClick={onClose} 
           className={cn(
-            "absolute top-1.5 right-1.5 z-50 p-1 rounded-full transition-all active:scale-90 shadow-xl backdrop-blur-md border",
-            theme === 'dark' ? "bg-zinc-900/80 border-zinc-800 text-zinc-400 hover:text-white" : "bg-white/80 border-zinc-200 text-zinc-500 hover:text-zinc-900"
+            "absolute top-6 right-6 z-50 p-2 rounded-full transition-all active:scale-90 shadow-xl border",
+            theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:text-zinc-900"
           )}
         >
-          <X size={14} />
+          <X size={20} />
         </button>
 
         <div className="flex-1 overflow-y-auto scrollbar-hide">
-          {/* Hero Section with Image */}
-          <div className="relative h-28 md:h-64 w-full bg-zinc-950/40 flex items-center justify-center overflow-hidden">
-            {(item.imagens && item.imagens.length > 0) ? (
-              <img src={item.imagens[0]} alt={itemName} className="w-full h-full object-contain p-1.5 relative z-10" referrerPolicy="no-referrer" />
-            ) : item.imagem ? (
-              <img src={item.imagem} alt={itemName} className="w-full h-full object-contain p-1.5 relative z-10" referrerPolicy="no-referrer" />
+          {/* Image Gallery */}
+          <div className="relative aspect-[4/3] w-full bg-zinc-950 overflow-hidden">
+            {images.length > 0 ? (
+              <div className="w-full h-full relative">
+                <div 
+                  className="flex transition-transform duration-500 ease-out h-full"
+                  style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
+                >
+                  {images.map((src: string, idx: number) => (
+                    <div 
+                      key={idx} 
+                      className="w-full h-full flex-shrink-0 cursor-zoom-in"
+                      onClick={() => setFullScreenImage(src)}
+                    >
+                      <img src={src} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                    </div>
+                  ))}
+                </div>
+                
+                {images.length > 1 && (
+                  <>
+                    <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-between px-4 pointer-events-none">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(prev => (prev - 1 + images.length) % images.length); }}
+                        className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white pointer-events-auto active:scale-90 transition-all"
+                      >
+                        <ChevronLeft size={24} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setCurrentImageIndex(prev => (prev + 1) % images.length); }}
+                        className="p-2 rounded-full bg-black/20 backdrop-blur-md text-white pointer-events-auto active:scale-90 transition-all"
+                      >
+                        <ChevronRight size={24} />
+                      </button>
+                    </div>
+                    <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-2">
+                      {images.map((_: any, idx: number) => (
+                        <div 
+                          key={idx} 
+                          className={cn(
+                            "h-1.5 rounded-full transition-all duration-300",
+                            idx === currentImageIndex ? "w-8 bg-white" : "w-2 bg-white/40"
+                          )}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-zinc-800 relative z-10">
-                {isSale ? <ShoppingBag size={32} strokeWidth={1} className="opacity-10" /> : <Package size={32} strokeWidth={1} className="opacity-10" />}
+              <div className="w-full h-full flex items-center justify-center text-zinc-800">
+                <Bike size={64} strokeWidth={1} className="opacity-10" />
               </div>
             )}
-            
-            {/* Background Glow */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-from)_0%,_transparent_70%)] from-violet-500/10 to-transparent" />
-            <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-zinc-950 to-transparent pointer-events-none z-10" />
           </div>
 
-          {/* Main Content */}
-          <div className="px-2.5 md:px-8 -mt-3 relative z-20 pb-2.5">
-            <div className="flex flex-col gap-0 mb-2.5">
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex flex-wrap items-center gap-1">
-                  <span className="px-1 py-0.5 bg-violet-500/20 text-violet-400 text-[6.5px] font-black uppercase tracking-widest rounded-sm border border-violet-500/20 shadow-sm">
+          {/* Content */}
+          <div className="p-8 space-y-8">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 bg-violet-500/10 text-violet-500 text-[10px] font-black uppercase tracking-widest rounded-full border border-violet-500/20">
                     {item.categoria || (isSale ? 'Venda' : (item.marca ? 'Moto' : 'Peça'))}
                   </span>
                   {(item.status || item.tipo) && (
                     <span className={cn(
-                      "px-1 py-0.5 text-[6.5px] font-black uppercase tracking-widest rounded-sm border shadow-sm",
+                      "px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full border",
                       (item.status === 'Disponível' || item.status === 'DISPONÍVEL' || item.status === 'Ativo' || (isSale && item.tipo !== 'SAÍDA'))
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                        : "bg-rose-500/10 text-rose-500 border-rose-500/20"
                     )}>
                       {item.status || item.tipo}
                     </span>
                   )}
                 </div>
-                <span className="text-zinc-500 text-[6.5px] font-mono font-bold bg-zinc-900/80 px-1 py-0.5 rounded-sm border border-zinc-800/50">
-                  #{item.rk_id || (item.id && String(item.id).slice(0,4)) || 'N/A'}
-                </span>
+                <span className="text-zinc-500 text-[10px] font-mono font-bold">#{item.rk_id || (item.id && String(item.id).slice(0,4)) || 'N/A'}</span>
               </div>
-              
-              <h3 className={cn("text-sm md:text-2xl font-black leading-tight tracking-tight uppercase", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+
+              <h2 className={cn("text-3xl md:text-4xl font-black tracking-tight uppercase leading-none", theme === 'dark' ? "text-white" : "text-zinc-900")}>
                 {itemName}
-              </h3>
-              
-              <div className="flex items-baseline gap-1 mt-0">
-                <span className={cn(
-                  "text-lg md:text-4xl font-black tracking-tighter transition-all duration-500",
-                  item.tipo === 'SAÍDA' 
-                    ? "text-rose-500 [text-shadow:0_0_8px_rgba(244,63,94,0.3)]" 
-                    : "text-emerald-500 [text-shadow:0_0_8px_rgba(16,185,129,0.3)]"
-                )}>
-                  {formatCurrency(itemValue)}
-                </span>
+              </h2>
+
+              <div className={cn(
+                "text-4xl md:text-5xl font-black tracking-tighter transition-all duration-500",
+                item.tipo === 'SAÍDA' ? "text-rose-500" : "text-emerald-500"
+              )}>
+                {formatCurrency(itemValue)}
               </div>
             </div>
 
             {/* Elegant Grid */}
-            <div className="grid grid-cols-2 gap-1 md:gap-3 mb-2.5">
+            <div className="grid grid-cols-2 gap-4">
               {!isSale && !item.marca && (
                 <>
                   <DetailItem label="Estoque" value={item.estoque !== undefined ? item.estoque : 'N/A'} icon={Package} theme={theme} />
@@ -7450,111 +7808,121 @@ const DetailModal = ({ item, onClose, theme, onEdit, onDelete }: {
               )}
             </div>
 
-            {/* Additional Info Grid - Hidden on mobile to reduce info as requested */}
-            <div className="hidden md:grid grid-cols-2 gap-3 mb-2.5">
-              <div className={cn(
-                "p-1 rounded-md border flex flex-col gap-0",
-                theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
-              )}>
-                <span className="text-[5.5px] font-black uppercase text-zinc-500 tracking-widest">Criado em</span>
-                <span className={cn("text-[7.5px] font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>
-                  {formatDate(item.criado_em || item.data || item.date_created)}
-                </span>
-              </div>
-              <div className={cn(
-                "p-1 rounded-md border flex flex-col gap-0",
-                theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-zinc-50 border-zinc-100"
-              )}>
-                <span className="text-[5.5px] font-black uppercase text-zinc-500 tracking-widest">ID</span>
-                <span className={cn("text-[7.5px] font-mono font-medium truncate", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                  {String(item.id).slice(0, 4)}...
-                </span>
-              </div>
-            </div>
-
             {/* Description Section */}
             {(item.descricao || item.pecas_retiradas || item.observacoes) && (
-              <div className="space-y-1 mb-2.5">
+              <div className="space-y-4">
                 {(item.pecas_retiradas) && (
-                  <div className="p-1.5 rounded-md bg-zinc-900/40 border border-zinc-800/50 space-y-0">
-                    <h4 className="text-[6.5px] font-black uppercase text-violet-400 tracking-[0.1em] flex items-center gap-1">
-                      <Wrench size={7} /> Peças Retiradas
+                  <div className={cn(
+                    "p-6 rounded-3xl border space-y-2",
+                    theme === 'dark' ? "bg-zinc-900/30 border-zinc-800" : "bg-zinc-50 border-zinc-100"
+                  )}>
+                    <h4 className="text-[10px] font-black uppercase text-violet-400 tracking-[0.1em] flex items-center gap-2">
+                      <Wrench size={14} /> Peças Retiradas
                     </h4>
-                    <p className={cn("text-[8.5px] leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
+                    <p className={cn("text-sm leading-relaxed", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
                       {item.pecas_retiradas}
                     </p>
                   </div>
                 )}
                 {(item.descricao || item.observacoes) && (
-                  <div className="p-1.5 rounded-md bg-zinc-900/40 border border-zinc-800/50 space-y-0">
-                    <h4 className="text-[6.5px] font-black uppercase text-amber-400 tracking-[0.1em] flex items-center gap-1">
-                      <FileText size={7} /> Observações
+                  <div className={cn(
+                    "p-6 rounded-3xl border space-y-2",
+                    theme === 'dark' ? "bg-zinc-900/30 border-zinc-800" : "bg-zinc-50 border-zinc-100"
+                  )}>
+                    <h4 className="text-[10px] font-black uppercase text-amber-400 tracking-[0.1em] flex items-center gap-2">
+                      <FileText size={14} /> Observações
                     </h4>
-                    <p className={cn("text-[8.5px] leading-relaxed font-medium", theme === 'dark' ? "text-zinc-300" : "text-zinc-600")}>
+                    <p className={cn("text-sm leading-relaxed", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
                       {item.descricao || item.observacoes}
                     </p>
                   </div>
                 )}
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Fixed Quick Actions Footer */}
-        <div className={cn(
-          "p-1.5 border-t flex flex-col gap-1",
-          theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
-        )}>
-          <div className="grid grid-cols-2 gap-1">
-            {onEdit && (
+            {/* Ações */}
+            <div className="flex flex-col gap-3 pt-4">
               <button 
-                onClick={() => {
-                  onEdit(item);
-                  onClose();
-                }}
-                className={cn(
-                  "flex items-center justify-center gap-1 px-1.5 py-1 rounded-md font-black text-[7.5px] uppercase tracking-widest transition-all cursor-pointer border shadow-sm",
-                  theme === 'dark' 
-                    ? "bg-zinc-800 border-zinc-700 text-zinc-300 hover:bg-violet-600 hover:text-white" 
-                    : "bg-white border-zinc-200 text-zinc-600 hover:bg-violet-600 hover:text-white"
-                )}
+                onClick={handleWhatsAppShare}
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-3"
               >
-                <Edit2 size={9} /> Editar
+                <MessageCircle size={20} />
+                Tenho Interesse
               </button>
-            )}
-            {onDelete && (
-              <button 
-                onClick={() => {
-                  onDelete(item.id);
-                  onClose();
-                }}
-                className={cn(
-                  "flex items-center justify-center gap-1 px-1.5 py-1 rounded-md font-black text-[7.5px] uppercase tracking-widest transition-all cursor-pointer border shadow-sm",
-                  theme === 'dark' 
-                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-600 hover:text-white" 
-                    : "bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-600 hover:text-white"
-                )}
-              >
-                <Trash2 size={9} /> Excluir
-              </button>
-            )}
-          </div>
+              
+              {(item.ml_link || item.permalink) && (
+                <motion.a 
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.98 }}
+                  href={item.ml_link || item.permalink} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-3 w-full py-5 bg-[#FFE600] text-[#2D3277] font-black text-xs uppercase tracking-[0.1em] rounded-2xl hover:bg-[#F0D800] transition-all shadow-xl border border-[#FFE600]/20"
+                >
+                  <ExternalLink size={20} />
+                  Abrir no Mercado Livre
+                </motion.a>
+              )}
 
-          {(item.ml_link || item.permalink) && (
-            <motion.a 
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-              href={item.ml_link || item.permalink} 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1 w-full py-1.5 bg-[#FFE600] text-[#2D3277] font-black text-[7.5px] uppercase tracking-[0.05em] rounded-md hover:bg-[#F0D800] transition-all shadow-md cursor-pointer border border-[#FFE600]/20"
-            >
-              <ExternalLink size={9} />
-              Abrir no Mercado Livre
-            </motion.a>
-          )}
+              {onEdit && userRole === 'admin' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => { onEdit(item); onClose(); }}
+                    className={cn(
+                      "py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all border flex items-center justify-center gap-2",
+                      theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-white hover:bg-zinc-800" : "bg-white border-zinc-200 text-zinc-900 hover:bg-zinc-50"
+                    )}
+                  >
+                    <Edit size={16} />
+                    Editar
+                  </button>
+                  <button 
+                    onClick={() => { 
+                      if (window.confirm('Tem certeza que deseja excluir este item?')) {
+                        onDelete?.(item.id || item.rk_id);
+                        onClose();
+                      }
+                    }}
+                    className="py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500/20 flex items-center justify-center gap-2"
+                  >
+                    <Trash2 size={16} />
+                    Excluir
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </motion.div>
+
+      {/* Full Screen Image Viewer */}
+      <AnimatePresence>
+        {fullScreenImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[3000] bg-black flex items-center justify-center p-4 md:p-10"
+            onClick={() => setFullScreenImage(null)}
+          >
+            <button 
+              className="absolute top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all z-[3001]"
+              onClick={(e) => { e.stopPropagation(); setFullScreenImage(null); }}
+            >
+              <X size={24} />
+            </button>
+            <motion.img
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              src={fullScreenImage}
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              referrerPolicy="no-referrer"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -7564,15 +7932,15 @@ const DetailItem = ({ label, value, theme, icon: Icon }: { label: string, value:
   
   return (
     <div className={cn(
-      "p-1.5 md:p-3 rounded-md border flex flex-col gap-0.5 transition-all",
+      "p-4 rounded-2xl border flex flex-col gap-1.5 transition-all",
       theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-zinc-50 border-zinc-200"
     )}>
-      <div className="flex items-center gap-1 text-zinc-500">
-        <Icon size={8} strokeWidth={2.5} />
-        <span className="text-[6px] md:text-[8px] uppercase font-black tracking-widest">{label}</span>
+      <div className="flex items-center gap-2 text-zinc-500">
+        <Icon size={14} strokeWidth={2.5} />
+        <span className="text-[10px] uppercase font-black tracking-widest">{label}</span>
       </div>
       <span className={cn(
-        "text-[9px] md:text-sm font-black truncate uppercase",
+        "text-sm md:text-base font-black truncate uppercase",
         theme === 'dark' ? "text-zinc-100" : "text-zinc-900",
         (label === 'Estoque') && "text-emerald-400 [text-shadow:0_0_8px_rgba(16,185,129,0.3)]"
       )}>
@@ -7662,7 +8030,6 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
     const handleWheel = (e: WheelEvent) => {
       if (images.length <= 1) return;
       
-      // Prevent page scroll when hovering and scrolling on the card
       if (e.deltaY !== 0) {
         e.preventDefault();
         e.stopPropagation();
@@ -7675,9 +8042,33 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
       }
     };
 
-    // Add listener with passive: false to allow preventDefault
+    let touchStartX = 0;
+    const handleTouchStart = (e: TouchEvent) => {
+      touchStartX = e.touches[0].clientX;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (images.length <= 1) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const diff = touchStartX - touchEndX;
+
+      if (Math.abs(diff) > 50) { // Threshold for swipe
+        if (diff > 0) {
+          setCurrentImageIndex((prev) => (prev + 1) % images.length);
+        } else {
+          setCurrentImageIndex((prev) => (prev - 1 + images.length) % images.length);
+        }
+      }
+    };
+
     card.addEventListener('wheel', handleWheel, { passive: false });
-    return () => card.removeEventListener('wheel', handleWheel);
+    card.addEventListener('touchstart', handleTouchStart, { passive: true });
+    card.addEventListener('touchend', handleTouchEnd, { passive: true });
+    return () => {
+      card.removeEventListener('wheel', handleWheel);
+      card.removeEventListener('touchstart', handleTouchStart);
+      card.removeEventListener('touchend', handleTouchEnd);
+    };
   }, [images.length]);
 
   return (
@@ -7755,15 +8146,17 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
           </div>
         )}
         
-        {/* Status Badge - Improved */}
-        <div className="absolute top-3 left-3">
-          <span className={cn(
-            "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md border border-white/10",
-            getStatusColor(item.status, true)
-          )}>
-            {item.status}
-          </span>
-        </div>
+        {/* Status Badge - Removed as requested */}
+        {/* {!readOnly && (
+          <div className="absolute top-3 left-3">
+            <span className={cn(
+              "px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider shadow-lg backdrop-blur-md border border-white/10",
+              getStatusColor(item.status, true)
+            )}>
+              {item.status}
+            </span>
+          </div>
+        )} */}
 
         {/* Quick Actions - Repositioned to top right */}
         {!readOnly && (
@@ -7785,58 +8178,58 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
       </div>
 
       {/* Content */}
-      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-        <div className="space-y-2">
+      <div className="p-3 md:p-5 flex-1 flex flex-col justify-between space-y-2 md:space-y-4">
+        <div className="space-y-1 md:space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-bold text-violet-500 uppercase tracking-widest">{item.marca}</span>
+              <span className="text-[8px] md:text-[10px] font-bold text-violet-500 uppercase tracking-widest">{item.marca}</span>
             </div>
-            <span className="text-[10px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">{item.rk_id}</span>
+            <span className="text-[8px] md:text-[10px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1 md:px-1.5 py-0.5 rounded">{item.rk_id}</span>
           </div>
           
           <div>
             <h3 className={cn(
-              "font-black text-xl leading-tight line-clamp-1 tracking-tight",
+              "font-black text-sm md:text-xl leading-tight line-clamp-2 tracking-tight",
               theme === 'dark' ? "text-white" : "text-zinc-900"
             )}>
               {item.nome && item.nome !== '-' ? item.nome : (item.modelo && item.modelo !== '-' ? item.modelo : 'Moto sem Nome')}
             </h3>
             {item.nome && item.nome !== '-' && item.modelo && item.modelo !== '-' && item.nome !== item.modelo && (
-              <p className="text-xs text-zinc-500 font-medium mt-0.5">{item.modelo}</p>
+              <p className="text-[10px] md:text-xs text-zinc-500 font-medium mt-0.5 line-clamp-1">{item.modelo}</p>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-y-2 gap-x-3 pt-1">
-            {item.lote && (
-              <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                <Layers size={12} className="text-violet-500" />
+          <div className="flex flex-wrap items-center gap-y-1 md:gap-y-2 gap-x-2 md:gap-x-3 pt-1">
+            {item.lote && !readOnly && (
+              <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                <Layers size={10} className="text-violet-500" />
                 <span className="font-bold">Lote: {item.lote}</span>
               </div>
             )}
-            <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
-              <Calendar size={12} className="text-violet-500" />
+            <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+              <Calendar size={10} className="text-violet-500" />
               <span>{item.ano}</span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+            <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
               <div 
-                className="w-2.5 h-2.5 rounded-full border border-zinc-300 dark:border-zinc-700 shadow-inner" 
+                className="w-2 md:w-2.5 h-2 md:h-2.5 rounded-full border border-zinc-300 dark:border-zinc-700 shadow-inner" 
                 style={{ backgroundColor: getMotoColor(item.cor) }} 
               />
               <span>{item.cor || '-'}</span>
             </div>
             {item.cilindrada && item.cilindrada !== '-' && (
-              <div className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-2 py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
-                <TrendingUp size={12} className="text-violet-500" />
+              <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+                <TrendingUp size={10} className="text-violet-500" />
                 <span>{item.cilindrada}cc</span>
               </div>
             )}
           </div>
         </div>
 
-        <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+        <div className="pt-2 md:pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Investimento</span>
-            <span className="text-xl font-black text-violet-500">
+            <span className="text-[8px] md:text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{readOnly ? 'Valor' : 'Investimento'}</span>
+            <span className="text-sm md:text-xl font-black text-violet-500">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(item.valor)}
             </span>
           </div>
@@ -7855,7 +8248,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const userRole = localStorage.getItem('user_role') || 'client';
   const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients'>(
-    userRole === 'admin' ? 'dashboard' : 'estoque'
+    userRole === 'admin' ? 'dashboard' : 'motos'
   );
   const contentRef = useRef<HTMLDivElement>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
@@ -7903,10 +8296,21 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
   const [profilePhoto, setProfilePhoto] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      return localStorage.getItem('profilePhoto');
+      const phone = localStorage.getItem('user_phone');
+      return phone ? localStorage.getItem(`profilePhoto_${phone}`) : null;
     }
     return null;
   });
+
+  // Atualiza a foto de perfil quando o usuário muda
+  useEffect(() => {
+    const phone = localStorage.getItem('user_phone');
+    if (phone) {
+      setProfilePhoto(localStorage.getItem(`profilePhoto_${phone}`));
+    } else {
+      setProfilePhoto(null);
+    }
+  }, []);
   const [allMlListings, setAllMlListings] = useState<any[]>([]);
   const [showAllMlAds, setShowAllMlAds] = useState(false);
   const [isMlListingsLoading, setIsMlListingsLoading] = useState(false);
@@ -8018,22 +8422,46 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  const handleProfilePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        setProfilePhoto(base64String);
-        localStorage.setItem('profilePhoto', base64String);
-      };
-      reader.readAsDataURL(file);
+    const phone = localStorage.getItem('user_phone');
+    const token = localStorage.getItem('auth_token');
+
+    if (file && phone && token) {
+      const formData = new FormData();
+      formData.append('photo', file);
+      formData.append('phone', phone);
+
+      try {
+        const res = await fetch('/api/upload/profile', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setProfilePhoto(data.url);
+          localStorage.setItem(`profilePhoto_${phone}`, data.url);
+          console.log('✅ Foto de perfil atualizada:', data.url);
+        } else {
+          alert('Erro ao enviar foto: ' + data.error);
+        }
+      } catch (error) {
+        console.error('❌ Erro ao enviar foto de perfil:', error);
+        alert('Erro de conexão ao enviar foto');
+      }
     }
   };
 
   const handleRemovePhoto = () => {
+    const phone = localStorage.getItem('user_phone');
     setProfilePhoto(null);
-    localStorage.removeItem('profilePhoto');
+    if (phone) {
+      localStorage.removeItem(`profilePhoto_${phone}`);
+    }
     setIsProfileDropdownOpen(false);
   };
 
@@ -8088,39 +8516,39 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       </AnimatePresence>
 
       {/* Sidebar */}
-      <aside className={cn(
-        "fixed md:sticky top-0 h-screen inset-y-0 left-0 z-50 transition-all duration-300 ease-in-out border-r hidden md:flex",
-        theme === 'dark' ? "bg-zinc-950/50 border-zinc-800/50 backdrop-blur-xl" : "bg-white border-zinc-200 shadow-xl",
-        isSidebarOpen ? "w-64 translate-x-0" : "w-20 -translate-x-full md:translate-x-0",
-        !isSidebarOpen && "md:w-20"
-      )}>
-        <div className={cn(
-          "h-full flex flex-col p-4",
-          theme === 'dark' ? "bg-zinc-950" : "bg-white"
+      {userRole === 'admin' && (
+        <aside className={cn(
+          "fixed md:sticky top-0 h-screen inset-y-0 left-0 z-50 transition-all duration-300 ease-in-out border-r hidden md:flex",
+          theme === 'dark' ? "bg-zinc-950/50 border-zinc-800/50 backdrop-blur-xl" : "bg-white border-zinc-200 shadow-xl",
+          isSidebarOpen ? "w-64 translate-x-0" : "w-20 -translate-x-full md:translate-x-0",
+          !isSidebarOpen && "md:w-20"
         )}>
-          <div className="flex items-center gap-3 px-2 mb-10 overflow-hidden">
-            <div className="w-10 h-10 shrink-0 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
-              <Wrench className={theme === 'dark' ? "text-zinc-100" : "text-zinc-900"} size={20} />
+          <div className={cn(
+            "h-full flex flex-col p-4",
+            theme === 'dark' ? "bg-zinc-950" : "bg-white"
+          )}>
+            <div className="flex items-center gap-3 px-2 mb-10 overflow-hidden">
+              <div className="w-10 h-10 shrink-0 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                <Wrench className={theme === 'dark' ? "text-zinc-100" : "text-zinc-900"} size={20} />
+              </div>
+              {isSidebarOpen && (
+                <motion.div 
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="flex flex-col min-w-0"
+                >
+                  <span className={cn(
+                    "font-black text-xl tracking-tighter truncate",
+                    theme === 'dark' ? "text-white" : "text-zinc-900"
+                  )}>
+                    RK <span className="text-violet-500">SUCATAS</span>
+                  </span>
+                  <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Gestão Inteligente</span>
+                </motion.div>
+              )}
             </div>
-            {isSidebarOpen && (
-              <motion.div 
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="flex flex-col min-w-0"
-              >
-                <span className={cn(
-                  "font-black text-xl tracking-tighter truncate",
-                  theme === 'dark' ? "text-white" : "text-zinc-900"
-                )}>
-                  RK <span className="text-violet-500">SUCATAS</span>
-                </span>
-                <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Gestão Inteligente</span>
-              </motion.div>
-            )}
-          </div>
 
-          <nav className="flex-1 space-y-2">
-            {userRole === 'admin' && (
+            <nav className="flex-1 space-y-2">
               <SidebarItem 
                 icon={LayoutDashboard} 
                 label={isSidebarOpen ? "Dashboard" : ""} 
@@ -8128,73 +8556,65 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 onClick={() => setActiveTab('dashboard')} 
                 theme={theme}
               />
-            )}
-            <SidebarItem 
-              icon={Package} 
-              label={isSidebarOpen ? (userRole === 'admin' ? "Estoque" : "Catálogo") : ""} 
-              active={activeTab === 'estoque'} 
-              onClick={() => setActiveTab('estoque')} 
-              theme={theme}
-            />
-            {userRole === 'admin' && (
-              <>
-                <SidebarItem 
-                  icon={ShoppingCart} 
-                  label={isSidebarOpen ? "Vendas" : ""} 
-                  active={activeTab === 'vendas'} 
-                  onClick={() => setActiveTab('vendas')} 
-                  theme={theme}
-                />
-                <SidebarItem 
-                  icon={TrendingUp} 
-                  label={isSidebarOpen ? "Mercado Livre" : ""} 
-                  active={activeTab === 'mercadolivre'} 
-                  onClick={() => setActiveTab('mercadolivre')} 
-                  theme={theme}
-                  className="hidden md:flex"
-                />
-              </>
-            )}
-            <SidebarItem 
-              icon={Bike} 
-              label={isSidebarOpen ? "Motos" : ""} 
-              active={activeTab === 'motos'} 
-              onClick={() => setActiveTab('motos')} 
-              theme={theme}
-            />
-            {userRole === 'admin' && (
-              <>
-                <SidebarItem 
-                  icon={Truck} 
-                  label={isSidebarOpen ? "Frete" : ""} 
-                  active={activeTab === 'frete'} 
-                  onClick={() => setActiveTab('frete')} 
-                  theme={theme}
-                />
-                <SidebarItem 
-                  icon={MessageSquare} 
-                  label={isSidebarOpen ? "Atendimento" : ""} 
-                  active={activeTab === 'atendimento'} 
-                  onClick={() => setActiveTab('atendimento')} 
-                  theme={theme}
-                  badge={unreadCount > 0 ? unreadCount : undefined}
-                />
-                <SidebarItem 
-                  icon={Users} 
-                  label={isSidebarOpen ? "Clientes" : ""} 
-                  active={activeTab === 'clients'} 
-                  onClick={() => setActiveTab('clients')} 
-                  theme={theme}
-                />
-              </>
-            )}
-          </nav>
-        </div>
-      </aside>
+              <SidebarItem 
+                icon={Package} 
+                label={isSidebarOpen ? "Estoque" : ""} 
+                active={activeTab === 'estoque'} 
+                onClick={() => setActiveTab('estoque')} 
+                theme={theme}
+              />
+              <SidebarItem 
+                icon={ShoppingCart} 
+                label={isSidebarOpen ? "Vendas" : ""} 
+                active={activeTab === 'vendas'} 
+                onClick={() => setActiveTab('vendas')} 
+                theme={theme}
+              />
+              <SidebarItem 
+                icon={TrendingUp} 
+                label={isSidebarOpen ? "Mercado Livre" : ""} 
+                active={activeTab === 'mercadolivre'} 
+                onClick={() => setActiveTab('mercadolivre')} 
+                theme={theme}
+                className="hidden md:flex"
+              />
+              <SidebarItem 
+                icon={Bike} 
+                label={isSidebarOpen ? "Motos" : ""} 
+                active={activeTab === 'motos'} 
+                onClick={() => setActiveTab('motos')} 
+                theme={theme}
+              />
+              <SidebarItem 
+                icon={Truck} 
+                label={isSidebarOpen ? "Frete" : ""} 
+                active={activeTab === 'frete'} 
+                onClick={() => setActiveTab('frete')} 
+                theme={theme}
+              />
+              <SidebarItem 
+                icon={MessageSquare} 
+                label={isSidebarOpen ? "Atendimento" : ""} 
+                active={activeTab === 'atendimento'} 
+                onClick={() => setActiveTab('atendimento')} 
+                theme={theme}
+                badge={unreadCount > 0 ? unreadCount : undefined}
+              />
+              <SidebarItem 
+                icon={Users} 
+                label={isSidebarOpen ? "Clientes" : ""} 
+                active={activeTab === 'clients'} 
+                onClick={() => setActiveTab('clients')} 
+                theme={theme}
+              />
+            </nav>
+          </div>
+        </aside>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 pb-nav-safe md:pb-0">
-        {/* Header */}
+        {/* Header - Restored for clients as requested */}
         <header className={cn(
           "min-h-16 border-b backdrop-blur-md flex items-center justify-between px-4 md:px-6 sticky top-0 z-[100] transition-colors pt-safe",
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
@@ -8213,7 +8633,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 {profilePhoto ? (
                   <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
-                  <User size={20} className={theme === 'dark' ? "text-zinc-500" : "text-zinc-400"} />
+                  <div className={cn(
+                    "w-full h-full flex items-center justify-center font-black text-lg uppercase",
+                    theme === 'dark' ? "text-violet-400 bg-violet-500/10" : "text-violet-600 bg-violet-50"
+                  )}>
+                    {(localStorage.getItem('user_name') || 'U').charAt(0)}
+                  </div>
                 )}
               </button>
 
@@ -8290,18 +8715,6 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
-            <div className={cn(
-              "hidden lg:flex items-center gap-2 border px-3 py-1.5 rounded-lg transition-colors focus-within:border-violet-500",
-              theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400" : "bg-zinc-100 border-zinc-200 text-zinc-600"
-            )}>
-              <Search size={16} />
-              <input 
-                type="text" 
-                placeholder="Pesquisar..." 
-                className="bg-transparent border-none outline-none text-sm w-48"
-              />
-            </div>
-            
             <button 
               onClick={toggleTheme}
               className={cn(
@@ -8311,14 +8724,6 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
               title={theme === 'dark' ? "Mudar para modo claro" : "Mudar para modo escuro"}
             >
               {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-
-            <button className={cn(
-              "p-2 rounded-lg relative transition-colors",
-              theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-600"
-            )}>
-              <Bell size={20} />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-violet-500 rounded-full border-2 border-zinc-950" />
             </button>
           </div>
         </header>
@@ -8332,6 +8737,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
+              className="transform-gpu"
             >
               {activeTab === 'dashboard' ? (
                 <DashboardView 
@@ -8405,40 +8811,42 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           </AnimatePresence>
         </div>
       </main>
-      <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />
+      {userRole === 'admin' && <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />}
       
-      {/* Grupo de ações flutuantes */}
-      <div className="fixed bottom-fab-safe md:bottom-6 right-6 z-[60] flex flex-col gap-3">
-        <GlobalSearch 
-          theme={theme} 
-          onSelectItem={setSelectedDetailItem} 
-          isOpen={isSearchOpen} 
-          setIsOpen={setIsSearchOpen}
-          customClick={() => {
-            setIsSearchOpen(true);
-          }}
-        />
+      {/* Grupo de ações flutuantes - Only for Admin */}
+      {userRole === 'admin' && (
+        <div className="fixed bottom-fab-safe md:bottom-6 right-6 z-[60] flex flex-col gap-3">
+          <GlobalSearch 
+            theme={theme} 
+            onSelectItem={setSelectedDetailItem} 
+            isOpen={isSearchOpen} 
+            setIsOpen={setIsSearchOpen}
+            customClick={() => {
+              setIsSearchOpen(true);
+            }}
+          />
 
-        {/* Budget FAB */}
-        <motion.button
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setIsBudgetModalOpen(true)}
-          className={cn(
-            "relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl group border",
-            theme === 'dark' 
-              ? "bg-zinc-800 hover:bg-zinc-700 border-zinc-700" 
-              : "bg-white hover:bg-gray-50 border-zinc-200"
-          )}
-        >
-          <DollarSign className={cn(
-            "w-6 h-6 transition-transform group-hover:scale-110",
-            theme === 'dark' ? "text-violet-400" : "text-violet-600"
-          )} />
-        </motion.button>
-      </div>
+          {/* Budget FAB */}
+          <motion.button
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsBudgetModalOpen(true)}
+            className={cn(
+              "relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl group border",
+              theme === 'dark' 
+                ? "bg-zinc-800 hover:bg-zinc-700 border-zinc-700" 
+                : "bg-white hover:bg-gray-50 border-zinc-200"
+            )}
+          >
+            <DollarSign className={cn(
+              "w-6 h-6 transition-transform group-hover:scale-110",
+              theme === 'dark' ? "text-violet-400" : "text-violet-600"
+            )} />
+          </motion.button>
+        </div>
+      )}
 
       <BudgetModal 
         isOpen={isBudgetModalOpen} 
@@ -8452,6 +8860,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           <DetailModal 
             item={selectedDetailItem} 
             theme={theme} 
+            userRole={userRole}
             onClose={() => setSelectedDetailItem(null)} 
             onEdit={itemActions.edit}
             onDelete={itemActions.delete}

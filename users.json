@@ -1,0 +1,16 @@
+[
+  {
+    "phone": "83999777666",
+    "password": "ayrtontrajano115",
+    "name": "Criador",
+    "cpf": 0,
+    "role": "client"
+  },
+  {
+    "phone": "83982039490",
+    "password": "rksucatasadm115935",
+    "name": "Administrador",
+    "cpf": 0,
+    "role": "admin"
+  }
+]

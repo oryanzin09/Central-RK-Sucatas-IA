@@ -100,10 +100,11 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Submitting client form:', formData);
     const token = localStorage.getItem('auth_token');
     const method = editingClient ? 'PUT' : 'POST';
     const url = editingClient ? `/api/clients/${editingClient.id}` : '/api/clients';
+    
+    console.log(`🚀 Enviando requisição ${method} para ${url}`, formData);
 
     try {
       const res = await fetch(url, {
@@ -115,6 +116,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
         body: JSON.stringify(formData)
       });
       const data = await res.json();
+      console.log('📥 Resposta do servidor:', data);
       if (data.success) {
         setIsModalOpen(false);
         fetchClients();
@@ -122,13 +124,14 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
         alert('Erro ao salvar cliente: ' + (data.error || 'Erro desconhecido'));
       }
     } catch (error) {
-      console.error('Erro ao salvar cliente:', error);
+      console.error('❌ Erro ao salvar cliente:', error);
       alert('Erro de conexão ao salvar cliente');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este cliente?')) return;
+    if (!window.confirm('Tem certeza que deseja excluir este cliente?')) return;
+    console.log(`🗑️ Deletando cliente ${id}...`);
     const token = localStorage.getItem('auth_token');
     try {
       const res = await fetch(`/api/clients/${id}`, {
@@ -136,9 +139,12 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
+      console.log('📥 Resposta do servidor (delete):', data);
       if (data.success) fetchClients();
+      else alert('Erro ao excluir cliente: ' + (data.error || 'Erro desconhecido'));
     } catch (error) {
-      console.error('Erro ao deletar cliente:', error);
+      console.error('❌ Erro ao deletar cliente:', error);
+      alert('Erro de conexão ao excluir cliente');
     }
   };
 

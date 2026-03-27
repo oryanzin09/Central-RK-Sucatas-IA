@@ -69,6 +69,7 @@ export const Login = ({ onLogin }: LoginProps) => {
   }, []);
 
   const formatPhone = (val: string) => {
+    if (val.includes('@')) return val;
     const cleaned = val.replace(/\D/g, '').slice(0, 11);
     const match = cleaned.match(/^(\d{2})(\d{5})(\d{4})$/) || cleaned.match(/^(\d{2})(\d{4,5})(\d{0,4})$/);
     if (match) {
@@ -88,6 +89,23 @@ export const Login = ({ onLogin }: LoginProps) => {
     setError(null);
     setLoading(true);
     
+    const isEmail = phone.includes('@');
+    const cleanPhone = isEmail ? phone.trim() : phone.replace(/\D/g, '');
+    const whatsappRegex = /^\d{10,13}$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!isEmail && !whatsappRegex.test(cleanPhone)) {
+      setError('Número de WhatsApp inválido (deve ter entre 10 e 13 dígitos)');
+      setLoading(false);
+      return;
+    }
+
+    if (isEmail && !emailRegex.test(cleanPhone)) {
+      setError('E-mail inválido');
+      setLoading(false);
+      return;
+    }
+
     try {
       if (isRegister) {
         if (password !== confirmPassword) {
@@ -103,7 +121,7 @@ export const Login = ({ onLogin }: LoginProps) => {
         }
 
         const result = await api.post('/api/register', { 
-          phone: phone.replace(/\D/g, ''), 
+          phone: cleanPhone, 
           password,
           name: isRegister ? name : undefined
         });
@@ -112,13 +130,14 @@ export const Login = ({ onLogin }: LoginProps) => {
           localStorage.setItem('auth_token', result.token);
           localStorage.setItem('user_role', result.role || 'client');
           localStorage.setItem('user_name', result.name || name || 'Cliente');
+          localStorage.setItem('user_phone', cleanPhone);
           onLogin(result.token);
         } else {
           setError(result.error || 'Erro ao criar conta');
         }
       } else {
         const result = await api.post('/api/login', { 
-          phone: phone.replace(/\D/g, ''), 
+          phone: cleanPhone, 
           password 
         });
         
@@ -126,9 +145,10 @@ export const Login = ({ onLogin }: LoginProps) => {
           localStorage.setItem('auth_token', result.token);
           localStorage.setItem('user_role', result.role || 'client');
           localStorage.setItem('user_name', result.name || 'Cliente');
+          localStorage.setItem('user_phone', cleanPhone);
           onLogin(result.token);
         } else {
-          setError(result.error || 'Telefone ou senha incorretos');
+          setError(result.error || 'Telefone/E-mail ou senha incorretos');
         }
       }
     } catch (error) {
@@ -268,14 +288,14 @@ export const Login = ({ onLogin }: LoginProps) => {
           {/* Direita: Formulário de Acesso (Full screen no mobile) */}
           <div 
             ref={loginRef}
-            className="w-full md:w-7/12 h-[100dvh] md:min-h-[550px] p-6 md:p-10 flex flex-col justify-center bg-zinc-900/40 backdrop-blur-sm shrink-0 snap-start"
+            className="w-full md:w-7/12 h-[100dvh] md:min-h-[550px] p-6 md:p-12 lg:p-16 flex flex-col justify-center bg-zinc-900/40 backdrop-blur-sm shrink-0 snap-start"
           >
-            <div className="max-w-sm w-full mx-auto">
-              <div className="mb-5 md:mb-8">
-                <h2 className="text-xl md:text-3xl font-black text-white mb-1.5 tracking-tight">
+            <div className="max-w-[320px] w-full mx-auto">
+              <div className="mb-6 md:mb-10">
+                <h2 className="text-xl md:text-2xl font-black text-white mb-2 tracking-tight">
                   {isRegister ? 'Criar Conta' : 'Bem-vindo!'}
                 </h2>
-                <p className="text-zinc-400 font-medium text-[10px] md:text-sm">
+                <p className="text-zinc-400 font-medium text-[10px] md:text-xs leading-relaxed">
                   {isRegister 
                     ? 'Preencha os dados abaixo para se cadastrar no sistema.' 
                     : 'Entre com seu WhatsApp e senha para acessar o painel administrativo.'}

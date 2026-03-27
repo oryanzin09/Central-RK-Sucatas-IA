@@ -9,6 +9,8 @@ import { Server } from "socket.io";
 import QRCode from 'qrcode';
 import axios from 'axios';
 import multer from 'multer';
+import bcrypt from 'bcrypt';
+import rateLimit from 'express-rate-limit';
 import { autenticar } from './middleware/auth.js';
 import { generateToken } from './utils/jwt.js';
 
@@ -191,11 +193,72 @@ import mlClient from './services/mlClient.js';
 export { mlClient };
 import storageService from './src/services/storageService.js';
 
+async function ensureAdminUser() {
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'oryanzin09@gmail.com';
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'rksucatasadm115935';
+  const ADMIN_PHONE = '83982039490';
+
+  try {
+    console.log(`🛡️ Verificando administrador mestre no Notion (${ADMIN_EMAIL})...`);
+    const response = await fetch(`https://api.notion.com/v1/databases/${CLIENTS_DATABASE_ID}/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_TOKEN}`,
+        'Content-Type': 'application/json',
+        'Notion-Version': NOTION_VERSION
+      },
+      body: JSON.stringify({
+        filter: {
+          or: [
+            { property: 'Número', phone_number: { equals: ADMIN_PHONE } },
+            { property: 'Nome', title: { equals: 'Administrador' } }
+          ]
+        }
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.results && data.results.length === 0) {
+        console.log(`🛡️ Criando administrador mestre no Notion...`);
+        await fetch('https://api.notion.com/v1/pages', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${NOTION_TOKEN}`,
+            'Content-Type': 'application/json',
+            'Notion-Version': NOTION_VERSION
+          },
+          body: JSON.stringify({
+            parent: { database_id: CLIENTS_DATABASE_ID },
+            properties: {
+              Nome: { title: [{ text: { content: 'Administrador' } }] },
+              'Número': { phone_number: ADMIN_PHONE },
+              Senha: { rich_text: [{ text: { content: ADMIN_PASSWORD } }] },
+              Tipo: { select: { name: 'ADM' } }
+            }
+          })
+        });
+        console.log(`✅ Administrador mestre criado com sucesso.`);
+        invalidateCache(CLIENTS_DATABASE_ID);
+      } else {
+        console.log(`✅ Administrador mestre já existe no Notion.`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Erro ao garantir administrador mestre:', error);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
   const httpServer = createServer(app);
   
+  // Configuração para ambientes com proxy (Cloud Run, Nginx, etc.)
+  app.set('trust proxy', 1);
+  
+  // Garantir administrador mestre
+  await ensureAdminUser();
   // Garantir que a pasta uploads existe
   const uploadDir = path.join(process.cwd(), 'uploads');
   if (!fs.existsSync(uploadDir)) {
@@ -205,6 +268,18 @@ async function startServer() {
 
   const io = new Server(httpServer, {
     cors: { origin: "*" }
+  });
+
+  // Rate limiter para login
+  const loginLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minuto
+    max: 5, // 5 tentativas
+    message: { success: false, error: 'Muitas tentativas de login. Tente novamente em um minuto.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: {
+      forwardedHeader: false,
+    }
   });
 
   const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "2fbdfa25a52880a587ebcca53c478342";
@@ -286,6 +361,12 @@ async function startServer() {
       return res.status(400).json({ success: false, error: 'Nome, telefone e senha são obrigatórios' });
     }
 
+    // Validação de WhatsApp (10-13 dígitos)
+    const whatsappRegex = /^\d{10,13}$/;
+    if (!whatsappRegex.test(phone.replace(/\D/g, ''))) {
+      return res.status(400).json({ success: false, error: 'Número de WhatsApp inválido (deve ter entre 10 e 13 dígitos)' });
+    }
+
     const users = getUsers();
     if (users.find((u: any) => u.phone === phone)) {
       return res.status(400).json({ success: false, error: 'Este número já está cadastrado' });
@@ -302,7 +383,8 @@ async function startServer() {
       });
     }
 
-    const newUser = { phone, password, name, cpf: cpf || '', role: 'client', createdAt: new Date().toISOString() };
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = { phone, password: hashedPassword, name, cpf: cpf || '', role: 'client', createdAt: new Date().toISOString() };
     saveUser(newUser);
     
     // Também cadastrar no Notion como cliente (assíncrono para não travar o registro, mas com log robusto)
@@ -321,7 +403,7 @@ async function startServer() {
             properties: {
               Nome: { title: [{ text: { content: name || `Cliente ${phone}` } }] },
               'Número': { phone_number: phone },
-              Senha: { rich_text: [{ text: { content: password } }] },
+              Senha: { rich_text: [{ text: { content: hashedPassword } }] },
               CPF: { number: cpf ? Number(cpf.replace(/\D/g, '')) : 0 },
               'Itens comprados': { rich_text: [{ text: { content: '' } }] },
               Tipo: { select: { name: 'CLIENTE' } }
@@ -347,23 +429,25 @@ async function startServer() {
   });
 
   // Rota de login atualizada
-  app.post('/api/login', async (req, res) => {
+  app.post('/api/login', loginLimiter, async (req, res) => {
     const { password, phone } = req.body;
+    const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'oryanzin09@gmail.com').trim();
+    const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || 'rksucatasadm115935').trim();
     const ADMIN_PHONE = '83982039490';
-    const DEFAULT_ADMIN_PASSWORD = 'rksucatasadm115935';
-    const ENV_PASSWORD = (process.env.ADMIN_PASSWORD || '').trim();
     
-    console.log(`🔑 Tentativa de login. Telefone: ${phone || 'não enviado'}`);
+    console.log(`🔑 Tentativa de login. Telefone/Email: ${phone || 'não enviado'}`);
     
-    // 1. Verificar se é o administrador mestre
+    // 1. Verificar se é o administrador mestre (por email ou telefone)
     const isMasterAdmin = 
-      phone === ADMIN_PHONE && 
-      (password === DEFAULT_ADMIN_PASSWORD || (ENV_PASSWORD && password === ENV_PASSWORD));
+      (phone === ADMIN_PHONE || phone === ADMIN_EMAIL) && 
+      password === ADMIN_PASSWORD;
 
     if (isMasterAdmin) {
       console.log(`✅ Login de Administrador Mestre bem-sucedido: ${phone}`);
       const token = generateToken({ role: 'admin', phone });
       return res.json({ success: true, token, role: 'admin', name: 'Administrador' });
+    } else {
+      console.log(`ℹ️ Não é Master Admin. Phone: "${phone}", Email: "${ADMIN_EMAIL}", MasterPhone: "${ADMIN_PHONE}"`);
     }
 
     // 2. Verificar se é um usuário registrado (cliente) em users.json
@@ -383,10 +467,10 @@ async function startServer() {
           },
           body: JSON.stringify({
             filter: {
-              property: 'Número',
-              phone_number: {
-                equals: phone
-              }
+              or: [
+                { property: 'Número', phone_number: { equals: phone } },
+                { property: 'Nome', title: { equals: phone } }
+              ]
             }
           })
         });
@@ -421,14 +505,36 @@ async function startServer() {
     }
     
     if (registeredUser) {
-      if (registeredUser.password === password) {
-        console.log(`✅ Login de Cliente bem-sucedido: ${phone}`);
+      console.log(`👤 Usuário encontrado: ${registeredUser.phone}, Role: ${registeredUser.role}`);
+      let isPasswordValid = false;
+      
+      if (registeredUser.role === 'admin') {
+        // Administrador: Comparação direta (texto puro)
+        // Aceita se for igual à senha salva no banco OU à senha mestre do .env
+        const isBcryptHash = /^\$2[ayb]\$/.test(registeredUser.password);
+        isPasswordValid = (registeredUser.password === password) || 
+                         (password === ADMIN_PASSWORD) ||
+                         (isBcryptHash && await bcrypt.compare(password, registeredUser.password));
+        
+        if (!isPasswordValid) {
+          console.log(`❌ Senha Admin inválida. Digitada: "${password}", Salva: "${registeredUser.password}", Master: "${ADMIN_PASSWORD}"`);
+        }
+      } else {
+        // Cliente: Usa bcrypt se for um hash, senão comparação direta
+        const isBcryptHash = /^\$2[ayb]\$/.test(registeredUser.password);
+        isPasswordValid = isBcryptHash 
+          ? await bcrypt.compare(password, registeredUser.password)
+          : registeredUser.password === password;
+      }
+
+      if (isPasswordValid) {
+        console.log(`✅ Login de ${registeredUser.role === 'admin' ? 'Administrador' : 'Cliente'} bem-sucedido: ${phone}`);
         const token = generateToken({ role: registeredUser.role || 'client', phone });
         return res.json({ 
           success: true, 
           token, 
           role: registeredUser.role || 'client',
-          name: registeredUser.name || `Cliente ${phone}`
+          name: registeredUser.name || (registeredUser.role === 'admin' ? 'Administrador' : `Cliente ${phone}`)
         });
       } else {
         console.log(`❌ Falha no login: senha incorreta para ${phone}`);
@@ -1174,7 +1280,57 @@ async function startServer() {
     }
   });
 
-  // Rota de upload
+  // Rota de upload de foto de perfil
+  app.post('/api/upload/profile', autenticar, (req, res) => {
+    upload.single('photo')(req, res, async (err) => {
+      if (err) {
+        console.error('❌ Erro no multer (profile):', err);
+        return res.status(400).json({ success: false, error: err.message });
+      }
+
+      try {
+        const file = req.file;
+        const userPhone = req.body.phone;
+
+        if (!file) {
+          return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
+        }
+
+        if (!userPhone) {
+          return res.status(400).json({ success: false, error: 'Número de telefone não fornecido' });
+        }
+
+        const uploadDir = path.join(process.cwd(), 'uploads', 'profiles');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+
+        // Nome do arquivo baseado no telefone para ser único por usuário
+        const ext = path.extname(file.originalname);
+        const newFilename = `profile_${userPhone.replace(/\D/g, '')}${ext}`;
+        const newPath = path.join(uploadDir, newFilename);
+
+        // Move o arquivo para o local definitivo
+        fs.renameSync(file.path, newPath);
+
+        const baseUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+        const url = `${baseUrl}/uploads/profiles/${newFilename}`;
+
+        console.log(`👤 Foto de perfil atualizada para ${userPhone}: ${url}`);
+
+        res.json({ 
+          success: true, 
+          url: url,
+          message: 'Foto de perfil atualizada com sucesso'
+        });
+      } catch (error: any) {
+        console.error('❌ Erro no processamento de upload de perfil:', error);
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+  });
+
+  // Rota de upload geral
   app.post('/api/upload', (req, res) => {
     upload.array('files', 15)(req, res, async (err) => {
       if (err) {
@@ -1650,6 +1806,10 @@ async function startServer() {
   app.post('/api/clients', autenticar, async (req, res) => {
     try {
       const { nome, numero, cpf, itensComprados, senha } = req.body;
+      console.log('📝 Criando novo cliente no Notion...', { nome, numero });
+      
+      const hashedPassword = senha ? await bcrypt.hash(senha, 10) : '';
+      
       const response = await fetch('https://api.notion.com/v1/pages', {
         method: 'POST',
         headers: {
@@ -1662,8 +1822,8 @@ async function startServer() {
           properties: {
             Nome: { title: [{ text: { content: nome || '' } }] },
             'Número': { phone_number: numero || '' },
-            'CPF': { number: cpf ? Number(cpf.replace(/\D/g, '')) : 0 },
-            Senha: { rich_text: [{ text: { content: senha || '' } }] },
+            'CPF': { number: cpf ? Number(String(cpf).replace(/\D/g, '')) : 0 },
+            Senha: { rich_text: [{ text: { content: hashedPassword } }] },
             'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
             Tipo: { select: { name: 'CLIENTE' } }
           }
@@ -1671,6 +1831,7 @@ async function startServer() {
       });
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ Erro ao criar cliente no Notion:', errorText);
         let errorMessage = 'Erro ao criar cliente no Notion';
         try {
           const errorJson = JSON.parse(errorText);
@@ -1678,12 +1839,13 @@ async function startServer() {
         } catch (e) {
           errorMessage = `Erro Notion: ${errorText}`;
         }
-        console.error('Erro ao criar cliente no Notion:', errorText);
         throw new Error(errorMessage);
       }
       invalidateCache(CLIENTS_DATABASE_ID);
+      console.log('✅ Cliente criado com sucesso no Notion.');
       res.json({ success: true });
     } catch (error: any) {
+      console.error('❌ Erro na rota POST /api/clients:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -1692,6 +1854,21 @@ async function startServer() {
     try {
       const { id } = req.params;
       const { nome, numero, cpf, itensComprados, senha } = req.body;
+      console.log(`📝 Atualizando cliente ${id} no Notion...`);
+      
+      const properties: any = {
+        Nome: { title: [{ text: { content: nome || '' } }] },
+        'Número': { phone_number: numero || '' },
+        'CPF': { number: cpf ? Number(String(cpf).replace(/\D/g, '')) : 0 },
+        'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] }
+      };
+
+      if (senha) {
+        // Se a senha não começar com $2b$ (não for hash), fazemos o hash
+        const hashedPassword = senha.startsWith('$2b$') ? senha : await bcrypt.hash(senha, 10);
+        properties.Senha = { rich_text: [{ text: { content: hashedPassword } }] };
+      }
+
       const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
         method: 'PATCH',
         headers: {
@@ -1699,20 +1876,18 @@ async function startServer() {
           'Content-Type': 'application/json',
           'Notion-Version': NOTION_VERSION
         },
-        body: JSON.stringify({
-          properties: {
-            Nome: { title: [{ text: { content: nome || '' } }] },
-            'Número': { phone_number: numero || '' },
-            'CPF': { number: Number(cpf.replace(/\D/g, '')) || 0 },
-            Senha: { rich_text: [{ text: { content: senha || '' } }] },
-            'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] }
-          }
-        })
+        body: JSON.stringify({ properties })
       });
-      if (!response.ok) throw new Error('Erro ao atualizar cliente no Notion');
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ Erro ao atualizar cliente no Notion:', errorData);
+        throw new Error(`Erro no Notion: ${errorData.message || 'Erro desconhecido'}`);
+      }
       invalidateCache(CLIENTS_DATABASE_ID);
+      console.log(`✅ Cliente ${id} atualizado com sucesso.`);
       res.json({ success: true });
     } catch (error: any) {
+      console.error('❌ Erro na rota PUT /api/clients/:id:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
@@ -1720,6 +1895,7 @@ async function startServer() {
   app.delete('/api/clients/:id', autenticar, async (req, res) => {
     try {
       const { id } = req.params;
+      console.log(`🗑️ Deletando cliente ${id} no Notion...`);
       const response = await fetch(`https://api.notion.com/v1/pages/${id}`, {
         method: 'PATCH',
         headers: {
@@ -1729,10 +1905,16 @@ async function startServer() {
         },
         body: JSON.stringify({ archived: true })
       });
-      if (!response.ok) throw new Error('Erro ao deletar cliente no Notion');
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('❌ Erro ao deletar cliente no Notion:', errorData);
+        throw new Error(`Erro no Notion: ${errorData.message || 'Erro desconhecido'}`);
+      }
       invalidateCache(CLIENTS_DATABASE_ID);
+      console.log(`✅ Cliente ${id} deletado com sucesso.`);
       res.json({ success: true });
     } catch (error: any) {
+      console.error('❌ Erro na rota DELETE /api/clients/:id:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
