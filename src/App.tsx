@@ -406,8 +406,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     // Polling para sincronização "instantânea" (silenciosa)
     const interval = setInterval(() => {
-      loadData(false, true);
-    }, 5000); // 5 segundos
+      if (document.visibilityState === 'visible') {
+        loadData(false, true);
+      }
+    }, 10000); // Aumentado para 10 segundos e adicionado verificação de visibilidade
 
     const initApp = async () => {
       if (Capacitor.isNativePlatform()) {
@@ -2645,12 +2647,14 @@ const InventoryRow = memo(({
   </tr>
 ));
 
-const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { 
+const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false, pendingEditItem, setPendingEditItem }: { 
   theme: 'light' | 'dark', 
   onSelectItem: (item: any) => void,
   onRegisterActions?: (actions: { edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void }) => void,
   isSearchOpen?: boolean,
-  readOnly?: boolean
+  readOnly?: boolean,
+  pendingEditItem?: any | null,
+  setPendingEditItem?: (item: any | null) => void
 }) => {
   const { inventory: items, loading, setInventory, refreshData } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
@@ -2925,6 +2929,8 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       ...formData,
       categoria: formData.categoria === 'nova' ? formData.novaCategoria : formData.categoria,
       moto: formData.moto === 'outra' ? formData.outraMoto : formData.moto,
+      valor: Number(formData.valor) || 0,
+      estoque: Number(formData.estoque) || 0,
     };
 
     try {
@@ -3004,7 +3010,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
     }
   };
 
-  const openEditModal = (item: any) => {
+  const openEditModal = useCallback((item: any) => {
     setEditingItem(item);
     setFormData({
       nome: item.nome || '',
@@ -3020,7 +3026,15 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       imagem: item.imagem || ''
     });
     setIsModalOpen(true);
-  };
+  }, []);
+
+  // Handle pending edit from other tabs
+  useEffect(() => {
+    if (pendingEditItem && setPendingEditItem) {
+      openEditModal(pendingEditItem);
+      setPendingEditItem(null);
+    }
+  }, [pendingEditItem, setPendingEditItem, openEditModal]);
 
   // Register actions for global access (e.g. from DetailModal)
   useEffect(() => {
@@ -3039,7 +3053,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
         }
       });
     }
-  }, [onRegisterActions]);
+  }, [onRegisterActions, openEditModal]);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -3770,7 +3784,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       {/* New Item Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -8299,6 +8313,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients'>(
     userRole === 'admin' ? 'dashboard' : 'motos'
   );
+  const [pendingEditItem, setPendingEditItem] = useState<any | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
   const [showPaymentFilter, setShowPaymentFilter] = useState(false);
@@ -8532,21 +8547,47 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     if (!selectedDetailItem) return { edit: undefined, delete: undefined };
     const item = selectedDetailItem;
     
+    const wrapEdit = (originalEdit: any, tab: string) => {
+      if (!originalEdit) {
+        return (item: any) => {
+          setActiveTab(tab);
+          setPendingEditItem(item);
+        };
+      }
+      return (item: any) => {
+        if (activeTab !== tab) {
+          setActiveTab(tab);
+          setPendingEditItem(item);
+        } else {
+          originalEdit(item);
+        }
+      };
+    };
+
     if (item.marca) {
-      return { edit: motosActions?.edit, delete: motosActions?.delete };
+      return { 
+        edit: wrapEdit(motosActions?.edit, 'motos'), 
+        delete: motosActions?.delete 
+      };
     }
     if (item.rk_id || item.categoria) {
-      return { edit: inventoryActions?.edit, delete: inventoryActions?.delete };
+      return { 
+        edit: wrapEdit(inventoryActions?.edit, 'estoque'), 
+        delete: inventoryActions?.delete 
+      };
     }
     if (item.valor !== undefined) {
-      return { edit: salesActions?.edit, delete: salesActions?.delete };
+      return { 
+        edit: wrapEdit(salesActions?.edit, 'vendas'), 
+        delete: salesActions?.delete 
+      };
     }
     return { edit: undefined, delete: undefined };
-  }, [selectedDetailItem, inventoryActions, salesActions, motosActions]);
+  }, [selectedDetailItem, inventoryActions, salesActions, motosActions, activeTab]);
 
   return (
     <div className={cn(
-      "min-h-screen transition-colors duration-300 flex font-sans max-w-[1800px] w-full shadow-2xl shadow-black/20 relative",
+      "min-h-screen transition-colors duration-300 flex font-sans w-full relative",
       theme === 'dark' 
         ? "bg-[radial-gradient(ellipse_at_top,_#1a1b1f,_#09090b)] text-zinc-100" 
         : "bg-zinc-50 text-zinc-900"
@@ -8828,6 +8869,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                   onRegisterActions={setInventoryActions}
                   isSearchOpen={isSearchOpen}
                   readOnly={userRole === 'client'}
+                  pendingEditItem={pendingEditItem}
+                  setPendingEditItem={setPendingEditItem}
                 />
               ) : activeTab === 'vendas' ? (
                 <SalesView theme={theme} onSelectItem={setSelectedDetailItem} onRegisterActions={setSalesActions} isSearchOpen={isSearchOpen} />
@@ -8849,7 +8892,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 <Clients theme={theme} />
               ) : (
                 <div className={cn(
-                  "flex flex-col items-center justify-center h-[60vh] transition-colors w-3/4 mx-auto",
+                  "flex flex-col items-center justify-center h-[60vh] transition-colors w-full",
                   theme === 'dark' ? "text-violet-500" : "text-violet-600"
                 )}>
                   <Settings size={48} className="mb-4 opacity-50" />
