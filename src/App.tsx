@@ -6385,6 +6385,10 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
       result = result.filter(item => item.valor <= Number(valorMaxFilter));
     }
 
+    if (readOnly) {
+      result = result.filter(item => item.status !== 'Vendida');
+    }
+
     // Ordenar
     result.sort((a, b) => {
       // 1. Prioridade Máxima: Vendidas sempre para o final
@@ -6412,6 +6416,9 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
         case 'Data de Criação':
           comparison = new Date(b.criado_em || 0).getTime() - new Date(a.criado_em || 0).getTime();
           break;
+        case 'Data de Criação Antigo':
+          comparison = new Date(a.criado_em || 0).getTime() - new Date(b.criado_em || 0).getTime();
+          break;
         case 'Ano':
           comparison = (Number(a.ano) || 0) - (Number(b.ano) || 0);
           break;
@@ -6430,7 +6437,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
     });
 
     return result;
-  }, [items, searchTerm, brandFilter, statusFilter, cilindradaFilter, anoMinFilter, valorMinFilter, valorMaxFilter, sortOrder]);
+  }, [items, searchTerm, brandFilter, statusFilter, cilindradaFilter, anoMinFilter, valorMinFilter, valorMaxFilter, sortOrder, readOnly]);
 
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -6464,7 +6471,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={16} />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-violet-500 transition-colors" size={18} />
           <input 
             ref={searchInputRef}
             type="text" 
@@ -6475,7 +6482,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
               setCurrentPage(1);
             }}
             className={cn(
-              "w-full rounded-xl py-2 md:py-2.5 pl-10 md:pl-11 pr-4 text-xs md:text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
+              "w-full rounded-xl py-3 md:py-3.5 pl-12 md:pl-14 pr-4 text-xs md:text-sm font-medium outline-none transition-all duration-200 border shadow-inner",
               theme === 'dark' 
                 ? "bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:border-violet-500/50" 
                 : "bg-zinc-50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-violet-500 focus:bg-white"
@@ -6485,50 +6492,61 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
 
         {/* Filtros e Ações Compactos */}
         <div className="flex flex-col gap-3 overflow-visible">
-          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap overflow-visible">
-            <CustomDropdown
-              theme={theme}
-              icon={<Filter size={14} />}
-              label="Marca"
-              value={brandFilter}
-              className="flex-1 md:flex-none md:min-w-[120px]"
-              onChange={(val) => {
-                setBrandFilter(val);
-                setCurrentPage(1);
-              }}
-              options={brands.map(brand => ({ value: brand, label: brand }))}
-            />
-
-            {!readOnly && (
+          <div className="flex items-center gap-3 flex-wrap md:flex-nowrap overflow-visible">
+            <div className="flex-1 md:flex-none md:min-w-[160px] flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 ml-1">Marca</label>
               <CustomDropdown
                 theme={theme}
-                icon={<Layers size={14} />}
-                value={statusFilter}
-                className="flex-1 md:flex-none md:min-w-[120px]"
+                icon={<Filter size={14} />}
+                label="Filtrar por Marca"
+                value={brandFilter}
+                className="w-full"
                 onChange={(val) => {
-                  setStatusFilter(val);
+                  setBrandFilter(val);
                   setCurrentPage(1);
                 }}
-                options={statuses.map(s => ({ value: s, label: s }))}
+                options={brands.map(brand => ({ value: brand, label: brand }))}
               />
+            </div>
+
+            {!readOnly && (
+              <div className="flex-1 md:flex-none md:min-w-[160px] flex flex-col gap-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 ml-1">Status</label>
+                <CustomDropdown
+                  theme={theme}
+                  icon={<Layers size={14} />}
+                  label="Filtrar por Status"
+                  value={statusFilter}
+                  className="w-full"
+                  onChange={(val) => {
+                    setStatusFilter(val);
+                    setCurrentPage(1);
+                  }}
+                  options={statuses.map(s => ({ value: s, label: s }))}
+                />
+              </div>
             )}
 
-            <CustomDropdown
-              theme={theme}
-              icon={<ArrowDownAZ size={14} />}
-              label="Ordenar"
-              value={sortOrder}
-              className="flex-1 md:flex-none md:min-w-[120px]"
-              onChange={(val) => setSortOrder(val)}
-              options={[
-                { value: "Data de Criação", label: "Data" },
-                { value: "Nome", label: "Nome" },
-                { value: "Cilindrada", label: "Cilindrada" },
-                { value: "Ano", label: "Ano" },
-                { value: "Valor", label: "Valor" },
-                ...(readOnly ? [] : [{ value: "Lote", label: "Lote" }]),
-              ]}
-            />
+            <div className="flex-1 md:flex-none md:min-w-[160px] flex flex-col gap-1">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 ml-1">Ordenação</label>
+              <CustomDropdown
+                theme={theme}
+                icon={<ArrowDownAZ size={14} />}
+                label="Ordenar por"
+                value={sortOrder}
+                className="w-full"
+                onChange={(val) => setSortOrder(val)}
+                options={[
+                  { value: "Data de Criação", label: "Mais recente" },
+                  { value: "Data de Criação Antigo", label: "Mais antigo" },
+                  { value: "Nome", label: "Nome" },
+                  { value: "Cilindrada", label: "Cilindrada" },
+                  { value: "Ano", label: "Ano" },
+                  { value: "Valor", label: "Valor" },
+                  ...(readOnly ? [] : [{ value: "Lote", label: "Lote" }]),
+                ]}
+              />
+            </div>
 
             <div className="flex items-center gap-2 w-full md:w-auto">
               {!readOnly && (
@@ -7640,6 +7658,27 @@ const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: {
   const [copied, setCopied] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    setTouchStart(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (touchStart === null) return;
+    const touchEnd = e.changedTouches[0].clientX;
+    const diff = touchStart - touchEnd;
+    if (Math.abs(diff) > 50) { // threshold
+      if (diff > 0) { // swipe left
+        setCurrentImageIndex(prev => (prev + 1) % images.length);
+      } else { // swipe right
+        setCurrentImageIndex(prev => (prev - 1 + images.length) % images.length);
+      }
+    }
+    setTouchStart(null);
+  };
 
   // Scroll Lock
   useEffect(() => {
@@ -7664,7 +7703,14 @@ const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: {
   };
 
   const handleWhatsAppShare = () => {
-    const text = `Olá! Tenho interesse nesta peça: *${item.nome || item.titulo}*\nValor: ${formatCurrency(item.valor || item.preco)}`;
+    const hour = new Date().getHours();
+    let greeting = 'Bom dia';
+    if (hour >= 12 && hour < 18) {
+      greeting = 'Boa tarde';
+    } else if (hour >= 18) {
+      greeting = 'Boa noite';
+    }
+    const text = `${greeting}, quero mais detalhes da ${item.nome || item.titulo} que vi no seu site.`;
     window.open(`https://wa.me/5583982039490?text=${encodeURIComponent(text)}`, '_blank');
   };
 
@@ -7756,6 +7802,8 @@ const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: {
                 <div 
                   className="flex transition-transform duration-500 ease-out h-full"
                   style={{ transform: `translateX(-${currentImageIndex * 100}%)` }}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
                 >
                   {images.map((src: string, idx: number) => (
                     <div 

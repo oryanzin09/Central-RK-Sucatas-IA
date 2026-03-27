@@ -1,4 +1,4 @@
-import { LayoutDashboard, Package, ShoppingCart, Bike, Truck, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Bike, Truck, TrendingUp, Users } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -14,6 +14,7 @@ export const MobileBottomNav = ({ activeTab, setActiveTab, theme }: any) => {
     { id: 'estoque', icon: Package, label: 'Estoque', roles: ['admin'] },
     { id: 'vendas', icon: ShoppingCart, label: 'Vendas', roles: ['admin'] },
     { id: 'motos', icon: Bike, label: 'Motos', roles: ['admin', 'client'] },
+    { id: 'clients', icon: Users, label: 'Clientes', roles: ['admin'] },
   ];
 
   const items = allItems.filter(item => item.roles.includes(userRole));

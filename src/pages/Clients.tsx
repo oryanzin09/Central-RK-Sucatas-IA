@@ -27,14 +27,24 @@ interface Client {
   numero: string;
   senha?: string;
   itensComprados: string;
+  interesses: string[];
   userId: string;
 }
 
 export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
-  const [clients, setClients] = useState<Client[]>([]);
+  const [clients, setClients] = useState<Client[]>(() => {
+    try {
+      const saved = localStorage.getItem('rk_clients');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -42,18 +52,27 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
     numero: '',
     senha: '',
     itensComprados: '',
+    interesses: [] as string[],
     userId: ''
   });
 
-  const fetchClients = async () => {
-    setLoading(true);
+  const handleOpenDetailModal = (client: Client) => {
+    setSelectedClient(client);
+    setIsDetailModalOpen(true);
+  };
+
+  const fetchClients = async (force = false) => {
+    if (force) setLoading(true);
     try {
       const token = localStorage.getItem('auth_token');
       const res = await fetch('/api/clients', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success) setClients(data.data);
+      if (data.success) {
+        setClients(data.data);
+        localStorage.setItem('rk_clients', JSON.stringify(data.data));
+      }
     } catch (error) {
       console.error('Erro ao buscar clientes:', error);
     } finally {
@@ -62,7 +81,8 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
   };
 
   useEffect(() => {
-    fetchClients();
+    // Carrega do cache imediatamente e busca atualização em background
+    fetchClients(clients.length === 0);
   }, []);
 
   const handleOpenModal = (client?: Client) => {
@@ -74,6 +94,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
         numero: client.numero || '',
         senha: client.senha || '',
         itensComprados: client.itensComprados || '',
+        interesses: client.interesses || [],
         userId: client.userId || ''
       });
     } else {
@@ -83,6 +104,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
         numero: '',
         senha: '',
         itensComprados: '',
+        interesses: [],
         userId: ''
       });
     }
@@ -119,7 +141,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
       console.log('📥 Resposta do servidor:', data);
       if (data.success) {
         setIsModalOpen(false);
-        fetchClients();
+        fetchClients(true);
       } else {
         alert('Erro ao salvar cliente: ' + (data.error || 'Erro desconhecido'));
       }
@@ -140,7 +162,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
       });
       const data = await res.json();
       console.log('📥 Resposta do servidor (delete):', data);
-      if (data.success) fetchClients();
+      if (data.success) fetchClients(true);
       else alert('Erro ao excluir cliente: ' + (data.error || 'Erro desconhecido'));
     } catch (error) {
       console.error('❌ Erro ao deletar cliente:', error);
@@ -148,9 +170,14 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
     }
   };
 
+  const [searchTag, setSearchTag] = useState('');
+
+  // ... (existing code)
+
   const filteredClients = clients.filter(c => 
-    c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.userId.includes(searchTerm)
+    (c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     c.userId.includes(searchTerm)) &&
+    (searchTag === '' || c.interesses.some(i => i.toLowerCase().includes(searchTag.toLowerCase())))
   );
 
   return (
@@ -175,19 +202,64 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
         "relative border rounded-[2rem] overflow-hidden",
         theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-white border-zinc-200 shadow-xl"
       )}>
-        <div className="p-4 border-b border-zinc-800/50 flex items-center gap-4">
-          <Search className="text-zinc-500" size={20} />
+        <div className="p-4 border-b border-zinc-800/50 flex flex-col md:flex-row items-center gap-4">
+          <div className="flex items-center gap-4 flex-1 w-full">
+            <Search className="text-zinc-500" size={20} />
+            <input 
+              type="text"
+              placeholder="Buscar por nome, CPF ou ID..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-zinc-300 placeholder:text-zinc-600"
+            />
+          </div>
           <input 
             type="text"
-            placeholder="Buscar por nome, CPF ou ID..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 bg-transparent border-none outline-none text-sm font-medium text-zinc-300 placeholder:text-zinc-600"
+            placeholder="Filtrar por etiqueta..."
+            value={searchTag}
+            onChange={(e) => setSearchTag(e.target.value)}
+            className="w-full md:w-48 bg-zinc-900/50 border border-zinc-800 rounded-2xl py-2 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-600"
           />
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          {/* Mobile View */}
+          <div className="md:hidden space-y-4">
+            {filteredClients.map((client) => (
+              <div key={client.id} onClick={() => handleOpenDetailModal(client)} className={cn("p-4 rounded-2xl border cursor-pointer", theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-white border-zinc-200 shadow-sm")}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black">
+                      {client.nome.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-white">{client.nome}</div>
+                      <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID: {client.userId}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <button 
+                      onClick={() => handleOpenModal(client)}
+                      className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-violet-600 transition-all"
+                    >
+                      <Edit2 size={16} />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(client.id)}
+                      className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="text-xs text-zinc-400 font-medium mb-1"><Phone size={12} className="inline mr-1" /> {client.numero}</div>
+                <div className="text-xs text-zinc-400 font-medium"><ShoppingBag size={12} className="inline mr-1" /> {client.itensComprados}</div>
+              </div>
+            ))}
+          </div>
+          
+          {/* Desktop View */}
+          <table className="hidden md:table w-full text-left border-collapse">
             <thead>
               <tr className={cn(
                 "text-[10px] font-black uppercase tracking-[0.2em]",
@@ -203,20 +275,20 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={5} className="px-6 py-8">
+                    <td colSpan={4} className="px-6 py-8">
                       <div className="h-4 bg-zinc-800 rounded w-full"></div>
                     </td>
                   </tr>
                 ))
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center">
+                  <td colSpan={4} className="px-6 py-20 text-center">
                     <Users className="mx-auto text-zinc-700 mb-4" size={48} />
                     <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">Nenhum cliente encontrado</p>
                   </td>
                 </tr>
               ) : filteredClients.map((client) => (
-                <tr key={client.id} className="group hover:bg-zinc-800/20 transition-colors">
+                <tr key={client.id} onClick={() => handleOpenDetailModal(client)} className="group hover:bg-zinc-800/20 transition-colors cursor-pointer">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black">
@@ -240,7 +312,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                       <ShoppingBag size={12} className="shrink-0" /> {client.itensComprados}
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
                         onClick={() => handleOpenModal(client)}
@@ -262,6 +334,115 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
           </table>
         </div>
       </div>
+
+      <AnimatePresence>
+        {isDetailModalOpen && selectedClient && (
+          <div className="fixed inset-0 z-[2000] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className={cn(
+                "w-full md:max-w-lg h-[92vh] md:h-auto md:max-h-[90vh] rounded-t-[2.5rem] md:rounded-[2.5rem] overflow-hidden border-t md:border shadow-2xl flex flex-col relative",
+                theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200"
+              )}
+            >
+              {/* Handle for mobile */}
+              <div className="md:hidden w-full flex justify-center pt-4 pb-2">
+                <div className="w-12 h-1.5 rounded-full bg-zinc-800/50" />
+              </div>
+
+              <button onClick={() => setIsDetailModalOpen(false)} className={cn(
+                "absolute top-6 right-6 z-50 p-2 rounded-full transition-all active:scale-90 shadow-xl border",
+                theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:text-zinc-900"
+              )}>
+                <X size={20} />
+              </button>
+              
+              <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black text-2xl">
+                    {selectedClient.nome.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className={cn("text-xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+                      {selectedClient.nome}
+                    </h2>
+                    <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">ID: {selectedClient.userId}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <div className={cn("p-3 rounded-xl border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-100")}>
+                    <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5 flex items-center gap-1.5">
+                      <Phone size={9} /> WhatsApp
+                    </label>
+                    <p className="text-sm font-medium text-zinc-300">{selectedClient.numero}</p>
+                  </div>
+                  
+                  <div className={cn("p-3 rounded-xl border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-100")}>
+                    <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5 flex items-center gap-1.5">
+                      <ShoppingBag size={9} /> Interesses
+                    </label>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {selectedClient.interesses && selectedClient.interesses.length > 0 ? [...selectedClient.interesses].sort((a, b) => {
+                        const aIsMoto = a.toLowerCase().includes('moto');
+                        const bIsMoto = b.toLowerCase().includes('moto');
+                        if (aIsMoto && !bIsMoto) return -1;
+                        if (!aIsMoto && bIsMoto) return 1;
+                        return a.localeCompare(b);
+                      }).map((int, i) => (
+                        <span key={i} className="px-2 py-1 rounded-md bg-violet-600/20 text-violet-300 text-[10px] font-bold">{int}</span>
+                      )) : <p className="text-sm font-medium text-zinc-300">Nenhum interesse registrado</p>}
+                    </div>
+                  </div>
+
+                  <div className={cn("p-3 rounded-xl border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-100")}>
+                    <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5 flex items-center gap-1.5">
+                      <ShoppingBag size={9} /> Itens Comprados
+                    </label>
+                    <p className="text-sm font-medium text-zinc-300">{selectedClient.itensComprados || 'Nenhum item registrado'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mt-6">
+                  <button 
+                    onClick={() => {
+                      const phone = selectedClient.numero.replace(/\D/g, '');
+                      window.open(`https://wa.me/55${phone}?text=Olá, ${selectedClient.nome}!`, '_blank');
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 p-3 rounded-xl bg-emerald-600/10 text-emerald-500 hover:bg-emerald-600/20 transition-all"
+                  >
+                    <Phone size={20} />
+                    <span className="text-[10px] font-bold uppercase">WhatsApp</span>
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsDetailModalOpen(false);
+                      handleOpenModal(selectedClient);
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 p-3 rounded-xl bg-violet-600/10 text-violet-500 hover:bg-violet-600/20 transition-all"
+                  >
+                    <Edit2 size={20} />
+                    <span className="text-[10px] font-bold uppercase">Editar</span>
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsDetailModalOpen(false);
+                      handleDelete(selectedClient.id);
+                    }}
+                    className="flex flex-col items-center justify-center gap-2 p-3 rounded-xl bg-rose-600/10 text-rose-500 hover:bg-rose-600/20 transition-all"
+                  >
+                    <Trash2 size={20} />
+                    <span className="text-[10px] font-bold uppercase">Excluir</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isModalOpen && (
@@ -348,6 +529,53 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest ml-1 flex items-center gap-2">
+                      <ShoppingBag size={10} /> Interesses
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {formData.interesses.map((tag, index) => (
+                        <span key={index} className="flex items-center gap-1 px-2 py-1 rounded-md bg-violet-600/20 text-violet-300 text-[10px] font-bold">
+                          {tag}
+                          <button type="button" onClick={() => setFormData({...formData, interesses: formData.interesses.filter((_, i) => i !== index)})} className="text-violet-500 hover:text-violet-300">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input 
+                        id="interest-input"
+                        placeholder="Digite e pressione Enter..."
+                        className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-2xl py-3.5 px-4 text-sm text-white outline-none focus:ring-2 focus:ring-violet-500/50 transition-all placeholder:text-zinc-700"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const value = e.currentTarget.value.trim();
+                            if (value && !formData.interesses.includes(value)) {
+                              setFormData({...formData, interesses: [...formData.interesses, value]});
+                              e.currentTarget.value = '';
+                            }
+                          }
+                        }}
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const input = document.getElementById('interest-input') as HTMLInputElement;
+                          const value = input.value.trim();
+                          if (value && !formData.interesses.includes(value)) {
+                            setFormData({...formData, interesses: [...formData.interesses, value]});
+                            input.value = '';
+                          }
+                        }}
+                        className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 rounded-2xl font-black text-xs uppercase transition-all"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
 

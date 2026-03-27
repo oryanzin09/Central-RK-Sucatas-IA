@@ -1793,6 +1793,7 @@ async function startServer() {
           cpf: p.CPF?.number?.toString() || '',
           senha: p.Senha?.rich_text?.[0]?.plain_text || '',
           itensComprados: p['Itens comprados']?.rich_text?.[0]?.plain_text || '',
+          interesses: p['Interesses']?.multi_select?.map((m: any) => m.name) || [],
           userId: p.ID?.unique_id ? (p.ID.unique_id.prefix ? `${p.ID.unique_id.prefix}-${p.ID.unique_id.number}` : p.ID.unique_id.number.toString()) : ''
         };
       });
@@ -1805,7 +1806,7 @@ async function startServer() {
 
   app.post('/api/clients', autenticar, async (req, res) => {
     try {
-      const { nome, numero, cpf, itensComprados, senha } = req.body;
+      const { nome, numero, cpf, itensComprados, senha, interesses } = req.body;
       console.log('📝 Criando novo cliente no Notion...', { nome, numero });
       
       const hashedPassword = senha ? await bcrypt.hash(senha, 10) : '';
@@ -1825,6 +1826,7 @@ async function startServer() {
             'CPF': { number: cpf ? Number(String(cpf).replace(/\D/g, '')) : 0 },
             Senha: { rich_text: [{ text: { content: hashedPassword } }] },
             'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
+            'Interesses': { multi_select: (interesses || []).map((name: string) => ({ name })) },
             Tipo: { select: { name: 'CLIENTE' } }
           }
         })
@@ -1853,14 +1855,15 @@ async function startServer() {
   app.put('/api/clients/:id', autenticar, async (req, res) => {
     try {
       const { id } = req.params;
-      const { nome, numero, cpf, itensComprados, senha } = req.body;
+      const { nome, numero, cpf, itensComprados, senha, interesses } = req.body;
       console.log(`📝 Atualizando cliente ${id} no Notion...`);
       
       const properties: any = {
         Nome: { title: [{ text: { content: nome || '' } }] },
         'Número': { phone_number: numero || '' },
         'CPF': { number: cpf ? Number(String(cpf).replace(/\D/g, '')) : 0 },
-        'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] }
+        'Itens comprados': { rich_text: [{ text: { content: itensComprados || '' } }] },
+        'Interesses': { multi_select: (interesses || []).map((name: string) => ({ name })) }
       };
 
       if (senha) {
