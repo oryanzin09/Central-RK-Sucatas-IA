@@ -598,14 +598,14 @@ const StatCard = memo(({ icon: Icon, label, value, trend, subValue, color, theme
 
       <div className="space-y-1">
         <span className={cn(
-          "text-[10px] font-black uppercase tracking-[0.25em] opacity-50", 
+          "text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.25em] opacity-50", 
           theme === 'dark' ? "text-zinc-400" : "text-zinc-500"
         )}>
           {label}
         </span>
         <div className="flex items-baseline gap-2">
           <h3 className={cn(
-            "text-xl sm:text-2xl font-black tracking-tighter transition-all duration-500",
+            "text-lg sm:text-2xl font-black tracking-tighter transition-all duration-500",
             theme === 'dark' ? "text-white" : "text-zinc-900",
             isSensitive && !showSensitiveInfo && "blur-xl select-none",
             (label.includes('Valor') || label.includes('Vendas')) && "text-emerald-400 drop-shadow-[0_0_15px_rgba(52,211,153,0.4)]",
@@ -615,7 +615,7 @@ const StatCard = memo(({ icon: Icon, label, value, trend, subValue, color, theme
           </h3>
         </div>
         {subValue && (
-          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest truncate opacity-70 mt-1">
+          <p className="text-[9px] sm:text-[10px] font-bold text-zinc-500 uppercase tracking-widest truncate opacity-70 mt-1">
             {subValue}
           </p>
         )}
@@ -988,11 +988,47 @@ const DashboardView = ({
       <div className="space-y-4 mb-6">
         {/* Linha 1: Título e Ações Principais */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className={cn("text-3xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-            Dashboard <span className="text-violet-500">RK</span>
-          </h2>
+          <div className="flex items-center justify-between w-full sm:w-auto">
+            <h2 className={cn("text-2xl sm:text-3xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+              Dashboard <span className="text-violet-500">RK</span>
+            </h2>
+
+            <div className="flex sm:hidden items-center gap-2">
+              {/* Toggle de Informações Sensíveis (Mobile) */}
+              <button
+                onClick={() => setShowSensitiveInfo(!showSensitiveInfo)}
+                className={cn(
+                  "p-2 rounded-full transition-all border",
+                  theme === 'dark' 
+                    ? "bg-zinc-900 border-zinc-800 text-zinc-400" 
+                    : "bg-white border-zinc-200 text-zinc-600"
+                )}
+              >
+                {showSensitiveInfo ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+
+              {/* Botão de Sincronizar (Mobile) */}
+              <button 
+                onClick={() => {
+                  refreshData();
+                  if (source === 'mercadolivre' && onRefreshMlDashboard) {
+                    onRefreshMlDashboard();
+                  }
+                }}
+                disabled={loading || isMlDashboardLoading}
+                className={cn(
+                  "p-2 rounded-full transition-all border",
+                  theme === 'dark' 
+                    ? "bg-zinc-900 border-zinc-800 text-zinc-400" 
+                    : "bg-white border-zinc-200 text-zinc-600"
+                )}
+              >
+                <RefreshCw size={16} className={cn((loading || isMlDashboardLoading) && "animate-spin")} />
+              </button>
+            </div>
+          </div>
           
-          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+          <div className="hidden sm:flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
             <div className="flex items-center gap-2">
               {/* Toggle de Informações Sensíveis */}
               <button
@@ -1342,37 +1378,50 @@ const DashboardView = ({
           </div>
 
           {/* Mobile Simplified View */}
-          <div className="sm:hidden h-[200px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData.slice(-15)}>
-                <defs>
-                  <linearGradient id="colorVendasMobile" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <Area 
-                  type="monotone" 
-                  dataKey="vendas" 
-                  stroke={source === 'estoque' ? "#8b5cf6" : "#10b981"} 
-                  strokeWidth={3} 
-                  fillOpacity={1} 
-                  fill="url(#colorVendasMobile)" 
-                  animationDuration={1000}
-                />
-                <Tooltip 
-                  formatter={(value: number) => [showSensitiveInfo ? formatCurrency(value) : "R$ ***", ""]}
-                  contentStyle={{ 
-                    backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '10px'
-                  }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-            <p className="text-[8px] text-center text-zinc-500 font-black uppercase tracking-[0.3em] mt-2">
-              Fluxo dos últimos 15 dias
+          <div className={cn(
+            "sm:hidden border p-4 rounded-2xl transition-all duration-300 mb-12",
+            theme === 'dark' 
+              ? "bg-zinc-900/40 border-zinc-800/50 shadow-lg" 
+              : "bg-white border-zinc-200 shadow-sm"
+          )}>
+            <div className="flex items-center gap-2 mb-4 opacity-60">
+              <Activity size={14} className="text-violet-500" />
+              <span className={cn("text-[9px] font-black uppercase tracking-widest", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+                Fluxo Recente
+              </span>
+            </div>
+            <div className="h-[180px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData.slice(-15)}>
+                  <defs>
+                    <linearGradient id="colorVendasMobile" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor={source === 'estoque' ? "#8b5cf6" : "#10b981"} stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <Area 
+                    type="monotone" 
+                    dataKey="vendas" 
+                    stroke={source === 'estoque' ? "#8b5cf6" : "#10b981"} 
+                    strokeWidth={3} 
+                    fillOpacity={1} 
+                    fill="url(#colorVendasMobile)" 
+                    animationDuration={1000}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => [showSensitiveInfo ? formatCurrency(value) : "R$ ***", ""]}
+                    contentStyle={{ 
+                      backgroundColor: theme === 'dark' ? '#18181b' : '#fff', 
+                      border: 'none',
+                      borderRadius: '12px',
+                      fontSize: '10px'
+                    }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-[8px] text-center text-zinc-500 font-black uppercase tracking-[0.3em] mt-4">
+              Últimos 15 dias
             </p>
           </div>
 
