@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useContext } from 'react';
+import React, { useState, useMemo, useContext, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
@@ -71,6 +72,17 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
 
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
 
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
   const total = selectedItems.reduce((acc, item) => acc + (item.valor * item.quantity), 0);
   const discountAmount = discountType === 'fixed' ? discount : (total * (discount / 100));
   const finalTotal = Math.max(0, total - discountAmount);
@@ -113,10 +125,10 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
     setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+        <div className="fixed inset-0 z-[10000] flex flex-col justify-end">
           {/* Blur Overlay at Top */}
           <motion.div 
             initial={{ opacity: 0 }}
@@ -472,6 +484,7 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };

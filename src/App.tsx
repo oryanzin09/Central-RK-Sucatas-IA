@@ -81,6 +81,7 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
+import { Modal } from './components/Modal';
 import { BudgetModal } from './components/BudgetModal';
 import { GlobalSearch } from './components/GlobalSearch';
 import { CustomDropdown } from './components/CustomDropdown';
@@ -686,42 +687,19 @@ const ChartCard = memo(({ label, data, theme, color, icon: Icon, className }: an
 
 
 const QuestionsModal = memo(({ isOpen, onClose, theme }: { isOpen: boolean, onClose: () => void, theme: 'light' | 'dark' }) => {
-  if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-      />
-      <motion.div 
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className={cn(
-          "relative w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col",
-          theme === 'dark' ? "bg-zinc-950 border border-zinc-800" : "bg-white"
-        )}
-      >
-        <div className={cn(
-          "p-6 border-b flex items-center justify-between",
-          theme === 'dark' ? "border-zinc-800" : "border-zinc-100"
-        )}>
-          <h2 className={cn("text-xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-            Perguntas Mercado Livre
-          </h2>
-          <button onClick={onClose} className={cn("p-2 rounded-full", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}>
-            <X size={20} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          <QuestionsDashboard theme={theme} />
-        </div>
-      </motion.div>
-    </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      theme={theme}
+      title="Perguntas Mercado Livre"
+      maxWidth="4xl"
+      icon={<MessageSquare className="text-violet-500" />}
+    >
+      <div className="flex-1 overflow-y-auto min-h-[50vh]">
+        <QuestionsDashboard theme={theme} />
+      </div>
+    </Modal>
   );
 });
 
@@ -2735,9 +2713,11 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
     valor: '',
     estoque: '1',
     ano: '',
+    rk_id: '',
     descricao: '',
     ml_link: '',
-    imagem: ''
+    imagem: '',
+    imagens: [] as string[]
   });
 
   const handleManualRefresh = async () => {
@@ -2977,9 +2957,11 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
         valor: '',
         estoque: '1',
         ano: '',
+        rk_id: '',
         descricao: '',
         ml_link: '',
-        imagem: ''
+        imagem: '',
+        imagens: []
       });
     } catch (err: any) {
       alert(err.message);
@@ -3021,9 +3003,11 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       valor: item.valor ? item.valor.toString() : '',
       estoque: item.estoque ? item.estoque.toString() : '1',
       ano: item.ano || '',
+      rk_id: item.rk_id || '',
       descricao: item.descricao || '',
       ml_link: item.ml_link || '',
-      imagem: item.imagem || ''
+      imagem: item.imagem || '',
+      imagens: item.imagens || []
     });
     setIsModalOpen(true);
   }, []);
@@ -3222,9 +3206,13 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
                     novaCategoria: '',
                     moto: '',
                     outraMoto: '',
-                    valor: 0,
-                    estoque: 1,
+                    valor: '0',
+                    estoque: '1',
+                    ano: '',
                     rk_id: '',
+                    descricao: '',
+                    ml_link: '',
+                    imagem: '',
                     imagens: []
                   });
                   setIsModalOpen(true);
@@ -3782,437 +3770,371 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       </div>
 
       {/* New Item Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsModalOpen(false)}
-              className="absolute inset-0 bg-zinc-950/80 backdrop-blur-sm"
-            />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); setEditingItem(null); }}
+        theme={theme}
+        title={editingItem ? 'Editar Item' : 'Novo Item no Estoque'}
+        maxWidth="2xl"
+        icon={editingItem ? <Edit2 className="text-violet-500" /> : <Plus className="text-violet-500" />}
+      >
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">URL da Imagem</label>
+              <input 
+                type="url"
+                value={formData.imagem}
+                onChange={(e) => setFormData({...formData, imagem: e.target.value})}
+                placeholder="https://..."
+                className={cn(
+                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                )}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome da Peça *</label>
+              <input 
+                required
+                type="text"
+                value={formData.nome}
+                onChange={(e) => {
+                  const novoNome = e.target.value;
+                  setFormData(prev => {
+                    const novoEstado = {...prev, nome: novoNome};
+                    if (novoNome.length < 3) {
+                      novoEstado.moto = '';
+                      novoEstado.categoria = '';
+                    } else {
+                      const modelo = extrairModeloMoto(novoNome);
+                      if (modelo) novoEstado.moto = modelo;
+                      
+                      const categoria = extrairCategoria(novoNome);
+                      if (categoria) novoEstado.categoria = categoria;
+                    }
+                    return novoEstado;
+                  });
+                }}
+                placeholder="Ex: Relé de Partida"
+                className={cn(
+                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                )}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Categoria</label>
+              <CustomDropdown
+                theme={theme}
+                variant="form"
+                value={formData.categoria}
+                onChange={(val) => setFormData({...formData, categoria: val})}
+                options={[
+                  { value: '', label: 'Selecione...' },
+                  ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat })),
+                  { value: 'nova', label: '+ Nova Categoria' }
+                ]}
+              />
+              {formData.categoria === 'nova' && (
+                <input 
+                  type="text"
+                  value={formData.novaCategoria}
+                  onChange={(e) => setFormData({...formData, novaCategoria: e.target.value})}
+                  placeholder="Nome da nova categoria"
+                  className={cn(
+                    "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                    theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
+                  )}
+                />
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Moto</label>
+              <CustomDropdown
+                theme={theme}
+                variant="form"
+                value={formData.moto}
+                onChange={(val) => setFormData({...formData, moto: val})}
+                options={[
+                  { value: '', label: 'Selecione...' },
+                  ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto })),
+                  { value: 'outra', label: '+ Outra' }
+                ]}
+              />
+              {formData.moto === 'outra' && (
+                <input 
+                  type="text"
+                  value={formData.outraMoto}
+                  onChange={(e) => setFormData({...formData, outraMoto: e.target.value})}
+                  placeholder="Modelo da moto"
+                  className={cn(
+                    "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                    theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
+                  )}
+                />
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Ano</label>
+              <input 
+                type="text"
+                value={formData.ano}
+                onChange={(e) => setFormData({...formData, ano: e.target.value})}
+                placeholder="Ex: 2014-2018"
+                className={cn(
+                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                )}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Valor (R$)</label>
+              <input 
+                type="number"
+                step="0.01"
+                value={formData.valor}
+                onChange={(e) => setFormData({...formData, valor: e.target.value})}
+                placeholder="0,00"
+                className={cn(
+                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                )}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Estoque</label>
+              <input 
+                type="number"
+                value={formData.estoque}
+                onChange={(e) => setFormData({...formData, estoque: e.target.value})}
+                placeholder="1"
+                className={cn(
+                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                )}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Link Mercado Livre</label>
+            <input 
+              type="url"
+              value={formData.ml_link}
+              onChange={(e) => setFormData({...formData, ml_link: e.target.value})}
+              placeholder="https://produto.mercadolivre.com.br/..."
               className={cn(
-                "relative w-full max-w-2xl border rounded-3xl shadow-2xl overflow-visible transition-colors",
-                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
+                "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+              )}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição / Observações</label>
+            <textarea 
+              rows={3}
+              value={formData.descricao}
+              onChange={(e) => setFormData({...formData, descricao: e.target.value})}
+              placeholder="Detalhes adicionais da peça..."
+              className={cn(
+                "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors resize-none",
+                theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+              )}
+            />
+          </div>
+
+          <div className="pt-4 flex items-center gap-3">
+            <button 
+              type="button"
+              onClick={() => setIsModalOpen(false)}
+              className={cn(
+                "flex-1 px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
               )}
             >
-              <div className={cn(
-                "p-6 border-b flex items-center justify-between transition-colors",
-                theme === 'dark' ? "border-zinc-800" : "border-zinc-100"
-              )}>
-                <h3 className={cn(
-                  "text-xl font-bold flex items-center gap-2 transition-colors",
-                  theme === 'dark' ? "text-white" : "text-zinc-900"
-                )}>
-                  {editingItem ? <Edit2 className="text-violet-500" /> : <Plus className="text-violet-500" />}
-                  {editingItem ? 'Editar Item' : 'Novo Item no Estoque'}
-                </h3>
-                <button 
-                  onClick={() => { setIsModalOpen(false); setEditingItem(null); }}
-                  className={cn(
-                    "p-2 rounded-full transition-colors",
-                    theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-100 text-zinc-500"
-                  )}
-                >
-                  <X size={20} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSave} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">URL da Imagem</label>
-                    <input 
-                      type="url"
-                      value={formData.imagem}
-                      onChange={(e) => setFormData({...formData, imagem: e.target.value})}
-                      placeholder="https://..."
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome da Peça *</label>
-                    <input 
-                      required
-                      type="text"
-                      value={formData.nome}
-                      onChange={(e) => {
-                        const novoNome = e.target.value;
-                        setFormData(prev => {
-                          const novoEstado = {...prev, nome: novoNome};
-                          if (novoNome.length < 3) {
-                            novoEstado.moto = '';
-                            novoEstado.categoria = '';
-                          } else {
-                            const modelo = extrairModeloMoto(novoNome);
-                            if (modelo) novoEstado.moto = modelo;
-                            
-                            const categoria = extrairCategoria(novoNome);
-                            if (categoria) novoEstado.categoria = categoria;
-                          }
-                          return novoEstado;
-                        });
-                      }}
-                      placeholder="Ex: Relé de Partida"
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Categoria</label>
-                    <CustomDropdown
-                      theme={theme}
-                      variant="form"
-                      value={formData.categoria}
-                      onChange={(val) => setFormData({...formData, categoria: val})}
-                      options={[
-                        { value: '', label: 'Selecione...' },
-                        ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat })),
-                        { value: 'nova', label: '+ Nova Categoria' }
-                      ]}
-                    />
-                    {formData.categoria === 'nova' && (
-                      <input 
-                        type="text"
-                        value={formData.novaCategoria}
-                        onChange={(e) => setFormData({...formData, novaCategoria: e.target.value})}
-                        placeholder="Nome da nova categoria"
-                        className={cn(
-                          "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                          theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
-                        )}
-                      />
-                    )}
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Moto</label>
-                    <CustomDropdown
-                      theme={theme}
-                      variant="form"
-                      value={formData.moto}
-                      onChange={(val) => setFormData({...formData, moto: val})}
-                      options={[
-                        { value: '', label: 'Selecione...' },
-                        ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto })),
-                        { value: 'outra', label: '+ Outra' }
-                      ]}
-                    />
-                    {formData.moto === 'outra' && (
-                      <input 
-                        type="text"
-                        value={formData.outraMoto}
-                        onChange={(e) => setFormData({...formData, outraMoto: e.target.value})}
-                        placeholder="Modelo da moto"
-                        className={cn(
-                          "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                          theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
-                        )}
-                      />
-                    )}
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Ano</label>
-                    <input 
-                      type="text"
-                      value={formData.ano}
-                      onChange={(e) => setFormData({...formData, ano: e.target.value})}
-                      placeholder="Ex: 2014-2018"
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Valor (R$)</label>
-                    <input 
-                      type="number"
-                      step="0.01"
-                      value={formData.valor}
-                      onChange={(e) => setFormData({...formData, valor: e.target.value})}
-                      placeholder="0,00"
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Estoque</label>
-                    <input 
-                      type="number"
-                      value={formData.estoque}
-                      onChange={(e) => setFormData({...formData, estoque: e.target.value})}
-                      placeholder="1"
-                      className={cn(
-                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                      )}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Link Mercado Livre</label>
-                  <input 
-                    type="url"
-                    value={formData.ml_link}
-                    onChange={(e) => setFormData({...formData, ml_link: e.target.value})}
-                    placeholder="https://produto.mercadolivre.com.br/..."
-                    className={cn(
-                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                    )}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição / Observações</label>
-                  <textarea 
-                    rows={3}
-                    value={formData.descricao}
-                    onChange={(e) => setFormData({...formData, descricao: e.target.value})}
-                    placeholder="Detalhes adicionais da peça..."
-                    className={cn(
-                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors resize-none",
-                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                    )}
-                  />
-                </div>
-
-                <div className="pt-4 flex items-center gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className={cn(
-                      "flex-1 px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                      theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-                    )}
-                  >
-                    Cancelar
-                  </button>
-                  <button 
-                    type="submit"
-                    disabled={isSaving}
-                    className={cn(
-                      "flex-1 px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                      theme === 'dark'
-                        ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
-                        : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
-                    )}
-                  >
-                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                    Salvar no Notion
-                  </button>
-                </div>
-              </form>
-            </motion.div>
+              Cancelar
+            </button>
+            <button 
+              type="submit"
+              disabled={isSaving}
+              className={cn(
+                "flex-1 px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                theme === 'dark'
+                  ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                  : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+              )}
+            >
+              {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+              Salvar no Notion
+            </button>
           </div>
-        )}
-      </AnimatePresence>
+        </form>
+      </Modal>
 
       {/* Modal de Confirmação de Exclusão Individual */}
-      <AnimatePresence>
-        {isDeleteConfirmOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+      <Modal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        theme={theme}
+        title="Excluir Item?"
+        maxWidth="md"
+        icon={<AlertCircle className="text-rose-500" />}
+      >
+        <div className="space-y-6">
+          <p className={cn(theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+            Tem certeza que deseja excluir este item do estoque? Esta ação não pode ser desfeita no Notion.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button 
+              onClick={() => setIsDeleteConfirmOpen(false)}
               className={cn(
-                "w-full max-w-md p-6 rounded-2xl border shadow-2xl",
-                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
+                "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
               )}
             >
-              <div className="flex items-center gap-4 text-rose-500 mb-4">
-                <div className="p-3 bg-rose-500/10 rounded-full">
-                  <AlertCircle size={24} />
-                </div>
-                <h3 className="text-xl font-bold">Excluir Item?</h3>
-              </div>
-              <p className={cn("mb-6", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                Tem certeza que deseja excluir este item do estoque? Esta ação não pode ser desfeita no Notion.
-              </p>
-              <div className="flex justify-end gap-3">
-                <button 
-                  onClick={() => setIsDeleteConfirmOpen(false)}
-                  className={cn(
-                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-                  )}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={() => handleDelete(itemToDelete!)}
-                  className={cn(
-                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
-                    theme === 'dark'
-                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
-                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
-                  )}
-                >
-                  Excluir
-                </button>
-              </div>
-            </motion.div>
+              Cancelar
+            </button>
+            <button 
+              onClick={() => handleDelete(itemToDelete!)}
+              className={cn(
+                "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                theme === 'dark'
+                  ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                  : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+              )}
+            >
+              Excluir
+            </button>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
 
       {/* Modal de Confirmação de Exclusão em Massa */}
-      <AnimatePresence>
-        {isBulkDeleteConfirmOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+      <Modal
+        isOpen={isBulkDeleteConfirmOpen}
+        onClose={() => setIsBulkDeleteConfirmOpen(false)}
+        theme={theme}
+        title={`Excluir ${selectedIds.length} itens?`}
+        maxWidth="md"
+        icon={<Trash2 className="text-rose-500" />}
+      >
+        <div className="space-y-6">
+          <p className={cn(theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+            Tem certeza que deseja excluir permanentemente os itens selecionados?
+          </p>
+          <div className="flex justify-end gap-3">
+            <button 
+              onClick={() => setIsBulkDeleteConfirmOpen(false)}
               className={cn(
-                "w-full max-w-md p-6 rounded-2xl border shadow-2xl",
-                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
+                "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
               )}
             >
-              <div className="flex items-center gap-4 text-rose-500 mb-4">
-                <div className="p-3 bg-rose-500/10 rounded-full">
-                  <Trash2 size={24} />
-                </div>
-                <h3 className="text-xl font-bold">Excluir {selectedIds.length} itens?</h3>
-              </div>
-              <p className={cn("mb-6", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                Tem certeza que deseja excluir permanentemente os itens selecionados?
-              </p>
-              <div className="flex justify-end gap-3">
-                <button 
-                  onClick={() => setIsBulkDeleteConfirmOpen(false)}
-                  className={cn(
-                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-                  )}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleBulkDelete}
-                  className={cn(
-                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
-                    theme === 'dark'
-                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
-                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
-                  )}
-                >
-                  Excluir Tudo
-                </button>
-              </div>
-            </motion.div>
+              Cancelar
+            </button>
+            <button 
+              onClick={handleBulkDelete}
+              className={cn(
+                "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                theme === 'dark'
+                  ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                  : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+              )}
+            >
+              Excluir Tudo
+            </button>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
 
       {/* Modal de Mudança de Categoria em Massa */}
-      <AnimatePresence>
-        {isCategoryModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
+      <Modal
+        isOpen={isCategoryModalOpen}
+        onClose={() => {
+          setIsCategoryModalOpen(false);
+          setBulkCategory('');
+        }}
+        theme={theme}
+        title="Mudar Categoria"
+        maxWidth="md"
+        icon={<Layers className="text-violet-500" />}
+      >
+        <div className="space-y-6">
+          <p className={cn("text-sm", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+            Selecione ou digite a nova categoria para os {selectedIds.length} itens selecionados.
+          </p>
+          
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nova Categoria</label>
+              <input 
+                type="text"
+                value={bulkCategory}
+                onChange={(e) => setBulkCategory(e.target.value)}
+                placeholder="Ex: Motor, Carenagem..."
+                className={cn(
+                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                )}
+                autoFocus
+              />
+            </div>
+            
+            {categories.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setBulkCategory(cat)}
+                    className={cn(
+                      "px-3 py-1 rounded-full text-xs transition-colors",
+                      bulkCategory === cat 
+                        ? "bg-violet-600 text-white" 
+                        : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                    )}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button 
+              onClick={() => {
+                setIsCategoryModalOpen(false);
+                setBulkCategory('');
+              }}
               className={cn(
-                "w-full max-w-md p-6 rounded-2xl border shadow-2xl",
-                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
+                "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
               )}
             >
-              <div className="flex items-center gap-4 text-violet-500 mb-4">
-                <div className="p-3 bg-violet-500/10 rounded-full">
-                  <Layers size={24} />
-                </div>
-                <h3 className="text-xl font-bold">Mudar Categoria</h3>
-              </div>
-              <p className={cn("mb-4 text-sm", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-                Selecione ou digite a nova categoria para os {selectedIds.length} itens selecionados.
-              </p>
-              
-              <div className="space-y-4 mb-6">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nova Categoria</label>
-                  <input 
-                    type="text"
-                    value={bulkCategory}
-                    onChange={(e) => setBulkCategory(e.target.value)}
-                    placeholder="Ex: Motor, Carenagem..."
-                    className={cn(
-                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                    )}
-                    autoFocus
-                  />
-                </div>
-                
-                {categories.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map(cat => (
-                      <button
-                        key={cat}
-                        onClick={() => setBulkCategory(cat)}
-                        className={cn(
-                          "px-3 py-1 rounded-full text-xs transition-colors",
-                          bulkCategory === cat 
-                            ? "bg-violet-600 text-white" 
-                            : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-                        )}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-3">
-                <button 
-                  onClick={() => {
-                    setIsCategoryModalOpen(false);
-                    setBulkCategory('');
-                  }}
-                  className={cn(
-                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-                  )}
-                >
-                  Cancelar
-                </button>
-                <button 
-                  onClick={handleBulkUpdateCategory}
-                  disabled={!bulkCategory}
-                  className={cn(
-                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
-                    theme === 'dark'
-                      ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
-                      : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
-                  )}
-                >
-                  Atualizar
-                </button>
-              </div>
-            </motion.div>
+              Cancelar
+            </button>
+            <button 
+              onClick={handleBulkUpdateCategory}
+              disabled={!bulkCategory}
+              className={cn(
+                "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                theme === 'dark'
+                  ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                  : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+              )}
+            >
+              Atualizar
+            </button>
           </div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
     </div>
   );
 });
@@ -4349,6 +4271,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
   const [formData, setFormData] = useState({
     nome: '',
     moto: '',
+    categoria: '',
     valor: '',
     tipo: 'Pix',
     data: new Date().toISOString().split('T')[0]
@@ -4357,6 +4280,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
   const [editFormData, setEditFormData] = useState({
     nome: '',
     moto: '',
+    categoria: '',
     valor: '',
     tipo: 'Pix',
     data: ''
@@ -4439,6 +4363,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
     setEditFormData({
       nome: sale.nome || '',
       moto: sale.moto || '',
+      categoria: sale.categoria || '',
       valor: sale.valor?.toString() || '',
       tipo: sale.tipo || 'Pix',
       data: sale.data ? new Date(sale.data).toISOString().split('T')[0] : ''
@@ -4527,6 +4452,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
         setFormData({
           nome: '',
           moto: '',
+          categoria: '',
           valor: '',
           tipo: 'Pix',
           data: new Date().toISOString().split('T')[0]
@@ -8358,7 +8284,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const userRole = localStorage.getItem('user_role') || 'client';
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients'>(
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre'>(
     userRole === 'admin' ? 'dashboard' : 'motos'
   );
   const [pendingEditItem, setPendingEditItem] = useState<any | null>(null);
@@ -8595,7 +8521,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     if (!selectedDetailItem) return { edit: undefined, delete: undefined };
     const item = selectedDetailItem;
     
-    const wrapEdit = (originalEdit: any, tab: string) => {
+    const wrapEdit = (originalEdit: any, tab: 'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre') => {
       if (!originalEdit) {
         return (item: any) => {
           setActiveTab(tab);
@@ -8731,19 +8657,19 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 theme={theme}
               />
               <SidebarItem 
+                icon={Users} 
+                label={isSidebarOpen ? "Clientes" : ""} 
+                active={activeTab === 'clients'} 
+                onClick={() => setActiveTab('clients')} 
+                theme={theme}
+              />
+              <SidebarItem 
                 icon={MessageSquare} 
                 label={isSidebarOpen ? "Atendimento" : ""} 
                 active={activeTab === 'atendimento'} 
                 onClick={() => setActiveTab('atendimento')} 
                 theme={theme}
                 badge={unreadCount > 0 ? unreadCount : undefined}
-              />
-              <SidebarItem 
-                icon={Users} 
-                label={isSidebarOpen ? "Clientes" : ""} 
-                active={activeTab === 'clients'} 
-                onClick={() => setActiveTab('clients')} 
-                theme={theme}
               />
             </nav>
           </div>

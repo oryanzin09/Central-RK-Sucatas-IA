@@ -47,6 +47,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState({
     nome: '',
     numero: '',
@@ -174,6 +175,14 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
 
   // ... (existing code)
 
+  const togglePasswordVisibility = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    const newSet = new Set(visiblePasswords);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setVisiblePasswords(newSet);
+  };
+
   const filteredClients = clients.filter(c => 
     (c.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
      c.userId.includes(searchTerm)) &&
@@ -237,23 +246,46 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                       <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID: {client.userId}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                </div>
+                <div className="text-xs text-zinc-400 font-medium mb-1"><Phone size={12} className="inline mr-1" /> {client.numero}</div>
+                <div className="text-xs text-zinc-400 font-medium mb-2"><ShoppingBag size={12} className="inline mr-1" /> {client.itensComprados}</div>
+                
+                <div className="flex flex-wrap gap-1 mb-3">
+                  {client.interesses && client.interesses.map((int, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-md bg-violet-600/20 text-violet-300 text-[9px] font-bold">
+                      {int}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-2">
+                    <Lock size={12} className="text-zinc-500" />
+                    <span className="font-mono text-[10px] text-zinc-400">
+                      {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
+                    </span>
+                    <button 
+                      onClick={(e) => togglePasswordVisibility(e, client.id)}
+                      className="p-1 text-zinc-500 hover:text-zinc-300"
+                    >
+                      {visiblePasswords.has(client.id) ? <EyeOff size={12} /> : <Eye size={12} />}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <button 
                       onClick={() => handleOpenModal(client)}
-                      className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-violet-600 transition-all"
+                      className="p-2 rounded-lg bg-zinc-800 text-zinc-400"
                     >
-                      <Edit2 size={16} />
+                      <Edit2 size={14} />
                     </button>
                     <button 
                       onClick={() => handleDelete(client.id)}
-                      className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                      className="p-2 rounded-lg bg-zinc-800 text-rose-500/50"
                     >
-                      <Trash2 size={16} />
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
-                <div className="text-xs text-zinc-400 font-medium mb-1"><Phone size={12} className="inline mr-1" /> {client.numero}</div>
-                <div className="text-xs text-zinc-400 font-medium"><ShoppingBag size={12} className="inline mr-1" /> {client.itensComprados}</div>
               </div>
             ))}
           </div>
@@ -267,7 +299,8 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
               )}>
                 <th className="px-6 py-4">Cliente</th>
                 <th className="px-6 py-4">Contato</th>
-                <th className="px-6 py-4">Itens</th>
+                <th className="px-6 py-4">Interesses</th>
+                <th className="px-6 py-4">Senha</th>
                 <th className="px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
@@ -275,14 +308,14 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan={4} className="px-6 py-8">
+                    <td colSpan={5} className="px-6 py-8">
                       <div className="h-4 bg-zinc-800 rounded w-full"></div>
                     </td>
                   </tr>
                 ))
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-20 text-center">
+                  <td colSpan={5} className="px-6 py-20 text-center">
                     <Users className="mx-auto text-zinc-700 mb-4" size={48} />
                     <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">Nenhum cliente encontrado</p>
                   </td>
@@ -308,8 +341,32 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium max-w-[200px] truncate">
-                      <ShoppingBag size={12} className="shrink-0" /> {client.itensComprados}
+                    <div className="flex flex-wrap gap-1 max-w-[200px]">
+                      {client.interesses && client.interesses.length > 0 ? (
+                        client.interesses.slice(0, 3).map((int, i) => (
+                          <span key={i} className="px-2 py-0.5 rounded-md bg-violet-600/20 text-violet-300 text-[9px] font-bold whitespace-nowrap">
+                            {int}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-zinc-600 font-bold uppercase">Nenhum</span>
+                      )}
+                      {client.interesses && client.interesses.length > 3 && (
+                        <span className="text-[9px] text-zinc-500 font-bold">+{client.interesses.length - 3}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="font-mono text-xs text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-800 min-w-[80px] text-center">
+                        {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
+                      </div>
+                      <button 
+                        onClick={(e) => togglePasswordVisibility(e, client.id)}
+                        className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-all"
+                      >
+                        {visiblePasswords.has(client.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
                     </div>
                   </td>
                   <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>

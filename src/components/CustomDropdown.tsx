@@ -17,9 +17,23 @@ interface CustomDropdownProps {
   hideValue?: boolean;
   compact?: boolean; // Novo: modo apenas ícone redondo
   variant?: 'pill' | 'form'; // Novo: variante para formulários
+  label?: string;
+  placeholder?: string;
 }
 
-export const CustomDropdown: React.FC<CustomDropdownProps> = ({ options, value, onChange, className, icon, hideValue, compact, variant = 'pill', theme = 'light' }) => {
+export const CustomDropdown: React.FC<CustomDropdownProps> = ({ 
+  options, 
+  value, 
+  onChange, 
+  className, 
+  icon, 
+  hideValue, 
+  compact, 
+  variant = 'pill', 
+  theme = 'light',
+  label,
+  placeholder
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +82,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({ options, value, 
         <div className="flex items-center justify-between w-full gap-2">
           <div className="flex items-center gap-2 overflow-hidden">
             {icon && <span className={cn("transition-colors shrink-0", !isDefault && variant !== 'form' && "text-violet-500")}>{icon}</span>}
-            {!compact && <span className="truncate">{selectedOption?.label || 'Selecione...'}</span>}
+            {!compact && <span className="truncate">{selectedOption?.label || placeholder || 'Selecione...'}</span>}
           </div>
           {!compact && <ChevronDown size={14} className={cn("transition-transform opacity-50 shrink-0", isOpen ? "rotate-180" : "")} />}
         </div>

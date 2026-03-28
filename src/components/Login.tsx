@@ -356,7 +356,7 @@ export const Login = ({ onLogin }: LoginProps) => {
                       onClick={() => setShowPassword(!showPassword)} 
                       className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors p-1.5"
                     >
-                      {showPassword ? <EyeOff size={14} md:size={18} /> : <Eye size={14} md:size={18} />}
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5 md:w-4.5 md:h-4.5" /> : <Eye className="w-3.5 h-3.5 md:w-4.5 md:h-4.5" />}
                     </button>
                   </div>
                   {isRegister && (
@@ -385,7 +385,7 @@ export const Login = ({ onLogin }: LoginProps) => {
                   disabled={loading}
                   className="w-full bg-violet-600 text-white py-3 md:py-4 rounded-lg md:rounded-xl font-black uppercase tracking-widest hover:bg-violet-500 transition-all active:scale-[0.98] flex items-center justify-center gap-2.5 mt-3 md:mt-5 shadow-2xl shadow-violet-600/30 disabled:opacity-50 text-[8px] md:text-xs"
                 >
-                  {loading ? <Loader2 className="animate-spin" size={16} md:size={20} /> : (isRegister ? 'Criar Minha Conta' : 'Entrar no Sistema')}
+                  {loading ? <Loader2 className="animate-spin w-4 h-4 md:w-5 md:h-5" /> : (isRegister ? 'Criar Minha Conta' : 'Entrar no Sistema')}
                 </button>
               </form>
 

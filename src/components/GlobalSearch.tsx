@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, X, Package, ShoppingCart, Bike, Tag, Layers } from 'lucide-react';
 import { DataContext } from '../App';
@@ -259,13 +260,13 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
       </motion.button>
 
       <AnimatePresence>
-        {isOpen && (
+        {isOpen && createPortal(
           <>
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40"
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[9999]"
               onClick={handleClose}
             />
             <motion.div
@@ -273,7 +274,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: isMobile ? 20 : 0 }}
               className={cn(
-                "fixed z-[110] rounded-lg shadow-2xl overflow-hidden border flex flex-col",
+                "fixed z-[10000] rounded-lg shadow-2xl overflow-hidden border flex flex-col",
                 isMobile 
                   ? "bottom-fab-safe left-4 right-4 max-h-[60vh]" 
                   : "bottom-10 left-1/2 -translate-x-1/2 w-full max-w-2xl max-h-[70vh]",
@@ -397,7 +398,8 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
                 </div>
               </div>
             </motion.div>
-          </>
+          </>,
+          document.body
         )}
       </AnimatePresence>
     </>

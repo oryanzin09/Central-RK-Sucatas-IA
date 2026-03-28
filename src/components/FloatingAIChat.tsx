@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../utils';
 import { 
@@ -44,9 +45,17 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
   }, [messages]);
 
   useEffect(() => {
-    if (isOpen && inputRef.current) {
-      inputRef.current.focus();
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    } else {
+      document.body.style.overflow = 'unset';
     }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
   }, [isOpen]);
 
   const handleClose = () => {
@@ -242,13 +251,13 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
       </motion.button>
 
       <AnimatePresence>
-        {isOpen && (
+        {isOpen && createPortal(
           <motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className={cn(
-              "fixed z-[100] rounded-2xl shadow-2xl overflow-hidden border flex flex-col md:top-1/2 md:left-1/2 md:transform md:-translate-x-1/2 md:-translate-y-1/2 md:w-[500px] md:h-[650px]",
+              "fixed z-[10000] rounded-2xl shadow-2xl overflow-hidden border flex flex-col md:top-1/2 md:left-1/2 md:transform md:-translate-x-1/2 md:-translate-y-1/2 md:w-[500px] md:h-[650px]",
               isMobile ? "top-safe bottom-safe left-4 right-4 mt-4 mb-20" : "inset-4"
             )}
             style={{
@@ -365,7 +374,8 @@ export const FloatingAIChat: React.FC<FloatingAIChatProps> = ({ theme, isSearchO
                 </button>
               </div>
             </div>
-          </motion.div>
+          </motion.div>,
+          document.body
         )}
       </AnimatePresence>
     </>
