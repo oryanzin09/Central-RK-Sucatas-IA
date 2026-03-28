@@ -79,7 +79,7 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { motion, AnimatePresence, Reorder } from 'motion/react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { cn } from './utils';
 import { Modal } from './components/Modal';
 import { BudgetModal } from './components/BudgetModal';
@@ -964,7 +964,7 @@ const DashboardView = ({
 
   return (
     <>
-      <div className={cn("space-y-6", isSearchOpen && "blur-md pointer-events-none")}>
+      <div className="space-y-6">
       <div className="space-y-4 mb-6">
         {/* Linha 1: Título e Ações Principais */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -3109,8 +3109,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
         "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
-          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
-        isSearchOpen && "blur-md pointer-events-none opacity-50"
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40"
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
@@ -4630,8 +4629,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
         "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
-          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
-        isSearchOpen && "blur-md pointer-events-none opacity-50"
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40"
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
@@ -6392,8 +6390,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
         "relative z-50 p-2 md:p-4 rounded-2xl md:rounded-3xl flex flex-col gap-2 md:gap-3 transition-all duration-300 shadow-xl border overflow-visible",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
-          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
-        isSearchOpen && "blur-md pointer-events-none opacity-50"
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40"
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
@@ -8881,15 +8878,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       
       {/* Grupo de ações flutuantes - Only for Admin */}
       {userRole === 'admin' && (
-        <div className="fixed bottom-fab-safe md:bottom-6 right-6 z-[60] flex flex-col gap-3">
+        <div className="fixed bottom-[15px] right-6 z-[60] flex flex-col gap-3">
           <GlobalSearch 
             theme={theme} 
             onSelectItem={setSelectedDetailItem} 
             isOpen={isSearchOpen} 
             setIsOpen={setIsSearchOpen}
-            customClick={() => {
-              setIsSearchOpen(true);
-            }}
           />
 
           {/* Budget FAB */}

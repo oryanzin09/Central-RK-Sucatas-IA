@@ -17,7 +17,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../utils';
 import { DataContext } from '../App';
 
@@ -261,7 +261,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                 <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50" onClick={(e) => e.stopPropagation()}>
                   <div className="flex items-center gap-2">
                     <Lock size={12} className="text-zinc-500" />
-                    <span className="font-mono text-[10px] text-zinc-400">
+                    <span className="font-mono text-[10px] text-zinc-400 w-[120px] truncate inline-block align-middle">
                       {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
                     </span>
                     <button 
@@ -300,7 +300,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                 <th className="px-6 py-4">Cliente</th>
                 <th className="px-6 py-4">Contato</th>
                 <th className="px-6 py-4">Interesses</th>
-                <th className="px-6 py-4">Senha</th>
+                <th className="px-6 py-4 w-[200px]">Senha</th>
                 <th className="px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
@@ -358,7 +358,7 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="font-mono text-xs text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-800 min-w-[80px] text-center">
+                      <div className="font-mono text-xs text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-800 w-[140px] truncate text-center" title={visiblePasswords.has(client.id) ? client.senha : ''}>
                         {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
                       </div>
                       <button 
@@ -460,6 +460,23 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
                       <ShoppingBag size={9} /> Itens Comprados
                     </label>
                     <p className="text-sm font-medium text-zinc-300">{selectedClient.itensComprados || 'Nenhum item registrado'}</p>
+                  </div>
+
+                  <div className={cn("p-3 rounded-xl border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-100")}>
+                    <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5 flex items-center gap-1.5">
+                      <Lock size={9} /> Senha de Acesso
+                    </label>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-mono text-zinc-300 truncate max-w-[200px]">
+                        {visiblePasswords.has(selectedClient.id) ? selectedClient.senha || '---' : '••••••••'}
+                      </p>
+                      <button 
+                        onClick={(e) => togglePasswordVisibility(e, selectedClient.id)}
+                        className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-all"
+                      >
+                        {visiblePasswords.has(selectedClient.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

@@ -5,7 +5,7 @@ import {
   User, Clock, Check, X, AlertCircle, Archive,
   QrCode, RefreshCw, Trash2, Smartphone
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { DataContext } from '../App';
 
 interface WhatsAppMessage {
