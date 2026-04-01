@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Package, Printer, RefreshCw, Truck, AlertCircle, Search, Clock, CheckCircle } from 'lucide-react';
+import { List } from 'react-window';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { api } from '../../utils/api';
@@ -50,6 +52,8 @@ export const getStatusInfo = (sale: any) => {
       return { label: sale.status || 'Pago', color: 'bg-zinc-500/20 text-zinc-400', icon: Package, description: 'Aguardando atualização de envio.', action: 'ver_detalhes' };
   }
 };
+
+const ListAny = List as any;
 
 export const MLSales = ({ theme }: { theme: string }) => {
   const [sales, setSales] = useState<any[]>(() => {
@@ -138,14 +142,16 @@ export const MLSales = ({ theme }: { theme: string }) => {
     { id: 'delivered', label: 'Finalizadas', filter: (s: any) => String(s.shipping_status).startsWith('delivered') },
   ];
 
-  const filteredSales = sales.filter(s => {
-    const currentTab = tabs.find(t => t.id === activeTab);
-    const isMatch = currentTab?.filter(s);
-    if (activeTab === 'pending' && !isMatch) {
-      console.log('Sale filtered out from pending:', s.id, 'Status:', s.shipping_status, 'Status2:', s.status, 'Dispute:', s.has_dispute, 'Cancelled:', s.is_cancelled);
-    }
-    return isMatch;
-  });
+  const filteredSales = useMemo(() => {
+    return sales.filter(s => {
+      const currentTab = tabs.find(t => t.id === activeTab);
+      return currentTab?.filter(s);
+    });
+  }, [sales, activeTab]);
+
+  const sortedSales = useMemo(() => {
+    return [...filteredSales].sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
+  }, [filteredSales]);
 
   if (loading) {
     return (
@@ -187,8 +193,8 @@ export const MLSales = ({ theme }: { theme: string }) => {
           })}
         </div>
 
-        <div className="space-y-4">
-          {filteredSales.length === 0 ? (
+        <div className="h-[calc(100vh-350px)] min-h-[500px]">
+          {sortedSales.length === 0 ? (
             <div className={cn(
               "p-12 text-center border border-dashed rounded-2xl",
               theme === 'dark' ? "border-zinc-800 text-zinc-600" : "border-zinc-200 text-zinc-400"
@@ -197,96 +203,111 @@ export const MLSales = ({ theme }: { theme: string }) => {
               <p>Nenhuma encomenda nesta categoria.</p>
             </div>
           ) : (
-            filteredSales.sort((a,b) => new Date(b.data).getTime() - new Date(a.data).getTime()).map(sale => {
-              const statusInfo = getStatusInfo(sale);
-              return (
-                <div key={sale.id} className={cn(
-                  "border rounded-2xl p-4 flex flex-col gap-4 transition-all",
-                  theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
-                )}>
-                  <div className="flex items-center justify-between border-b pb-3 border-zinc-800/50">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-amber-400 text-black text-[10px] font-black px-1.5 py-0.5 rounded">ML</span>
-                      <span className="text-xs text-zinc-400 font-medium">#{sale.id}</span>
-                      <span className="text-xs text-zinc-500">|</span>
-                      <span className="text-xs text-zinc-400">{new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className={cn("text-xs font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>{sale.cliente}</p>
-                      <p className="text-[10px] text-zinc-500">{sale.nickname}</p>
-                    </div>
-                  </div>
+            <AutoSizer renderProp={({ height, width }) => (
+                <ListAny
+                  height={height}
+                  itemCount={sortedSales.length}
+                  itemSize={180}
+                  width={width}
+                  className="scrollbar-hide"
+                >
+                  {({ index, style }) => {
+                    const i = index as number;
+                    const s = style as React.CSSProperties;
+                    const sale = sortedSales[i];
+                    const statusInfo = getStatusInfo(sale);
+                    return (
+                      <div style={{ ...s, padding: '8px' }}>
+                        <div className={cn(
+                          "border rounded-2xl p-4 flex flex-col gap-4 transition-all h-full justify-between",
+                          theme === 'dark' ? "bg-zinc-900/40 border-zinc-800" : "bg-white border-zinc-200"
+                        )}>
+                          <div className="flex items-center justify-between border-b pb-3 border-zinc-800/50">
+                            <div className="flex items-center gap-3">
+                              <span className="bg-amber-400 text-black text-[10px] font-black px-1.5 py-0.5 rounded">ML</span>
+                              <span className="text-xs text-zinc-400 font-medium">#{sale.id}</span>
+                              <span className="text-xs text-zinc-500">|</span>
+                              <span className="text-xs text-zinc-400">{new Date(sale.data).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <div className="text-right">
+                              <p className={cn("text-xs font-bold", theme === 'dark' ? "text-zinc-300" : "text-zinc-700")}>{sale.cliente}</p>
+                              <p className="text-[10px] text-zinc-500">{sale.nickname}</p>
+                            </div>
+                          </div>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-zinc-800 rounded-lg overflow-hidden border border-zinc-700">
-                        <img src={sale.thumbnail} alt={sale.itens} className="w-full h-full object-cover" />
-                      </div>
-                      <div>
-                        <h4 className={cn("font-bold text-sm line-clamp-1", theme === 'dark' ? "text-white" : "text-zinc-900")}>{sale.itens}</h4>
-                        <p className="text-[10px] text-zinc-500 mt-0.5">{statusInfo.description}</p>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 rounded-md flex items-center gap-1", statusInfo.color)}>
-                            <statusInfo.icon size={10} />
-                            {statusInfo.label}
-                          </span>
-                          <span className="text-xs text-zinc-500 font-medium">
-                            R$ {Number(sale.valor || 0).toFixed(2).replace('.', ',')}
-                          </span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 bg-zinc-800 rounded-lg overflow-hidden border border-zinc-700">
+                                <img src={sale.thumbnail} alt={sale.itens} className="w-full h-full object-cover" />
+                              </div>
+                              <div>
+                                <h4 className={cn("font-bold text-sm line-clamp-1", theme === 'dark' ? "text-white" : "text-zinc-900")}>{sale.itens}</h4>
+                                <p className="text-[10px] text-zinc-500 mt-0.5">{statusInfo.description}</p>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <span className={cn("text-[10px] font-bold uppercase px-2 py-0.5 rounded-md flex items-center gap-1", statusInfo.color)}>
+                                    <statusInfo.icon size={10} />
+                                    {statusInfo.label}
+                                  </span>
+                                  <span className="text-xs text-zinc-500 font-medium">
+                                    R$ {Number(sale.valor || 0).toFixed(2).replace('.', ',')}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              {statusInfo.action === 'responder_mediacao' && (
+                                <button
+                                  onClick={() => window.open(`https://myaccount.mercadolivre.com.br/messaging/orders/${sale.id}`, '_blank')}
+                                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-red-500/20"
+                                >
+                                  Responder mediação
+                                </button>
+                              )}
+                              {statusInfo.action === 'imprimir_etiqueta' && (
+                                <button
+                                  onClick={() => printLabel(sale.shipping_id)}
+                                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
+                                >
+                                  <Printer size={14} /> Imprimir Etiqueta
+                                </button>
+                              )}
+                              {statusInfo.action === 'emitir_nf' && (
+                                <button
+                                  onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
+                                  className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-500/20"
+                                >
+                                  <AlertCircle size={14} /> Emitir NF
+                                </button>
+                              )}
+                              {statusInfo.action === 'acompanhar_envio' && (
+                                <button
+                                  onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
+                                  className="bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-violet-600/20"
+                                >
+                                  <Truck size={14} /> Acompanhar Envio
+                                </button>
+                              )}
+                              <button
+                                onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
+                                className={cn(
+                                  "px-4 py-2 rounded-lg text-xs font-bold border transition-all",
+                                  theme === 'dark' ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
+                                )}
+                              >
+                                Detalhes
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      {statusInfo.action === 'responder_mediacao' && (
-                        <button
-                          onClick={() => window.open(`https://myaccount.mercadolivre.com.br/messaging/orders/${sale.id}`, '_blank')}
-                          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-red-500/20"
-                        >
-                          Responder mediação
-                        </button>
-                      )}
-                      {statusInfo.action === 'imprimir_etiqueta' && (
-                        <button
-                          onClick={() => printLabel(sale.shipping_id)}
-                          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
-                        >
-                          <Printer size={14} /> Imprimir Etiqueta
-                        </button>
-                      )}
-                      {statusInfo.action === 'emitir_nf' && (
-                        <button
-                          onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
-                          className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-orange-500/20"
-                        >
-                          <AlertCircle size={14} /> Emitir NF
-                        </button>
-                      )}
-                      {statusInfo.action === 'acompanhar_envio' && (
-                        <button
-                          onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
-                          className="bg-violet-500 hover:bg-violet-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-violet-500/20"
-                        >
-                          <Truck size={14} /> Acompanhar Envio
-                        </button>
-                      )}
-                      <button
-                        onClick={() => window.open(`https://myaccount.mercadolivre.com.br/sales/${sale.id}/detail`, '_blank')}
-                        className={cn(
-                          "px-4 py-2 rounded-lg text-xs font-bold border transition-all",
-                          theme === 'dark' ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800" : "border-zinc-300 text-zinc-700 hover:bg-zinc-100"
-                        )}
-                      >
-                        Detalhes
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+                    );
+                  }}
+                </ListAny>
+              )} />
           )}
         </div>
-      </div>
+        </div>
 
       {/* Barra Lateral: Anúncios Recentes */}
       <div className="space-y-4">

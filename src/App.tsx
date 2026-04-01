@@ -4,7 +4,10 @@
  */
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
+import { api } from './utils/api';
 import QuestionsDashboard from './components/QuestionsDashboard';
+import AdminUsers from './components/AdminUsers';
+import AuditLogs from './components/AuditLogs';
 import { 
   LayoutDashboard, 
   Package, 
@@ -63,7 +66,9 @@ import {
   TrendingDown,
   Copy,
   ArrowDownAZ,
-  LogOut
+  LogOut,
+  UserCog,
+  Activity
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -79,9 +84,8 @@ import {
   Pie,
   Cell
 } from 'recharts';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { cn } from './utils';
-import { Modal } from './components/Modal';
 import { BudgetModal } from './components/BudgetModal';
 import { GlobalSearch } from './components/GlobalSearch';
 import { CustomDropdown } from './components/CustomDropdown';
@@ -254,30 +258,24 @@ export const DataContext = createContext<{
 });
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const [inventory, setInventory] = useState<any[]>(() => {
+  const [inventory, setInventory] = useState<any[]>([]);
+  const [sales, setSales] = useState<any[]>([]);
+  const [motos, setMotos] = useState<any[]>([]);
+
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('rk_inventory');
-      return saved ? JSON.parse(saved) : [];
+      const savedInventory = localStorage.getItem('rk_inventory');
+      if (savedInventory) setInventory(JSON.parse(savedInventory));
+      
+      const savedSales = localStorage.getItem('rk_sales');
+      if (savedSales) setSales(JSON.parse(savedSales));
+      
+      const savedMotos = localStorage.getItem('rk_motos');
+      if (savedMotos) setMotos(JSON.parse(savedMotos));
     } catch (e) {
-      return [];
+      console.error('Erro ao carregar cache do localStorage', e);
     }
-  });
-  const [sales, setSales] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem('rk_sales');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-  const [motos, setMotos] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem('rk_motos');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  }, []);
   const [loading, setLoading] = useState(false);
   const [lastFetch, setLastFetch] = useState(0);
   const lastMutationRef = useRef(0);
@@ -687,19 +685,53 @@ const ChartCard = memo(({ label, data, theme, color, icon: Icon, className }: an
 
 
 const QuestionsModal = memo(({ isOpen, onClose, theme }: { isOpen: boolean, onClose: () => void, theme: 'light' | 'dark' }) => {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      theme={theme}
-      title="Perguntas Mercado Livre"
-      maxWidth="4xl"
-      icon={<MessageSquare className="text-violet-500" />}
-    >
-      <div className="flex-1 overflow-y-auto min-h-[50vh]">
-        <QuestionsDashboard theme={theme} />
-      </div>
-    </Modal>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+      />
+      <motion.div 
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className={cn(
+          "relative w-full max-w-4xl max-h-[90vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col",
+          theme === 'dark' ? "bg-zinc-950 border border-zinc-800" : "bg-white"
+        )}
+      >
+        <div className={cn(
+          "p-6 border-b flex items-center justify-between",
+          theme === 'dark' ? "border-zinc-800" : "border-zinc-100"
+        )}>
+          <h2 className={cn("text-xl font-black tracking-tight", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+            Perguntas Mercado Livre
+          </h2>
+          <button onClick={onClose} className={cn("p-2 rounded-full", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          <QuestionsDashboard theme={theme} />
+        </div>
+      </motion.div>
+    </div>
   );
 });
 
@@ -739,6 +771,17 @@ const DashboardView = ({
   const [selectedPaymentType, setSelectedPaymentType] = useState<string | null>(null);
   const [isQuestionsModalOpen, setIsQuestionsModalOpen] = useState(false);
   const [mlSalesSubTab, setMlSalesSubTab] = useState('pending');
+
+  useEffect(() => {
+    if (selectedPaymentType || isQuestionsModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedPaymentType, isQuestionsModalOpen]);
 
   const hoje = new Date();
   const mesAtual = hoje.getMonth();
@@ -964,7 +1007,7 @@ const DashboardView = ({
 
   return (
     <>
-      <div className="space-y-6">
+      <div className={cn("space-y-6", isSearchOpen && "blur-md pointer-events-none")}>
       <div className="space-y-4 mb-6">
         {/* Linha 1: Título e Ações Principais */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -2209,9 +2252,9 @@ const DashboardView = ({
         {selectedPaymentType && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              exit={{ opacity: 0, scale: 0.95 }}
               className={cn(
                 "w-full max-w-4xl max-h-[80vh] overflow-visible rounded-3xl border shadow-2xl flex flex-col",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
@@ -2713,11 +2756,9 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
     valor: '',
     estoque: '1',
     ano: '',
-    rk_id: '',
     descricao: '',
     ml_link: '',
-    imagem: '',
-    imagens: [] as string[]
+    imagem: ''
   });
 
   const handleManualRefresh = async () => {
@@ -2901,6 +2942,17 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
     }
   };
 
+  useEffect(() => {
+    if (isModalOpen || isDeleteConfirmOpen || isBulkDeleteConfirmOpen || isCategoryModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isModalOpen, isDeleteConfirmOpen, isBulkDeleteConfirmOpen, isCategoryModalOpen]);
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -2957,11 +3009,9 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
         valor: '',
         estoque: '1',
         ano: '',
-        rk_id: '',
         descricao: '',
         ml_link: '',
-        imagem: '',
-        imagens: []
+        imagem: ''
       });
     } catch (err: any) {
       alert(err.message);
@@ -3003,11 +3053,9 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       valor: item.valor ? item.valor.toString() : '',
       estoque: item.estoque ? item.estoque.toString() : '1',
       ano: item.ano || '',
-      rk_id: item.rk_id || '',
       descricao: item.descricao || '',
       ml_link: item.ml_link || '',
-      imagem: item.imagem || '',
-      imagens: item.imagens || []
+      imagem: item.imagem || ''
     });
     setIsModalOpen(true);
   }, []);
@@ -3109,7 +3157,8 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
         "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
-          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40"
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
+        isSearchOpen && "blur-md pointer-events-none opacity-50"
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
@@ -3205,14 +3254,12 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
                     novaCategoria: '',
                     moto: '',
                     outraMoto: '',
-                    valor: '0',
+                    valor: '',
                     estoque: '1',
                     ano: '',
-                    rk_id: '',
                     descricao: '',
                     ml_link: '',
-                    imagem: '',
-                    imagens: []
+                    imagem: ''
                   });
                   setIsModalOpen(true);
                 }}
@@ -3769,371 +3816,433 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
       </div>
 
       {/* New Item Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setEditingItem(null); }}
-        theme={theme}
-        title={editingItem ? 'Editar Item' : 'Novo Item no Estoque'}
-        maxWidth="2xl"
-        icon={editingItem ? <Edit2 className="text-violet-500" /> : <Plus className="text-violet-500" />}
-      >
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1 md:col-span-2">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">URL da Imagem</label>
-              <input 
-                type="url"
-                value={formData.imagem}
-                onChange={(e) => setFormData({...formData, imagem: e.target.value})}
-                placeholder="https://..."
-                className={cn(
-                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                )}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome da Peça *</label>
-              <input 
-                required
-                type="text"
-                value={formData.nome}
-                onChange={(e) => {
-                  const novoNome = e.target.value;
-                  setFormData(prev => {
-                    const novoEstado = {...prev, nome: novoNome};
-                    if (novoNome.length < 3) {
-                      novoEstado.moto = '';
-                      novoEstado.categoria = '';
-                    } else {
-                      const modelo = extrairModeloMoto(novoNome);
-                      if (modelo) novoEstado.moto = modelo;
-                      
-                      const categoria = extrairCategoria(novoNome);
-                      if (categoria) novoEstado.categoria = categoria;
-                    }
-                    return novoEstado;
-                  });
-                }}
-                placeholder="Ex: Relé de Partida"
-                className={cn(
-                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                )}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Categoria</label>
-              <CustomDropdown
-                theme={theme}
-                variant="form"
-                value={formData.categoria}
-                onChange={(val) => setFormData({...formData, categoria: val})}
-                options={[
-                  { value: '', label: 'Selecione...' },
-                  ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat })),
-                  { value: 'nova', label: '+ Nova Categoria' }
-                ]}
-              />
-              {formData.categoria === 'nova' && (
-                <input 
-                  type="text"
-                  value={formData.novaCategoria}
-                  onChange={(e) => setFormData({...formData, novaCategoria: e.target.value})}
-                  placeholder="Nome da nova categoria"
+      <AnimatePresence>
+        {isModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[3000] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+            onClick={() => setIsModalOpen(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className={cn(
+                "relative w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl transition-colors",
+                theme === 'dark' ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+              )}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={cn(
+                "flex items-center justify-between p-4 border-b",
+                theme === 'dark' ? "border-zinc-800" : "border-zinc-200"
+              )}>
+                <h2 className="text-xl font-semibold">
+                  {editingItem ? 'Editar Item' : '+ Novo Item no Estoque'}
+                </h2>
+                <button
+                  onClick={() => { setIsModalOpen(false); setEditingItem(null); }}
                   className={cn(
-                    "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                    theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
+                    "p-1 rounded-full transition-colors",
+                    theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400" : "hover:bg-zinc-200 text-zinc-500"
                   )}
-                />
-              )}
-            </div>
+                >
+                  <X size={20} />
+                </button>
+              </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Moto</label>
-              <CustomDropdown
-                theme={theme}
-                variant="form"
-                value={formData.moto}
-                onChange={(val) => setFormData({...formData, moto: val})}
-                options={[
-                  { value: '', label: 'Selecione...' },
-                  ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto })),
-                  { value: 'outra', label: '+ Outra' }
-                ]}
-              />
-              {formData.moto === 'outra' && (
-                <input 
-                  type="text"
-                  value={formData.outraMoto}
-                  onChange={(e) => setFormData({...formData, outraMoto: e.target.value})}
-                  placeholder="Modelo da moto"
-                  className={cn(
-                    "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                    theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
-                  )}
-                />
-              )}
-            </div>
+              <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1 md:col-span-2">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">URL da Imagem</label>
+                    <input 
+                      type="url"
+                      value={formData.imagem}
+                      onChange={(e) => setFormData({...formData, imagem: e.target.value})}
+                      placeholder="https://..."
+                      className={cn(
+                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nome da Peça *</label>
+                    <input 
+                      required
+                      type="text"
+                      value={formData.nome}
+                      onChange={(e) => {
+                        const novoNome = e.target.value;
+                        setFormData(prev => {
+                          const novoEstado = {...prev, nome: novoNome};
+                          if (novoNome.length < 3) {
+                            novoEstado.moto = '';
+                            novoEstado.categoria = '';
+                          } else {
+                            const modelo = extrairModeloMoto(novoNome);
+                            if (modelo) novoEstado.moto = modelo;
+                            
+                            const categoria = extrairCategoria(novoNome);
+                            if (categoria) novoEstado.categoria = categoria;
+                          }
+                          return novoEstado;
+                        });
+                      }}
+                      placeholder="Ex: Relé de Partida"
+                      className={cn(
+                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                      )}
+                    />
+                  </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Ano</label>
-              <input 
-                type="text"
-                value={formData.ano}
-                onChange={(e) => setFormData({...formData, ano: e.target.value})}
-                placeholder="Ex: 2014-2018"
-                className={cn(
-                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                )}
-              />
-            </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Categoria</label>
+                    <CustomDropdown
+                      theme={theme}
+                      variant="form"
+                      value={formData.categoria}
+                      onChange={(val) => setFormData({...formData, categoria: val})}
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        ...CATEGORIAS_OFICIAIS.map(cat => ({ value: cat, label: cat })),
+                        { value: 'nova', label: '+ Nova Categoria' }
+                      ]}
+                    />
+                    {formData.categoria === 'nova' && (
+                      <input 
+                        type="text"
+                        value={formData.novaCategoria}
+                        onChange={(e) => setFormData({...formData, novaCategoria: e.target.value})}
+                        placeholder="Nome da nova categoria"
+                        className={cn(
+                          "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                          theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
+                        )}
+                      />
+                    )}
+                  </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Valor (R$)</label>
-              <input 
-                type="number"
-                step="0.01"
-                value={formData.valor}
-                onChange={(e) => setFormData({...formData, valor: e.target.value})}
-                placeholder="0,00"
-                className={cn(
-                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                )}
-              />
-            </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Moto</label>
+                    <CustomDropdown
+                      theme={theme}
+                      variant="form"
+                      value={formData.moto}
+                      onChange={(val) => setFormData({...formData, moto: val})}
+                      options={[
+                        { value: '', label: 'Selecione...' },
+                        ...MOTOS_OFICIAIS.map(moto => ({ value: moto, label: moto })),
+                        { value: 'outra', label: '+ Outra' }
+                      ]}
+                    />
+                    {formData.moto === 'outra' && (
+                      <input 
+                        type="text"
+                        value={formData.outraMoto}
+                        onChange={(e) => setFormData({...formData, outraMoto: e.target.value})}
+                        placeholder="Modelo da moto"
+                        className={cn(
+                          "w-full mt-2 border rounded-xl py-2 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                          theme === 'dark' ? "bg-zinc-950 border-violet-500/50 text-zinc-200" : "bg-white border-violet-500/50 text-zinc-900"
+                        )}
+                      />
+                    )}
+                  </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Estoque</label>
-              <input 
-                type="number"
-                value={formData.estoque}
-                onChange={(e) => setFormData({...formData, estoque: e.target.value})}
-                placeholder="1"
-                className={cn(
-                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                )}
-              />
-            </div>
-          </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Ano</label>
+                    <input 
+                      type="text"
+                      value={formData.ano}
+                      onChange={(e) => setFormData({...formData, ano: e.target.value})}
+                      placeholder="Ex: 2014-2018"
+                      className={cn(
+                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                      )}
+                    />
+                  </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Link Mercado Livre</label>
-            <input 
-              type="url"
-              value={formData.ml_link}
-              onChange={(e) => setFormData({...formData, ml_link: e.target.value})}
-              placeholder="https://produto.mercadolivre.com.br/..."
-              className={cn(
-                "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-              )}
-            />
-          </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Valor (R$)</label>
+                    <input 
+                      type="number"
+                      step="0.01"
+                      value={formData.valor}
+                      onChange={(e) => setFormData({...formData, valor: e.target.value})}
+                      placeholder="0,00"
+                      className={cn(
+                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                      )}
+                    />
+                  </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição / Observações</label>
-            <textarea 
-              rows={3}
-              value={formData.descricao}
-              onChange={(e) => setFormData({...formData, descricao: e.target.value})}
-              placeholder="Detalhes adicionais da peça..."
-              className={cn(
-                "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors resize-none",
-                theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-              )}
-            />
-          </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Estoque</label>
+                    <input 
+                      type="number"
+                      value={formData.estoque}
+                      onChange={(e) => setFormData({...formData, estoque: e.target.value})}
+                      placeholder="1"
+                      className={cn(
+                        "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                        theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                      )}
+                    />
+                  </div>
+                </div>
 
-          <div className="pt-4 flex items-center gap-3">
-            <button 
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              className={cn(
-                "flex-1 px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-              )}
-            >
-              Cancelar
-            </button>
-            <button 
-              type="submit"
-              disabled={isSaving}
-              className={cn(
-                "flex-1 px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed",
-                theme === 'dark'
-                  ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
-                  : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
-              )}
-            >
-              {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-              Salvar no Notion
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal de Confirmação de Exclusão Individual */}
-      <Modal
-        isOpen={isDeleteConfirmOpen}
-        onClose={() => setIsDeleteConfirmOpen(false)}
-        theme={theme}
-        title="Excluir Item?"
-        maxWidth="md"
-        icon={<AlertCircle className="text-rose-500" />}
-      >
-        <div className="space-y-6">
-          <p className={cn(theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-            Tem certeza que deseja excluir este item do estoque? Esta ação não pode ser desfeita no Notion.
-          </p>
-          <div className="flex justify-end gap-3">
-            <button 
-              onClick={() => setIsDeleteConfirmOpen(false)}
-              className={cn(
-                "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-              )}
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={() => handleDelete(itemToDelete!)}
-              className={cn(
-                "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
-                theme === 'dark'
-                  ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
-                  : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
-              )}
-            >
-              Excluir
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal de Confirmação de Exclusão em Massa */}
-      <Modal
-        isOpen={isBulkDeleteConfirmOpen}
-        onClose={() => setIsBulkDeleteConfirmOpen(false)}
-        theme={theme}
-        title={`Excluir ${selectedIds.length} itens?`}
-        maxWidth="md"
-        icon={<Trash2 className="text-rose-500" />}
-      >
-        <div className="space-y-6">
-          <p className={cn(theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-            Tem certeza que deseja excluir permanentemente os itens selecionados?
-          </p>
-          <div className="flex justify-end gap-3">
-            <button 
-              onClick={() => setIsBulkDeleteConfirmOpen(false)}
-              className={cn(
-                "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
-              )}
-            >
-              Cancelar
-            </button>
-            <button 
-              onClick={handleBulkDelete}
-              className={cn(
-                "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
-                theme === 'dark'
-                  ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
-                  : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
-              )}
-            >
-              Excluir Tudo
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal de Mudança de Categoria em Massa */}
-      <Modal
-        isOpen={isCategoryModalOpen}
-        onClose={() => {
-          setIsCategoryModalOpen(false);
-          setBulkCategory('');
-        }}
-        theme={theme}
-        title="Mudar Categoria"
-        maxWidth="md"
-        icon={<Layers className="text-violet-500" />}
-      >
-        <div className="space-y-6">
-          <p className={cn("text-sm", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
-            Selecione ou digite a nova categoria para os {selectedIds.length} itens selecionados.
-          </p>
-          
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nova Categoria</label>
-              <input 
-                type="text"
-                value={bulkCategory}
-                onChange={(e) => setBulkCategory(e.target.value)}
-                placeholder="Ex: Motor, Carenagem..."
-                className={cn(
-                  "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
-                  theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
-                )}
-                autoFocus
-              />
-            </div>
-            
-            {categories.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {categories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setBulkCategory(cat)}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Link Mercado Livre</label>
+                  <input 
+                    type="url"
+                    value={formData.ml_link}
+                    onChange={(e) => setFormData({...formData, ml_link: e.target.value})}
+                    placeholder="https://produto.mercadolivre.com.br/..."
                     className={cn(
-                      "px-3 py-1 rounded-full text-xs transition-colors",
-                      bulkCategory === cat 
-                        ? "bg-violet-600 text-white" 
-                        : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                    )}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Descrição / Observações</label>
+                  <textarea 
+                    rows={3}
+                    value={formData.descricao}
+                    onChange={(e) => setFormData({...formData, descricao: e.target.value})}
+                    placeholder="Detalhes adicionais da peça..."
+                    className={cn(
+                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors resize-none",
+                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                    )}
+                  />
+                </div>
+
+                <div className="pt-4 flex items-center gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className={cn(
+                      "flex-1 px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                      theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
                     )}
                   >
-                    {cat}
+                    Cancelar
                   </button>
-                ))}
-              </div>
-            )}
-          </div>
+                  <button 
+                    type="submit"
+                    disabled={isSaving}
+                    className={cn(
+                      "flex-1 px-8 py-3 rounded-xl font-bold transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed",
+                      theme === 'dark'
+                        ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                        : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                    )}
+                  >
+                    {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                    Salvar no Notion
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-          <div className="flex justify-end gap-3">
-            <button 
-              onClick={() => {
-                setIsCategoryModalOpen(false);
-                setBulkCategory('');
-              }}
+      {/* Modal de Confirmação de Exclusão Individual */}
+      <AnimatePresence>
+        {isDeleteConfirmOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
               className={cn(
-                "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
-                theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                "w-full max-w-md p-6 rounded-2xl border shadow-2xl",
+                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
               )}
             >
-              Cancelar
-            </button>
-            <button 
-              onClick={handleBulkUpdateCategory}
-              disabled={!bulkCategory}
-              className={cn(
-                "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
-                theme === 'dark'
-                  ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
-                  : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
-              )}
-            >
-              Atualizar
-            </button>
+              <div className="flex items-center gap-4 text-rose-500 mb-4">
+                <div className="p-3 bg-rose-500/10 rounded-full">
+                  <AlertCircle size={24} />
+                </div>
+                <h3 className="text-xl font-bold">Excluir Item?</h3>
+              </div>
+              <p className={cn("mb-6", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+                Tem certeza que deseja excluir este item do estoque? Esta ação não pode ser desfeita no Notion.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button 
+                  onClick={() => setIsDeleteConfirmOpen(false)}
+                  className={cn(
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={() => handleDelete(itemToDelete!)}
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
+                >
+                  Excluir
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Confirmação de Exclusão em Massa */}
+      <AnimatePresence>
+        {isBulkDeleteConfirmOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className={cn(
+                "w-full max-w-md p-6 rounded-2xl border shadow-2xl",
+                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
+              )}
+            >
+              <div className="flex items-center gap-4 text-rose-500 mb-4">
+                <div className="p-3 bg-rose-500/10 rounded-full">
+                  <Trash2 size={24} />
+                </div>
+                <h3 className="text-xl font-bold">Excluir {selectedIds.length} itens?</h3>
+              </div>
+              <p className={cn("mb-6", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+                Tem certeza que deseja excluir permanentemente os itens selecionados?
+              </p>
+              <div className="flex justify-end gap-3">
+                <button 
+                  onClick={() => setIsBulkDeleteConfirmOpen(false)}
+                  className={cn(
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleBulkDelete}
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                    theme === 'dark'
+                      ? "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-900/20 hover:bg-rose-500"
+                      : "bg-rose-600 border border-rose-500 text-white shadow-lg shadow-rose-200/50 hover:bg-rose-700"
+                  )}
+                >
+                  Excluir Tudo
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal de Mudança de Categoria em Massa */}
+      <AnimatePresence>
+        {isCategoryModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className={cn(
+                "w-full max-w-md p-6 rounded-2xl border shadow-2xl",
+                theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
+              )}
+            >
+              <div className="flex items-center gap-4 text-violet-500 mb-4">
+                <div className="p-3 bg-violet-500/10 rounded-full">
+                  <Layers size={24} />
+                </div>
+                <h3 className="text-xl font-bold">Mudar Categoria</h3>
+              </div>
+              <p className={cn("mb-4 text-sm", theme === 'dark' ? "text-zinc-400" : "text-zinc-600")}>
+                Selecione ou digite a nova categoria para os {selectedIds.length} itens selecionados.
+              </p>
+              
+              <div className="space-y-4 mb-6">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase ml-1">Nova Categoria</label>
+                  <input 
+                    type="text"
+                    value={bulkCategory}
+                    onChange={(e) => setBulkCategory(e.target.value)}
+                    placeholder="Ex: Motor, Carenagem..."
+                    className={cn(
+                      "w-full border rounded-xl py-2.5 px-4 text-sm focus:outline-none focus:border-violet-500 transition-colors",
+                      theme === 'dark' ? "bg-zinc-950 border-zinc-800 text-zinc-200" : "bg-white border-zinc-200 text-zinc-900"
+                    )}
+                    autoFocus
+                  />
+                </div>
+                
+                {categories.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {categories.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setBulkCategory(cat)}
+                        className={cn(
+                          "px-3 py-1 rounded-full text-xs transition-colors",
+                          bulkCategory === cat 
+                            ? "bg-violet-600 text-white" 
+                            : theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                        )}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button 
+                  onClick={() => {
+                    setIsCategoryModalOpen(false);
+                    setBulkCategory('');
+                  }}
+                  className={cn(
+                    "px-6 py-3 rounded-xl font-medium transition-all active:scale-95",
+                    theme === 'dark' ? "bg-zinc-800 border border-zinc-700 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200"
+                  )}
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={handleBulkUpdateCategory}
+                  disabled={!bulkCategory}
+                  className={cn(
+                    "px-8 py-3 rounded-xl font-bold transition-all active:scale-95",
+                    theme === 'dark'
+                      ? "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-900/20 hover:bg-violet-500"
+                      : "bg-violet-600 border border-violet-500 text-white shadow-lg shadow-violet-200/50 hover:bg-violet-700"
+                  )}
+                >
+                  Atualizar
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 });
@@ -4267,6 +4376,17 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [editingSale, setEditingSale] = useState<any | null>(null);
 
+  useEffect(() => {
+    if (isModalOpen || isEditModalOpen || isDeleteConfirmOpen || isBulkDeleteConfirmOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isModalOpen, isEditModalOpen, isDeleteConfirmOpen, isBulkDeleteConfirmOpen]);
+
   const [formData, setFormData] = useState({
     nome: '',
     moto: '',
@@ -4279,7 +4399,6 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
   const [editFormData, setEditFormData] = useState({
     nome: '',
     moto: '',
-    categoria: '',
     valor: '',
     tipo: 'Pix',
     data: ''
@@ -4362,7 +4481,6 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
     setEditFormData({
       nome: sale.nome || '',
       moto: sale.moto || '',
-      categoria: sale.categoria || '',
       valor: sale.valor?.toString() || '',
       tipo: sale.tipo || 'Pix',
       data: sale.data ? new Date(sale.data).toISOString().split('T')[0] : ''
@@ -4629,7 +4747,8 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
         "relative z-50 p-3 md:p-4 rounded-3xl flex flex-col gap-3 transition-all duration-300 shadow-xl border",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
-          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40"
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
+        isSearchOpen && "blur-md pointer-events-none opacity-50"
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
@@ -5140,9 +5259,9 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
         {isModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
               className={cn(
                 "w-full max-w-lg p-8 rounded-3xl border shadow-2xl relative",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
@@ -5300,9 +5419,9 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
         {isEditModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
               className={cn(
                 "w-full max-w-lg p-8 rounded-3xl border shadow-2xl relative",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)] text-white" : "bg-white border-zinc-200 text-zinc-900"
@@ -5700,6 +5819,17 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [editingMoto, setEditingMoto] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (isModalOpen || isEditModalOpen || isDeleteConfirmOpen || isBulkDeleteConfirmOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isModalOpen, isEditModalOpen, isDeleteConfirmOpen, isBulkDeleteConfirmOpen]);
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [inlineEditData, setInlineEditData] = useState<any>(null);
   const editRowRef = useRef<HTMLTableRowElement>(null);
@@ -6390,7 +6520,8 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
         "relative z-50 p-2 md:p-4 rounded-2xl md:rounded-3xl flex flex-col gap-2 md:gap-3 transition-all duration-300 shadow-xl border overflow-visible",
         theme === 'dark' 
           ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800 shadow-black/40" 
-          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40"
+          : "bg-white/90 backdrop-blur-xl border-zinc-100 shadow-zinc-200/40",
+        isSearchOpen && "blur-md pointer-events-none opacity-50"
       )}>
         {/* Search Bar Compacta */}
         <div className="w-full relative group">
@@ -6421,7 +6552,6 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
               <CustomDropdown
                 theme={theme}
                 icon={<Filter size={14} />}
-                label="Filtrar por Marca"
                 value={brandFilter}
                 className="w-full"
                 onChange={(val) => {
@@ -6438,7 +6568,6 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
                 <CustomDropdown
                   theme={theme}
                   icon={<Layers size={14} />}
-                  label="Filtrar por Status"
                   value={statusFilter}
                   className="w-full"
                   onChange={(val) => {
@@ -6455,7 +6584,6 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
               <CustomDropdown
                 theme={theme}
                 icon={<ArrowDownAZ size={14} />}
-                label="Ordenar por"
                 value={sortOrder}
                 className="w-full"
                 onChange={(val) => setSortOrder(val)}
@@ -6925,9 +7053,9 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
         {isModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
               className={cn(
                 "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-visible",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 text-white" : "bg-white border-zinc-200 text-zinc-900"
@@ -7168,9 +7296,9 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
         {isEditModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
               className={cn(
                 "w-full max-w-2xl max-h-[90vh] rounded-3xl border shadow-2xl relative overflow-visible",
                 theme === 'dark' ? "bg-zinc-900/90 backdrop-blur-xl border-zinc-800/50 text-white" : "bg-white border-zinc-200 text-zinc-900"
@@ -7533,27 +7661,50 @@ const formatRelativeTime = (dateString: string) => {
 import { Login } from './components/Login';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (token) {
       setIsAuthenticated(true);
+      if (window.location.pathname === '/login') {
+        window.history.replaceState(null, '', '/');
+      }
+    } else {
+      setIsAuthenticated(false);
+      if (window.location.pathname !== '/login') {
+        window.history.replaceState(null, '', '/login');
+      }
     }
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await api.post('/api/logout', {});
+    } catch (error) {
+      console.error('Erro ao fazer logout no servidor', error);
+    }
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_role');
     localStorage.removeItem('user_name');
     localStorage.removeItem('user_phone');
     setIsAuthenticated(false);
+    window.history.replaceState(null, '', '/login');
   };
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen bg-[#0f1115] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Login onLogin={(token) => {
       localStorage.setItem('auth_token', token);
       setIsAuthenticated(true);
+      window.history.replaceState(null, '', '/');
     }} />;
   }
 
@@ -7690,14 +7841,14 @@ const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: {
   const itemName = item.nome || item.titulo || item.peca || item.title || 'Sem Nome';
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: "spring", damping: 25, stiffness: 200 }}
         className={cn(
-          "w-full md:max-w-2xl h-[92vh] md:h-auto md:max-h-[90vh] rounded-t-[2.5rem] md:rounded-[2.5rem] overflow-hidden border-t md:border shadow-2xl flex flex-col relative",
+          "w-[95%] md:max-w-2xl h-[90vh] md:h-auto md:max-h-[90vh] rounded-[2.5rem] overflow-hidden border shadow-2xl flex flex-col relative",
           theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-200"
         )}
       >
@@ -7898,7 +8049,7 @@ const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: {
                 </motion.a>
               )}
 
-              {onEdit && userRole === 'admin' && (
+              {onEdit && userRole !== 'client' && (
                 <div className="grid grid-cols-2 gap-3">
                   <button 
                     onClick={() => { onEdit(item); onClose(); }}
@@ -8276,18 +8427,104 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
   );
 };
 
+const LogoutModal = memo(({ isOpen, onClose, onLogout, theme }: { isOpen: boolean, onClose: () => void, onLogout: () => void, theme: 'light' | 'dark' }) => {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/80 backdrop-blur-md"
+      />
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className={cn(
+          "relative w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl p-8 text-center",
+          theme === 'dark' ? "bg-zinc-950 border border-zinc-800" : "bg-white"
+        )}
+      >
+        <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 mx-auto mb-6">
+          <Trash2 size={40} />
+        </div>
+        <h2 className={cn("text-2xl font-black tracking-tight mb-2", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+          Sair da Conta?
+        </h2>
+        <p className="text-zinc-500 text-sm font-medium mb-8">
+          Tem certeza que deseja encerrar sua sessão atual? Você precisará entrar novamente.
+        </p>
+        <div className="flex flex-col gap-3">
+          <button 
+            onClick={onLogout}
+            className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-xl shadow-rose-500/20"
+          >
+            Sim, Sair Agora
+          </button>
+          <button 
+            onClick={onClose}
+            className={cn(
+              "w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all",
+              theme === 'dark' ? "bg-zinc-900 text-zinc-400 hover:bg-zinc-800" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+            )}
+          >
+            Cancelar
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+});
+
 function AppContent({ onLogout }: { onLogout: () => void }) {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
-  const userRole = localStorage.getItem('user_role') || 'client';
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre'>(
-    userRole === 'admin' ? 'dashboard' : 'motos'
-  );
+  const [userRole, setUserRole] = useState<string>('client');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users'>('motos');
+
+  useEffect(() => {
+    const role = localStorage.getItem('user_role') || 'client';
+    setUserRole(role as 'admin' | 'client');
+    
+    // Roteamento Client-Side: Sincronizar aba com a URL
+    const path = window.location.pathname.replace('/', '');
+    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users'];
+    
+    if (path && validTabs.includes(path)) {
+      setActiveTab(path as any);
+    } else {
+      const defaultTab = role === 'admin' ? 'dashboard' : 'motos';
+      setActiveTab(defaultTab);
+      window.history.replaceState(null, '', `/${defaultTab}`);
+    }
+  }, []);
+
+  // Atualizar URL quando a aba mudar
+  useEffect(() => {
+    if (activeTab) {
+      window.history.pushState(null, '', `/${activeTab}`);
+    }
+  }, [activeTab]);
   const [pendingEditItem, setPendingEditItem] = useState<any | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [paymentFilter, setPaymentFilter] = useState<string>('TODOS');
   const [showPaymentFilter, setShowPaymentFilter] = useState(false);
+
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
   const [inventoryActions, setInventoryActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
   const [salesActions, setSalesActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
@@ -8329,13 +8566,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const [profilePhoto, setProfilePhoto] = useState<string | null>(() => {
-    if (typeof window !== 'undefined') {
-      const phone = localStorage.getItem('user_phone');
-      return phone ? localStorage.getItem(`profilePhoto_${phone}`) : null;
-    }
-    return null;
-  });
+  const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
 
   // Atualiza a foto de perfil quando o usuário muda
   useEffect(() => {
@@ -8348,6 +8579,17 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   }, []);
   const [allMlListings, setAllMlListings] = useState<any[]>([]);
   const [showAllMlAds, setShowAllMlAds] = useState(false);
+
+  useEffect(() => {
+    if (showAllMlAds || showPaymentFilter || isBudgetModalOpen || isLogoutModalOpen || selectedDetailItem) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [showAllMlAds, showPaymentFilter, isBudgetModalOpen, isLogoutModalOpen, selectedDetailItem]);
   const [isMlListingsLoading, setIsMlListingsLoading] = useState(false);
   
   // Estados para filtros, ordenação e paginação
@@ -8382,12 +8624,14 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     mlCurrentPage * mlItemsPerPage
   );
   
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
+    if (savedTheme) {
+      setTheme(savedTheme);
     }
-    return 'dark';
-  });
+  }, []);
 
   useEffect(() => {
     const socket = io();
@@ -8577,7 +8821,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       </AnimatePresence>
 
       {/* Sidebar */}
-      {userRole === 'admin' && (
+      {userRole !== 'client' && (
         <aside className={cn(
           "fixed md:sticky top-0 h-screen inset-y-0 left-0 z-50 transition-all duration-300 ease-in-out border-r hidden md:flex",
           theme === 'dark' ? "bg-zinc-950/50 border-zinc-800/50 backdrop-blur-xl" : "bg-white border-zinc-200 shadow-xl",
@@ -8610,13 +8854,15 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
             </div>
 
             <nav className="flex-1 space-y-2">
-              <SidebarItem 
-                icon={LayoutDashboard} 
-                label={isSidebarOpen ? "Dashboard" : ""} 
-                active={activeTab === 'dashboard'} 
-                onClick={() => setActiveTab('dashboard')} 
-                theme={theme}
-              />
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
+                  icon={LayoutDashboard} 
+                  label={isSidebarOpen ? "Dashboard" : ""} 
+                  active={activeTab === 'dashboard'} 
+                  onClick={() => setActiveTab('dashboard')} 
+                  theme={theme}
+                />
+              )}
               <SidebarItem 
                 icon={Package} 
                 label={isSidebarOpen ? "Estoque" : ""} 
@@ -8624,21 +8870,43 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 onClick={() => setActiveTab('estoque')} 
                 theme={theme}
               />
-              <SidebarItem 
-                icon={ShoppingCart} 
-                label={isSidebarOpen ? "Vendas" : ""} 
-                active={activeTab === 'vendas'} 
-                onClick={() => setActiveTab('vendas')} 
-                theme={theme}
-              />
-              <SidebarItem 
-                icon={TrendingUp} 
-                label={isSidebarOpen ? "Mercado Livre" : ""} 
-                active={activeTab === 'mercadolivre'} 
-                onClick={() => setActiveTab('mercadolivre')} 
-                theme={theme}
-                className="hidden md:flex"
-              />
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
+                  icon={ShoppingCart} 
+                  label={isSidebarOpen ? "Vendas" : ""} 
+                  active={activeTab === 'vendas'} 
+                  onClick={() => setActiveTab('vendas')} 
+                  theme={theme}
+                />
+              )}
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
+                  icon={TrendingUp} 
+                  label={isSidebarOpen ? "Mercado Livre" : ""} 
+                  active={activeTab === 'mercadolivre'} 
+                  onClick={() => setActiveTab('mercadolivre')} 
+                  theme={theme}
+                  className="hidden md:flex"
+                />
+              )}
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
+                  icon={UserCog} 
+                  label={isSidebarOpen ? "Usuários" : ""} 
+                  active={activeTab === 'users'} 
+                  onClick={() => setActiveTab('users')} 
+                  theme={theme}
+                />
+              )}
+              {userRole === 'admin' && (
+                <SidebarItem 
+                  icon={Activity} 
+                  label={isSidebarOpen ? "Auditoria" : ""} 
+                  active={activeTab === 'audit'} 
+                  onClick={() => setActiveTab('audit')} 
+                  theme={theme}
+                />
+              )}
               <SidebarItem 
                 icon={Bike} 
                 label={isSidebarOpen ? "Motos" : ""} 
@@ -8646,28 +8914,25 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 onClick={() => setActiveTab('motos')} 
                 theme={theme}
               />
-              <SidebarItem 
-                icon={Truck} 
-                label={isSidebarOpen ? "Frete" : ""} 
-                active={activeTab === 'frete'} 
-                onClick={() => setActiveTab('frete')} 
-                theme={theme}
-              />
-              <SidebarItem 
-                icon={Users} 
-                label={isSidebarOpen ? "Clientes" : ""} 
-                active={activeTab === 'clients'} 
-                onClick={() => setActiveTab('clients')} 
-                theme={theme}
-              />
-              <SidebarItem 
-                icon={MessageSquare} 
-                label={isSidebarOpen ? "Atendimento" : ""} 
-                active={activeTab === 'atendimento'} 
-                onClick={() => setActiveTab('atendimento')} 
-                theme={theme}
-                badge={unreadCount > 0 ? unreadCount : undefined}
-              />
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
+                  icon={Truck} 
+                  label={isSidebarOpen ? "Frete" : ""} 
+                  active={activeTab === 'frete'} 
+                  onClick={() => setActiveTab('frete')} 
+                  theme={theme}
+                />
+              )}
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
+                  icon={MessageSquare} 
+                  label={isSidebarOpen ? "Atendimento" : ""} 
+                  active={activeTab === 'atendimento'} 
+                  onClick={() => setActiveTab('atendimento')} 
+                  theme={theme}
+                  badge={unreadCount > 0 ? unreadCount : undefined}
+                />
+              )}
             </nav>
           </div>
         </aside>
@@ -8855,12 +9120,14 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 />
               ) : activeTab === 'mercadolivre' ? (
                 <MercadoLivre theme={theme} />
+              ) : activeTab === 'users' ? (
+                <AdminUsers userRole={userRole} />
+              ) : activeTab === 'audit' ? (
+                <AuditLogs />
               ) : activeTab === 'atendimento' ? (
                 <Atendimento theme={theme} />
               ) : activeTab === 'frete' ? (
                 <FreteView theme={theme} />
-              ) : activeTab === 'clients' ? (
-                <Clients theme={theme} />
               ) : (
                 <div className={cn(
                   "flex flex-col items-center justify-center h-[60vh] transition-colors w-full",
@@ -8874,16 +9141,19 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           </AnimatePresence>
         </div>
       </main>
-      {userRole === 'admin' && <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} />}
+      {userRole !== 'client' && <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} userRole={userRole} />}
       
-      {/* Grupo de ações flutuantes - Only for Admin */}
-      {userRole === 'admin' && (
-        <div className="fixed bottom-[15px] right-6 z-[60] flex flex-col gap-3">
+      {/* Grupo de ações flutuantes - Only for Admin/Gerente/Estoque */}
+      {userRole !== 'client' && (
+        <div className="fixed bottom-[calc(5.5rem+var(--safe-bottom))] md:bottom-6 right-6 z-[60] flex flex-col gap-3">
           <GlobalSearch 
             theme={theme} 
             onSelectItem={setSelectedDetailItem} 
             isOpen={isSearchOpen} 
             setIsOpen={setIsSearchOpen}
+            customClick={() => {
+              setIsSearchOpen(true);
+            }}
           />
 
           {/* Budget FAB */}
@@ -8931,51 +9201,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       {/* Modal de Logout */}
       <AnimatePresence>
         {isLogoutModalOpen && (
-          <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsLogoutModalOpen(false)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className={cn(
-                "relative w-full max-w-sm rounded-[2.5rem] overflow-hidden shadow-2xl p-8 text-center",
-                theme === 'dark' ? "bg-zinc-950 border border-zinc-800" : "bg-white"
-              )}
-            >
-              <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 mx-auto mb-6">
-                <Trash2 size={40} />
-              </div>
-              <h2 className={cn("text-2xl font-black tracking-tight mb-2", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-                Sair da Conta?
-              </h2>
-              <p className="text-zinc-500 text-sm font-medium mb-8">
-                Tem certeza que deseja encerrar sua sessão atual? Você precisará entrar novamente.
-              </p>
-              <div className="flex flex-col gap-3">
-                <button 
-                  onClick={() => onLogout()}
-                  className="w-full bg-rose-500 hover:bg-rose-600 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all shadow-xl shadow-rose-500/20"
-                >
-                  Sim, Sair Agora
-                </button>
-                <button 
-                  onClick={() => setIsLogoutModalOpen(false)}
-                  className={cn(
-                    "w-full py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all",
-                    theme === 'dark' ? "text-zinc-400 hover:bg-zinc-900" : "text-zinc-500 hover:bg-zinc-100"
-                  )}
-                >
-                  Cancelar
-                </button>
-              </div>
-            </motion.div>
-          </div>
+          <LogoutModal 
+            isOpen={isLogoutModalOpen} 
+            onClose={() => setIsLogoutModalOpen(false)} 
+            onLogout={onLogout} 
+            theme={theme} 
+          />
         )}
       </AnimatePresence>
     </div>

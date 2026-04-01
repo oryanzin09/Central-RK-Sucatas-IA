@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Package, ExternalLink, RefreshCw, ChevronLeft, ChevronRight, Eye, Tag, ShoppingBag, Edit2, Plus, X, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { api } from '../../utils/api';
 import { cn } from '../../utils';
@@ -447,8 +448,8 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
       )}
 
       {/* Modal de Edição */}
-      {isEditModalOpen && editingItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {isEditModalOpen && editingItem && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className={cn(
             "w-full max-w-2xl rounded-3xl border shadow-2xl overflow-visible animate-in fade-in zoom-in duration-200",
             theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
@@ -579,12 +580,13 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal de Adicionar (Simplificado para este exemplo) */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      {isAddModalOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className={cn(
             "w-full max-w-2xl rounded-3xl border shadow-2xl overflow-visible animate-in fade-in zoom-in duration-200",
             theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
@@ -659,7 +661,6 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
                       onChange={(val) => setNewItem({ ...newItem, category: val })}
                       theme={theme as any}
                       className="w-full"
-                      placeholder="Selecione uma categoria"
                     />
                   </div>
                   <div className="space-y-2">
@@ -670,7 +671,6 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
                       onChange={(val) => setNewItem({ ...newItem, moto: val })}
                       theme={theme as any}
                       className="w-full"
-                      placeholder="Selecione a moto"
                     />
                   </div>
                 </div>
@@ -721,7 +721,8 @@ export const MLCatalog = ({ theme }: { theme: string }) => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

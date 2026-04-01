@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { cn } from '../utils';
 import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
@@ -128,8 +128,8 @@ export const Login = ({ onLogin }: LoginProps) => {
 
         if (result.success) {
           localStorage.setItem('auth_token', result.token);
-          localStorage.setItem('user_role', result.role || 'client');
-          localStorage.setItem('user_name', result.name || name || 'Cliente');
+          localStorage.setItem('user_role', result.user?.role || 'client');
+          localStorage.setItem('user_name', result.user?.name || name || 'Cliente');
           localStorage.setItem('user_phone', cleanPhone);
           onLogin(result.token);
         } else {
@@ -143,8 +143,8 @@ export const Login = ({ onLogin }: LoginProps) => {
         
         if (result.success) {
           localStorage.setItem('auth_token', result.token);
-          localStorage.setItem('user_role', result.role || 'client');
-          localStorage.setItem('user_name', result.name || 'Cliente');
+          localStorage.setItem('user_role', result.user?.role || 'client');
+          localStorage.setItem('user_name', result.user?.name || 'Cliente');
           localStorage.setItem('user_phone', cleanPhone);
           onLogin(result.token);
         } else {
@@ -356,7 +356,7 @@ export const Login = ({ onLogin }: LoginProps) => {
                       onClick={() => setShowPassword(!showPassword)} 
                       className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors p-1.5"
                     >
-                      {showPassword ? <EyeOff className="w-3.5 h-3.5 md:w-4.5 md:h-4.5" /> : <Eye className="w-3.5 h-3.5 md:w-4.5 md:h-4.5" />}
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5 md:w-[18px] md:h-[18px]" /> : <Eye className="w-3.5 h-3.5 md:w-[18px] md:h-[18px]" />}
                     </button>
                   </div>
                   {isRegister && (

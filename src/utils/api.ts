@@ -1,20 +1,15 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function apiRequest(endpoint: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('auth_token');
-  
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...options.headers
+    ...(options.headers || {})
   };
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
-    headers
+    headers,
+    credentials: 'include'
   });
   
   // Se não autorizado, redirecionar para login (exceto se for a própria rota de login)

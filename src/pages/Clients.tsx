@@ -18,6 +18,9 @@ import {
   EyeOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { List } from 'react-window';
+const ListAny = List as any;
+import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { cn } from '../utils';
 import { DataContext } from '../App';
 
@@ -231,164 +234,205 @@ export const Clients = ({ theme }: { theme: 'light' | 'dark' }) => {
           />
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="h-[calc(100vh-300px)] min-h-[400px]">
           {/* Mobile View */}
-          <div className="md:hidden space-y-4">
-            {filteredClients.map((client) => (
-              <div key={client.id} onClick={() => handleOpenDetailModal(client)} className={cn("p-4 rounded-2xl border cursor-pointer", theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-white border-zinc-200 shadow-sm")}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black">
-                      {client.nome.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="text-sm font-black text-white">{client.nome}</div>
-                      <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID: {client.userId}</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="text-xs text-zinc-400 font-medium mb-1"><Phone size={12} className="inline mr-1" /> {client.numero}</div>
-                <div className="text-xs text-zinc-400 font-medium mb-2"><ShoppingBag size={12} className="inline mr-1" /> {client.itensComprados}</div>
-                
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {client.interesses && client.interesses.map((int, i) => (
-                    <span key={i} className="px-2 py-0.5 rounded-md bg-violet-600/20 text-violet-300 text-[9px] font-bold">
-                      {int}
-                    </span>
-                  ))}
-                </div>
+          <div className="md:hidden h-full">
+            <AutoSizer renderProp={({ height, width }) => (
+                <ListAny
+                  height={height}
+                  itemCount={filteredClients.length}
+                  itemSize={200}
+                  width={width}
+                  className="scrollbar-hide"
+                >
+                  {({ index, style }) => {
+                    const i = index as number;
+                    const s = style as React.CSSProperties;
+                    const client = filteredClients[i];
+                    return (
+                      <div style={{ ...s, padding: '8px' }}>
+                        <div 
+                          onClick={() => handleOpenDetailModal(client)} 
+                          className={cn(
+                            "p-4 rounded-2xl border cursor-pointer h-full flex flex-col justify-between", 
+                            theme === 'dark' ? "bg-zinc-900/40 border-zinc-800/50" : "bg-white border-zinc-200 shadow-sm"
+                          )}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black">
+                                  {client.nome.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-black text-white">{client.nome}</div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID: {client.userId}</div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-xs text-zinc-400 font-medium mb-1"><Phone size={12} className="inline mr-1" /> {client.numero}</div>
+                            <div className="text-xs text-zinc-400 font-medium mb-2"><ShoppingBag size={12} className="inline mr-1" /> {client.itensComprados}</div>
+                            
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {client.interesses && client.interesses.map((int, i) => (
+                                <span key={i} className="px-2 py-0.5 rounded-md bg-violet-600/20 text-violet-300 text-[9px] font-bold">
+                                  {int}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
 
-                <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center gap-2">
-                    <Lock size={12} className="text-zinc-500" />
-                    <span className="font-mono text-[10px] text-zinc-400 w-[120px] truncate inline-block align-middle">
-                      {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
-                    </span>
-                    <button 
-                      onClick={(e) => togglePasswordVisibility(e, client.id)}
-                      className="p-1 text-zinc-500 hover:text-zinc-300"
-                    >
-                      {visiblePasswords.has(client.id) ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => handleOpenModal(client)}
-                      className="p-2 rounded-lg bg-zinc-800 text-zinc-400"
-                    >
-                      <Edit2 size={14} />
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(client.id)}
-                      className="p-2 rounded-lg bg-zinc-800 text-rose-500/50"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                          <div className="flex items-center justify-between pt-3 border-t border-zinc-800/50" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                              <Lock size={12} className="text-zinc-500" />
+                              <span className="font-mono text-[10px] text-zinc-400 w-[100px] truncate inline-block align-middle">
+                                {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
+                              </span>
+                              <button 
+                                onClick={(e) => togglePasswordVisibility(e, client.id)}
+                                className="p-1 text-zinc-500 hover:text-zinc-300"
+                              >
+                                {visiblePasswords.has(client.id) ? <EyeOff size={12} /> : <Eye size={12} />}
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button 
+                                onClick={() => handleOpenModal(client)}
+                                className="p-2 rounded-lg bg-zinc-800 text-zinc-400"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+                              <button 
+                                onClick={() => handleDelete(client.id)}
+                                className="p-2 rounded-lg bg-zinc-800 text-rose-500/50"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }}
+                </ListAny>
+              )} />
           </div>
           
           {/* Desktop View */}
-          <table className="hidden md:table w-full text-left border-collapse">
-            <thead>
-              <tr className={cn(
-                "text-[10px] font-black uppercase tracking-[0.2em]",
+          <div className="hidden md:block h-full">
+            <div className="flex flex-col h-full">
+              <div className={cn(
+                "grid grid-cols-[1fr_1fr_1fr_200px_120px] text-[10px] font-black uppercase tracking-[0.2em] px-6 py-4 border-b border-zinc-800/50",
                 theme === 'dark' ? "text-zinc-500 bg-zinc-950/50" : "text-zinc-400 bg-zinc-50"
               )}>
-                <th className="px-6 py-4">Cliente</th>
-                <th className="px-6 py-4">Contato</th>
-                <th className="px-6 py-4">Interesses</th>
-                <th className="px-6 py-4 w-[200px]">Senha</th>
-                <th className="px-6 py-4 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/50">
-              {loading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td colSpan={5} className="px-6 py-8">
-                      <div className="h-4 bg-zinc-800 rounded w-full"></div>
-                    </td>
-                  </tr>
-                ))
-              ) : filteredClients.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-20 text-center">
-                    <Users className="mx-auto text-zinc-700 mb-4" size={48} />
-                    <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">Nenhum cliente encontrado</p>
-                  </td>
-                </tr>
-              ) : filteredClients.map((client) => (
-                <tr key={client.id} onClick={() => handleOpenDetailModal(client)} className="group hover:bg-zinc-800/20 transition-colors cursor-pointer">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black">
-                        {client.nome.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="text-sm font-black text-white">{client.nome}</div>
-                        <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID: {client.userId}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
-                        <Phone size={12} /> {client.numero}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-1 max-w-[200px]">
-                      {client.interesses && client.interesses.length > 0 ? (
-                        client.interesses.slice(0, 3).map((int, i) => (
-                          <span key={i} className="px-2 py-0.5 rounded-md bg-violet-600/20 text-violet-300 text-[9px] font-bold whitespace-nowrap">
-                            {int}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-[10px] text-zinc-600 font-bold uppercase">Nenhum</span>
-                      )}
-                      {client.interesses && client.interesses.length > 3 && (
-                        <span className="text-[9px] text-zinc-500 font-bold">+{client.interesses.length - 3}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <div className="font-mono text-xs text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-800 w-[140px] truncate text-center" title={visiblePasswords.has(client.id) ? client.senha : ''}>
-                        {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
-                      </div>
-                      <button 
-                        onClick={(e) => togglePasswordVisibility(e, client.id)}
-                        className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-all"
-                      >
-                        {visiblePasswords.has(client.id) ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => handleOpenModal(client)}
-                        className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-violet-600 transition-all"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(client.id)}
-                        className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                <div>Cliente</div>
+                <div>Contato</div>
+                <div>Interesses</div>
+                <div>Senha</div>
+                <div className="text-right">Ações</div>
+              </div>
+              <div className="flex-1">
+                <AutoSizer renderProp={({ height, width }) => (
+                    <ListAny
+                      height={height}
+                      itemCount={loading ? 5 : (filteredClients.length === 0 ? 1 : filteredClients.length)}
+                      itemSize={80}
+                      width={width}
+                    >
+                      {({ index, style }) => {
+                        const i = index as number;
+                        const s = style as React.CSSProperties;
+                        if (loading) {
+                          return (
+                            <div style={s} className="px-6 py-4 border-b border-zinc-800/50 animate-pulse">
+                              <div className="h-4 bg-zinc-800 rounded w-full"></div>
+                            </div>
+                          );
+                        }
+                        if (filteredClients.length === 0) {
+                          return (
+                            <div style={s} className="flex flex-col items-center justify-center text-center px-6">
+                              <Users className="text-zinc-700 mb-2" size={32} />
+                              <p className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Nenhum cliente encontrado</p>
+                            </div>
+                          );
+                        }
+                        const client = filteredClients[i];
+                        return (
+                          <div 
+                            style={s} 
+                            onClick={() => handleOpenDetailModal(client)} 
+                            className="grid grid-cols-[1fr_1fr_1fr_200px_120px] items-center px-6 border-b border-zinc-800/50 group hover:bg-zinc-800/20 transition-colors cursor-pointer"
+                          >
+                            <div>
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-violet-600/10 flex items-center justify-center text-violet-500 font-black">
+                                  {client.nome.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="text-sm font-black text-white">{client.nome}</div>
+                                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">ID: {client.userId}</div>
+                                </div>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 text-xs text-zinc-400 font-medium">
+                                <Phone size={12} /> {client.numero}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                {client.interesses && client.interesses.length > 0 ? (
+                                  client.interesses.slice(0, 3).map((int, i) => (
+                                    <span key={i} className="px-2 py-0.5 rounded-md bg-violet-600/20 text-violet-300 text-[9px] font-bold whitespace-nowrap">
+                                      {int}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-zinc-600 font-bold uppercase">Nenhum</span>
+                                )}
+                                {client.interesses && client.interesses.length > 3 && (
+                                  <span className="text-[9px] text-zinc-500 font-bold">+{client.interesses.length - 3}</span>
+                                )}
+                              </div>
+                            </div>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center gap-2">
+                                <div className="font-mono text-xs text-zinc-400 bg-zinc-800/50 px-2 py-1 rounded-lg border border-zinc-800 w-[120px] truncate text-center">
+                                  {visiblePasswords.has(client.id) ? client.senha || '---' : '••••••••'}
+                                </div>
+                                <button 
+                                  onClick={(e) => togglePasswordVisibility(e, client.id)}
+                                  className="p-1.5 rounded-lg hover:bg-zinc-800 text-zinc-500 hover:text-zinc-300 transition-all"
+                                >
+                                  {visiblePasswords.has(client.id) ? <EyeOff size={14} /> : <Eye size={14} />}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={() => handleOpenModal(client)}
+                                  className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white hover:bg-violet-600 transition-all"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDelete(client.id)}
+                                  className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }}
+                    </ListAny>
+                  )} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

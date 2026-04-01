@@ -1,5 +1,6 @@
 import express from "express";
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
@@ -11,7 +12,10 @@ import axios from 'axios';
 import multer from 'multer';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
-import { autenticar } from './middleware/auth.js';
+import mlClient from './services/mlClient.js';
+import { autenticar, requireRole } from './middleware/auth.js';
+import { ML_CACHE_TTL, mlItemCache } from './services/mlCache.js';
+import db from './services/db.js';
 import { generateToken } from './utils/jwt.js';
 
 dotenv.config();
@@ -27,9 +31,9 @@ try {
 }
 
 const NOTION_TOKEN = process.env.NOTION_TOKEN || "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";
-const DATABASE_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ESTOQUE || "2f4dfa25a52880c1b315f7e8953f5889";
-const MOTOS_DATABASE_ID = process.env.NOTION_DB_MOTOS || "317dfa25a528805f9663ff0e6ebf0318";
-const CLIENTS_DATABASE_ID = process.env.DATABASE_CLIENTES || process.env.NOTION_DB_CLIENTS || "32edfa25a52880dfb4c6e96c41fcf822";
+const DATABASE_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ESTOQUE || "";
+const MOTOS_DATABASE_ID = process.env.NOTION_DB_MOTOS || "";
+const CLIENTS_DATABASE_ID = process.env.DATABASE_CLIENTES || process.env.NOTION_DB_CLIENTS || "";
 const NOTION_VERSION = '2022-06-28';
 const serverStartTime = new Date().toISOString();
 
@@ -39,10 +43,6 @@ const notionDataCache: Record<string, { data: any, timestamp: number }> = {};
 const CACHE_TTL = 1000 * 60 * 5; // 5 minutos
 const DATA_CACHE_TTL = 1000 * 60 * 5; // 5 minutos para dados (RK Sucatas: cache otimizado)
 const fetchLocks: Record<string, Promise<any> | null> = {};
-
-// Cache para detalhes de itens do Mercado Livre para evitar re-fetch constante
-const mlItemCache = new Map<string, { data: any, timestamp: number }>();
-const ML_CACHE_TTL = 1000 * 60 * 30; // 30 minutos
 
 function invalidateCache(databaseId?: string) {
   if (databaseId) {
@@ -189,63 +189,18 @@ async function fetchAllFromNotion(databaseId: string) {
   return fetchPromise;
 }
 
-import mlClient from './services/mlClient.js';
-export { mlClient };
 import storageService from './src/services/storageService.js';
 
-async function ensureAdminUser() {
-  const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'oryanzin09@gmail.com';
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'rksucatasadm115935';
-  const ADMIN_PHONE = '83982039490';
-
+// Helper function to log audit events
+function logAudit(userId: number | null, action: string, entityType: string, entityId: number | null, details: any = null) {
   try {
-    console.log(`🛡️ Verificando administrador mestre no Notion (${ADMIN_EMAIL})...`);
-    const response = await fetch(`https://api.notion.com/v1/databases/${CLIENTS_DATABASE_ID}/query`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${NOTION_TOKEN}`,
-        'Content-Type': 'application/json',
-        'Notion-Version': NOTION_VERSION
-      },
-      body: JSON.stringify({
-        filter: {
-          or: [
-            { property: 'Número', phone_number: { equals: ADMIN_PHONE } },
-            { property: 'Nome', title: { equals: 'Administrador' } }
-          ]
-        }
-      })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.results && data.results.length === 0) {
-        console.log(`🛡️ Criando administrador mestre no Notion...`);
-        await fetch('https://api.notion.com/v1/pages', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_TOKEN}`,
-            'Content-Type': 'application/json',
-            'Notion-Version': NOTION_VERSION
-          },
-          body: JSON.stringify({
-            parent: { database_id: CLIENTS_DATABASE_ID },
-            properties: {
-              Nome: { title: [{ text: { content: 'Administrador' } }] },
-              'Número': { phone_number: ADMIN_PHONE },
-              Senha: { rich_text: [{ text: { content: ADMIN_PASSWORD } }] },
-              Tipo: { select: { name: 'ADM' } }
-            }
-          })
-        });
-        console.log(`✅ Administrador mestre criado com sucesso.`);
-        invalidateCache(CLIENTS_DATABASE_ID);
-      } else {
-        console.log(`✅ Administrador mestre já existe no Notion.`);
-      }
-    }
+    const detailsStr = details ? JSON.stringify(details) : null;
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(userId, action, entityType, entityId, detailsStr);
   } catch (error) {
-    console.error('❌ Erro ao garantir administrador mestre:', error);
+    console.error('❌ Erro ao registrar log de auditoria:', error);
   }
 }
 
@@ -257,8 +212,6 @@ async function startServer() {
   // Configuração para ambientes com proxy (Cloud Run, Nginx, etc.)
   app.set('trust proxy', 1);
   
-  // Garantir administrador mestre
-  await ensureAdminUser();
   // Garantir que a pasta uploads existe
   const uploadDir = path.join(process.cwd(), 'uploads');
   if (!fs.existsSync(uploadDir)) {
@@ -270,19 +223,7 @@ async function startServer() {
     cors: { origin: "*" }
   });
 
-  // Rate limiter para login
-  const loginLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minuto
-    max: 5, // 5 tentativas
-    message: { success: false, error: 'Muitas tentativas de login. Tente novamente em um minuto.' },
-    standardHeaders: true,
-    legacyHeaders: false,
-    validate: {
-      forwardedHeader: false,
-    }
-  });
-
-  const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "2fbdfa25a52880a587ebcca53c478342";
+  const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "";
 
   app.use(express.json());
 
@@ -321,10 +262,11 @@ async function startServer() {
   // Middleware para interpretar JSON no corpo das requisições
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
 
   // Middleware de log para API
   app.use('/api', (req, res, next) => {
-    console.log(`📡 API Request: ${req.method} ${req.url}`);
+    console.log(`${req.method} ${req.url}`);
     next();
   });
 
@@ -333,244 +275,314 @@ async function startServer() {
     res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Gerenciamento de usuários persistente
-  const USERS_FILE = path.join(process.cwd(), 'users.json');
-  
-  const getUsers = () => {
-    try {
-      if (fs.existsSync(USERS_FILE)) {
-        return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
-      }
-    } catch (err) {
-      console.error('Erro ao ler usuários:', err);
-    }
-    return [];
-  };
-
-  const saveUser = (user: any) => {
-    const users = getUsers();
-    users.push(user);
-    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
-  };
-
-  // Rota de registro
+  // Rotas de autenticação (públicas)
   app.post('/api/register', async (req, res) => {
-    const { phone, password, name, cpf } = req.body;
-    
-    if (!phone || !password || !name) {
-      return res.status(400).json({ success: false, error: 'Nome, telefone e senha são obrigatórios' });
-    }
-
-    // Validação de WhatsApp (10-13 dígitos)
-    const whatsappRegex = /^\d{10,13}$/;
-    if (!whatsappRegex.test(phone.replace(/\D/g, ''))) {
-      return res.status(400).json({ success: false, error: 'Número de WhatsApp inválido (deve ter entre 10 e 13 dígitos)' });
-    }
-
-    const users = getUsers();
-    if (users.find((u: any) => u.phone === phone)) {
-      return res.status(400).json({ success: false, error: 'Este número já está cadastrado' });
-    }
-
-    // Validação de senha (mínimo 8 caracteres, 2 números)
-    const hasMinLength = password.length >= 8;
-    const hasTwoNumbers = (password.match(/\d/g) || []).length >= 2;
-
-    if (!hasMinLength || !hasTwoNumbers) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'A senha deve ter no mínimo 8 caracteres e 2 números' 
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = { phone, password: hashedPassword, name, cpf: cpf || '', role: 'client', createdAt: new Date().toISOString() };
-    saveUser(newUser);
-    
-    // Também cadastrar no Notion como cliente (assíncrono para não travar o registro, mas com log robusto)
-    // Usamos um timeout para garantir que o log local seja rápido, mas o Notion seja atualizado
-    setTimeout(async () => {
-      try {
-        const response = await fetch('https://api.notion.com/v1/pages', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_TOKEN}`,
-            'Content-Type': 'application/json',
-            'Notion-Version': NOTION_VERSION
-          },
-          body: JSON.stringify({
-            parent: { database_id: CLIENTS_DATABASE_ID },
-            properties: {
-              Nome: { title: [{ text: { content: name || `Cliente ${phone}` } }] },
-              'Número': { phone_number: phone },
-              Senha: { rich_text: [{ text: { content: hashedPassword } }] },
-              CPF: { number: cpf ? Number(cpf.replace(/\D/g, '')) : 0 },
-              'Itens comprados': { rich_text: [{ text: { content: '' } }] },
-              Tipo: { select: { name: 'CLIENTE' } }
-            }
-          })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error('❌ Erro retornado pelo Notion ao cadastrar cliente:', errorData);
-        } else {
-          invalidateCache(CLIENTS_DATABASE_ID);
-          console.log(`✅ Cliente cadastrado no Notion com sucesso: ${phone}`);
-        }
-      } catch (e) {
-        console.error('❌ Erro de rede ao cadastrar cliente no Notion durante registro:', e);
-      }
-    }, 100);
-    
-    console.log(`👤 Novo usuário registrado localmente: ${phone}`);
-    const token = generateToken({ role: 'client', phone });
-    res.json({ success: true, token, role: 'client', name });
-  });
-
-  // Rota de login atualizada
-  app.post('/api/login', loginLimiter, async (req, res) => {
-    const { password, phone } = req.body;
-    const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'oryanzin09@gmail.com').trim();
-    const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || 'rksucatasadm115935').trim();
-    const ADMIN_PHONE = '83982039490';
-    
-    console.log(`🔑 Tentativa de login. Telefone/Email: ${phone || 'não enviado'}`);
-    
-    // 1. Verificar se é o administrador mestre (por email ou telefone)
-    const isMasterAdmin = 
-      (phone === ADMIN_PHONE || phone === ADMIN_EMAIL) && 
-      password === ADMIN_PASSWORD;
-
-    if (isMasterAdmin) {
-      console.log(`✅ Login de Administrador Mestre bem-sucedido: ${phone}`);
-      const token = generateToken({ role: 'admin', phone });
-      return res.json({ success: true, token, role: 'admin', name: 'Administrador' });
-    } else {
-      console.log(`ℹ️ Não é Master Admin. Phone: "${phone}", Email: "${ADMIN_EMAIL}", MasterPhone: "${ADMIN_PHONE}"`);
-    }
-
-    // 2. Verificar se é um usuário registrado (cliente) em users.json
-    const users = getUsers();
-    let registeredUser = users.find((u: any) => u.phone === phone);
-    
-    // 3. Se não encontrou no users.json, busca no Notion
-    if (!registeredUser) {
-      try {
-        console.log(`🔍 Buscando usuário ${phone} no Notion...`);
-        const response = await fetch(`https://api.notion.com/v1/databases/${CLIENTS_DATABASE_ID}/query`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${NOTION_TOKEN}`,
-            'Content-Type': 'application/json',
-            'Notion-Version': NOTION_VERSION
-          },
-          body: JSON.stringify({
-            filter: {
-              or: [
-                { property: 'Número', phone_number: { equals: phone } },
-                { property: 'Nome', title: { equals: phone } }
-              ]
-            }
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.results && data.results.length > 0) {
-            const page = data.results[0];
-            const p = page.properties;
-            const notionPassword = p.Senha?.rich_text?.[0]?.plain_text || '';
-            const notionName = p.Nome?.title?.[0]?.plain_text || '';
-            const notionCpf = p.CPF?.number || 0;
-            const notionRole = p.Tipo?.select?.name === 'ADM' ? 'admin' : 'client';
-            
-            if (notionPassword) {
-              registeredUser = {
-                phone,
-                password: notionPassword,
-                name: notionName,
-                cpf: notionCpf,
-                role: notionRole
-              };
-              // Salva no users.json para próximos logins serem mais rápidos
-              saveUser(registeredUser);
-              console.log(`✅ Usuário ${phone} encontrado no Notion e sincronizado.`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao buscar usuário no Notion durante login:', error);
-      }
-    }
-    
-    if (registeredUser) {
-      console.log(`👤 Usuário encontrado: ${registeredUser.phone}, Role: ${registeredUser.role}`);
-      let isPasswordValid = false;
-      
-      if (registeredUser.role === 'admin') {
-        // Administrador: Comparação direta (texto puro)
-        // Aceita se for igual à senha salva no banco OU à senha mestre do .env
-        const isBcryptHash = /^\$2[ayb]\$/.test(registeredUser.password);
-        isPasswordValid = (registeredUser.password === password) || 
-                         (password === ADMIN_PASSWORD) ||
-                         (isBcryptHash && await bcrypt.compare(password, registeredUser.password));
-        
-        if (!isPasswordValid) {
-          console.log(`❌ Senha Admin inválida. Digitada: "${password}", Salva: "${registeredUser.password}", Master: "${ADMIN_PASSWORD}"`);
-        }
-      } else {
-        // Cliente: Usa bcrypt se for um hash, senão comparação direta
-        const isBcryptHash = /^\$2[ayb]\$/.test(registeredUser.password);
-        isPasswordValid = isBcryptHash 
-          ? await bcrypt.compare(password, registeredUser.password)
-          : registeredUser.password === password;
-      }
-
-      if (isPasswordValid) {
-        console.log(`✅ Login de ${registeredUser.role === 'admin' ? 'Administrador' : 'Cliente'} bem-sucedido: ${phone}`);
-        const token = generateToken({ role: registeredUser.role || 'client', phone });
-        return res.json({ 
-          success: true, 
-          token, 
-          role: registeredUser.role || 'client',
-          name: registeredUser.name || (registeredUser.role === 'admin' ? 'Administrador' : `Cliente ${phone}`)
-        });
-      } else {
-        console.log(`❌ Falha no login: senha incorreta para ${phone}`);
-        return res.status(401).json({ success: false, error: 'Senha incorreta' });
-      }
-    }
-
-    // 4. Falha no login (conta não encontrada)
-    console.log(`❌ Falha no login: conta não encontrada para ${phone}`);
-    res.status(401).json({ success: false, error: 'Conta não encontrada. Por favor, registre-se.' });
-  });
-
-  // Rota pública para estatísticas (usada na tela de login)
-  app.get('/api/public-stats', async (req, res) => {
     try {
-      // Reutiliza a lógica existente para buscar dados do Notion
-      const estoque = await fetchAllFromNotion(DATABASE_ID);
-      const motos = await fetchAllFromNotion(MOTOS_DATABASE_ID);
+      const { phone, password, name } = req.body;
+
+      if (!phone || !password) {
+        return res.status(400).json({ success: false, error: 'Telefone e senha são obrigatórios' });
+      }
+
+      // Criptografa a senha
+      const saltRounds = 10;
+      const passwordHash = await bcrypt.hash(password, saltRounds);
+
+      // Verifica se é o primeiro usuário (Admin)
+      const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+      if (userCount.count === 0) {
+        const insertStmt = db.prepare('INSERT INTO users (phone, password_hash, name, role) VALUES (?, ?, ?, ?)');
+        const result = insertStmt.run(phone, passwordHash, name || '', 'admin');
+        const token = generateToken({ id: Number(result.lastInsertRowid), phone, role: 'admin' });
+        
+        res.cookie('auth_token', token, { httpOnly: true, secure: true, sameSite: 'none', maxAge: 24 * 60 * 60 * 1000 });
+        return res.status(201).json({ success: true, message: 'Admin registrado', token: 'secure_cookie_active', user: { id: result.lastInsertRowid, phone, name, role: 'admin' } });
+      }
+
+      // Verifica se já existe em users (Staff)
+      const existingUser = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone);
+      if (existingUser) {
+        return res.status(409).json({ success: false, error: 'Usuário já cadastrado com este telefone' });
+      }
+
+      // Verifica se existe em clients
+      const existingClient = db.prepare('SELECT id, password_hash, name FROM clients WHERE phone = ?').get(phone) as any;
       
-      // Calcula estatísticas simples
-      const totalPecas = estoque.length;
-      const totalMotos = motos.length;
-      const marcas = [...new Set(motos.map((m: any) => m.properties?.Marca?.select?.name).filter(Boolean))];
-      
-      res.json({
-        totalPecas,
-        totalMotos,
-        marcas: marcas.slice(0, 3) // Top 3 marcas
+      let clientId;
+      let clientName = name || '';
+
+      if (existingClient) {
+        if (existingClient.password_hash) {
+          return res.status(409).json({ success: false, error: 'Cliente já cadastrado com este telefone' });
+        }
+        // Atualiza a senha do cliente existente
+        db.prepare('UPDATE clients SET password_hash = ?, name = COALESCE(name, ?) WHERE id = ?').run(passwordHash, name || null, existingClient.id);
+        clientId = existingClient.id;
+        clientName = existingClient.name || name || '';
+      } else {
+        // Insere novo cliente
+        const insertStmt = db.prepare('INSERT INTO clients (phone, password_hash, name) VALUES (?, ?, ?)');
+        const result = insertStmt.run(phone, passwordHash, name || null);
+        clientId = Number(result.lastInsertRowid);
+      }
+
+      // Gera o token (role 'client')
+      const token = generateToken({ id: clientId, phone, role: 'client' });
+
+      // Configura o cookie HttpOnly
+      res.cookie('auth_token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000 // 24 horas
       });
-    } catch (error) {
-      res.status(500).json({ error: 'Erro ao buscar estatísticas' });
+
+      res.status(201).json({
+        success: true,
+        message: 'Cliente registrado com sucesso',
+        token: 'secure_cookie_active',
+        user: { id: clientId, phone, name: clientName, role: 'client' }
+      });
+    } catch (error: any) {
+      console.error('❌ Erro no registro:', error);
+      res.status(500).json({ success: false, error: 'Erro interno ao registrar usuário' });
     }
+  });
+
+  app.post('/api/login', async (req, res) => {
+    try {
+      const { phone, password } = req.body;
+
+      if (!phone || !password) {
+        return res.status(400).json({ success: false, error: 'Telefone e senha são obrigatórios' });
+      }
+
+      // 1. Busca em users (Staff)
+      let user = db.prepare('SELECT * FROM users WHERE phone = ?').get(phone) as any;
+      let isClient = false;
+
+      // 2. Se não achou, busca em clients
+      if (!user) {
+        user = db.prepare('SELECT * FROM clients WHERE phone = ?').get(phone) as any;
+        isClient = true;
+      }
+
+      if (!user || !user.password_hash) {
+        return res.status(401).json({ success: false, error: 'Credenciais inválidas' });
+      }
+
+      // Compara a senha
+      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      if (!isPasswordValid) {
+        return res.status(401).json({ success: false, error: 'Credenciais inválidas' });
+      }
+
+      // Atualiza o último login
+      if (isClient) {
+        db.prepare('UPDATE clients SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+      } else {
+        db.prepare('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+      }
+
+      const role = isClient ? 'client' : user.role;
+
+      // Gera o token
+      const token = generateToken({ id: user.id, phone: user.phone, role });
+
+      // Configura o cookie HttpOnly
+      res.cookie('auth_token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 24 * 60 * 60 * 1000 // 24 horas
+      });
+
+      res.json({
+        success: true,
+        message: 'Login realizado com sucesso',
+        token: 'secure_cookie_active',
+        user: { id: user.id, phone: user.phone, name: user.name, role }
+      });
+    } catch (error: any) {
+      console.error('❌ Erro no login:', error);
+      res.status(500).json({ success: false, error: 'Erro interno ao realizar login' });
+    }
+  });
+
+  app.post('/api/logout', (req, res) => {
+    res.clearCookie('auth_token', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none'
+    });
+    res.json({ success: true, message: 'Logout realizado com sucesso' });
   });
 
   // Middleware de autenticação global para todas as rotas de API subsequentes
   app.use('/api', autenticar);
+
+  // Rotas de Administração de Usuários (Protegidas)
+  app.get('/api/admin/users', requireRole(['admin', 'gerente']), async (req, res) => {
+    try {
+      const users = db.prepare('SELECT id, phone, name, role, created_at, last_login FROM users').all();
+      res.json({ success: true, data: users });
+    } catch (error: any) {
+      console.error('❌ Erro ao listar usuários:', error);
+      res.status(500).json({ success: false, error: 'Erro ao buscar usuários' });
+    }
+  });
+
+  app.put('/api/admin/users/:id/role', requireRole(['admin']), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { role } = req.body;
+      const adminId = (req as any).user.id;
+      
+      if (!['admin', 'client', 'gerente', 'estoque'].includes(role)) {
+        return res.status(400).json({ success: false, error: 'Role inválida' });
+      }
+
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+      logAudit(adminId, 'UPDATE_USER_ROLE', 'user', Number(id), { newRole: role });
+      res.json({ success: true, message: 'Role atualizada com sucesso' });
+    } catch (error: any) {
+      console.error('❌ Erro ao atualizar role:', error);
+      res.status(500).json({ success: false, error: 'Erro ao atualizar role' });
+    }
+  });
+
+  app.delete('/api/admin/users/:id', requireRole(['admin']), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminId = (req as any).user.id;
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+      logAudit(adminId, 'DELETE_USER', 'user', Number(id));
+      res.json({ success: true, message: 'Usuário removido com sucesso' });
+    } catch (error: any) {
+      console.error('❌ Erro ao remover usuário:', error);
+      res.status(500).json({ success: false, error: 'Erro ao remover usuário' });
+    }
+  });
+
+  // ==========================================
+  // ROTAS DE CLIENTES (ADMIN)
+  // ==========================================
+
+  // Listar clientes
+  app.get('/api/admin/clients', requireRole(['admin', 'gerente']), async (req, res) => {
+    try {
+      const clients = db.prepare('SELECT id, phone, name, interests, purchases, created_at, last_login FROM clients').all();
+      res.json({ success: true, data: clients });
+    } catch (error: any) {
+      console.error('❌ Erro ao listar clientes:', error);
+      res.status(500).json({ success: false, error: 'Erro ao buscar clientes' });
+    }
+  });
+
+  // Criar cliente
+  app.post('/api/admin/clients', requireRole(['admin', 'gerente']), async (req, res) => {
+    try {
+      const { phone, name, password, interests, purchases } = req.body;
+      
+      if (!phone) {
+        return res.status(400).json({ success: false, error: 'O telefone é obrigatório' });
+      }
+
+      const existingClient = db.prepare('SELECT id FROM clients WHERE phone = ?').get(phone);
+      if (existingClient) {
+        return res.status(400).json({ success: false, error: 'Este telefone já está cadastrado' });
+      }
+
+      let passwordHash = null;
+      if (password) {
+        passwordHash = await bcrypt.hash(password, 10);
+      }
+
+      const result = db.prepare(`
+        INSERT INTO clients (phone, password_hash, name, interests, purchases)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(phone, passwordHash, name || null, interests || null, purchases || null);
+
+      const adminId = (req as any).user.id;
+      logAudit(adminId, 'CREATE_CLIENT', 'client', Number(result.lastInsertRowid), { phone, name });
+
+      res.json({ success: true, message: 'Cliente criado com sucesso', id: result.lastInsertRowid });
+    } catch (error: any) {
+      console.error('❌ Erro ao criar cliente:', error);
+      res.status(500).json({ success: false, error: 'Erro ao criar cliente' });
+    }
+  });
+
+  // Atualizar cliente
+  app.put('/api/admin/clients/:id', requireRole(['admin', 'gerente']), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { phone, name, password, interests, purchases } = req.body;
+      
+      if (!phone) {
+        return res.status(400).json({ success: false, error: 'O telefone é obrigatório' });
+      }
+
+      const existingClient = db.prepare('SELECT id FROM clients WHERE phone = ? AND id != ?').get(phone, id);
+      if (existingClient) {
+        return res.status(400).json({ success: false, error: 'Este telefone já está sendo usado por outro cliente' });
+      }
+
+      if (password) {
+        const passwordHash = await bcrypt.hash(password, 10);
+        db.prepare(`
+          UPDATE clients SET phone = ?, name = ?, interests = ?, purchases = ?, password_hash = ? WHERE id = ?
+        `).run(phone, name || null, interests || null, purchases || null, passwordHash, id);
+      } else {
+        db.prepare(`
+          UPDATE clients SET phone = ?, name = ?, interests = ?, purchases = ? WHERE id = ?
+        `).run(phone, name || null, interests || null, purchases || null, id);
+      }
+
+      const adminId = (req as any).user.id;
+      logAudit(adminId, 'UPDATE_CLIENT', 'client', Number(id), { phone, name, interests, purchases });
+
+      res.json({ success: true, message: 'Cliente atualizado com sucesso' });
+    } catch (error: any) {
+      console.error('❌ Erro ao atualizar cliente:', error);
+      res.status(500).json({ success: false, error: 'Erro ao atualizar cliente' });
+    }
+  });
+
+  // Deletar cliente
+  app.delete('/api/admin/clients/:id', requireRole(['admin', 'gerente']), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const adminId = (req as any).user.id;
+      db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+      logAudit(adminId, 'DELETE_CLIENT', 'client', Number(id));
+      res.json({ success: true, message: 'Cliente removido com sucesso' });
+    } catch (error: any) {
+      console.error('❌ Erro ao remover cliente:', error);
+      res.status(500).json({ success: false, error: 'Erro ao remover cliente' });
+    }
+  });
+
+  // ==========================================
+  // ROTAS DE AUDITORIA (ADMIN)
+  // ==========================================
+
+  app.get('/api/admin/audit-logs', requireRole(['admin']), async (req, res) => {
+    try {
+      // Join with users table to get the name of the user who performed the action
+      const logs = db.prepare(`
+        SELECT a.*, u.name as user_name, u.phone as user_phone
+        FROM audit_logs a
+        LEFT JOIN users u ON a.user_id = u.id
+        ORDER BY a.created_at DESC
+        LIMIT 100
+      `).all();
+      res.json({ success: true, data: logs });
+    } catch (error: any) {
+      console.error('❌ Erro ao buscar logs de auditoria:', error);
+      res.status(500).json({ success: false, error: 'Erro ao buscar logs de auditoria' });
+    }
+  });
 
   // Dashboard - Métricas principais
   app.get('/api/ml/dashboard', async (req, res) => {
@@ -1778,7 +1790,7 @@ async function startServer() {
   }
 
   // --- ROTAS DE CLIENTES ---
-  app.get('/api/clients', autenticar, async (req, res) => {
+  app.get('/api/clients', async (req, res) => {
     try {
       const results = await fetchAllFromNotion(CLIENTS_DATABASE_ID);
       if (results.length > 0) {
@@ -1804,7 +1816,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/clients', autenticar, async (req, res) => {
+  app.post('/api/clients', async (req, res) => {
     try {
       const { nome, numero, cpf, itensComprados, senha, interesses } = req.body;
       console.log('📝 Criando novo cliente no Notion...', { nome, numero });
@@ -1852,7 +1864,7 @@ async function startServer() {
     }
   });
 
-  app.put('/api/clients/:id', autenticar, async (req, res) => {
+  app.put('/api/clients/:id', async (req, res) => {
     try {
       const { id } = req.params;
       const { nome, numero, cpf, itensComprados, senha, interesses } = req.body;
@@ -1895,7 +1907,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/clients/:id', autenticar, async (req, res) => {
+  app.delete('/api/clients/:id', async (req, res) => {
     try {
       const { id } = req.params;
       console.log(`🗑️ Deletando cliente ${id} no Notion...`);
@@ -2570,7 +2582,7 @@ async function startServer() {
         throw new Error(`Notion API error: ${error}`);
       }
 
-      const salesDbId = process.env.DATABASE_VENDAS_ID || "2fbdfa25a52880a587ebcca53c478342";
+      const salesDbId = process.env.DATABASE_VENDAS_ID || "";
       invalidateCache(salesDbId);
       res.json({ success: true });
     } catch (error: any) {
@@ -2599,7 +2611,7 @@ async function startServer() {
       );
 
       await Promise.all(deletePromises);
-      const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "2fbdfa25a52880a587ebcca53c478342";
+      const salesDbId = process.env.DATABASE_VENDAS_ID || process.env.NOTION_DB_VENDAS || "";
       invalidateCache(salesDbId);
       res.json({ success: true });
     } catch (error: any) {

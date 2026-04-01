@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
   Search, 
@@ -25,6 +25,17 @@ interface BudgetModalProps {
 }
 
 export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme }) => {
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
+
   const { inventory: items } = useContext(DataContext);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
@@ -72,17 +83,6 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
 
   const [discountType, setDiscountType] = useState<'fixed' | 'percent'>('fixed');
 
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isOpen]);
-
   const total = selectedItems.reduce((acc, item) => acc + (item.valor * item.quantity), 0);
   const discountAmount = discountType === 'fixed' ? discount : (total * (discount / 100));
   const finalTotal = Math.max(0, total - discountAmount);
@@ -128,8 +128,8 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[10000] flex flex-col justify-end">
-          {/* Blur Overlay at Top */}
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          {/* Blur Overlay */}
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -140,13 +140,13 @@ export const BudgetModal: React.FC<BudgetModalProps> = ({ isOpen, onClose, theme
           
           {/* Modal Content */}
           <motion.div 
-            initial={{ y: "100%" }}
-            animate={{ y: "0%" }}
-            exit={{ y: "100%" }}
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
             transition={{ type: "spring", damping: 30, stiffness: 300 }}
             className={cn(
-              "relative h-[92vh] md:h-[85vh] w-full rounded-t-[2rem] md:rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden pb-safe",
-              theme === 'dark' ? "bg-zinc-950 text-white border-t border-zinc-800" : "bg-white text-zinc-900 border-t border-zinc-200"
+              "relative h-[90vh] w-full max-w-4xl rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden",
+              theme === 'dark' ? "bg-zinc-950 text-white border border-zinc-800" : "bg-white text-zinc-900 border border-zinc-200"
             )}
           >
             {/* Header */}
