@@ -105,16 +105,16 @@ export default function AuditLogs() {
         </div>
       </div>
 
-      <div className="bg-[#1a1d24] rounded-xl border border-gray-800 overflow-hidden">
+      <div className="bg-[#1a1d24] rounded-xl border border-gray-800 overflow-hidden hidden sm:block">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-gray-300">
             <thead className="text-xs text-gray-400 uppercase bg-[#0f1115]/50 border-b border-gray-800">
               <tr>
                 <th className="px-6 py-4 font-medium">Data/Hora</th>
-                <th className="px-6 py-4 font-medium">Usuário (Responsável)</th>
-                <th className="px-6 py-4 font-medium">Ação</th>
-                <th className="px-6 py-4 font-medium">Alvo (ID)</th>
-                <th className="px-6 py-4 font-medium">Detalhes</th>
+                <th className="px-6 py-4 font-medium">Usuário</th>
+                <th className="px-6 py-4 font-medium hidden sm:table-cell">Ação</th>
+                <th className="px-6 py-4 font-medium hidden md:table-cell">Alvo</th>
+                <th className="px-6 py-4 font-medium hidden lg:table-cell text-right">Detalhes</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
@@ -128,25 +128,25 @@ export default function AuditLogs() {
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400">
+                      <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
                         <User className="w-4 h-4" />
                       </div>
-                      <div>
-                        <div className="font-medium text-white">{log.user_name || 'Sistema'}</div>
-                        {log.user_phone && <div className="text-xs text-gray-500 font-mono">{log.user_phone}</div>}
+                      <div className="min-w-0">
+                        <div className="font-medium text-white truncate">{log.user_name || 'Sistema'}</div>
+                        <div className="text-xs text-gray-500 sm:hidden">{log.action.replace(/_/g, ' ')}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap hidden sm:table-cell">
                     {formatAction(log.action)}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 hidden md:table-cell">
                     <span className="text-gray-400">
                       {log.entity_type} <span className="font-mono text-gray-500">#{log.entity_id}</span>
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
+                  <td className="px-6 py-4 hidden lg:table-cell text-right">
+                    <div className="flex items-center justify-end gap-2">
                       <FileText className="w-4 h-4 text-gray-500" />
                       {formatDetails(log.details)}
                     </div>
@@ -163,6 +163,40 @@ export default function AuditLogs() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile Cards for Audit Logs */}
+      <div className="grid grid-cols-1 gap-4 sm:hidden">
+        {logs.map((log) => (
+          <div key={log.id} className="bg-[#1a1d24] rounded-2xl border border-gray-800 p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
+                <Clock className="w-3.5 h-3.5" />
+                {new Date(log.created_at).toLocaleString('pt-BR')}
+              </div>
+              <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                {log.entity_type}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400">
+                <User className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="font-bold text-white">{log.user_name || 'Sistema'}</div>
+                <div className="text-xs text-emerald-400 font-medium">{formatAction(log.action)}</div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-gray-800/50">
+              <div className="flex items-start gap-2 text-xs text-gray-400">
+                <FileText className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span className="italic">{formatDetails(log.details)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

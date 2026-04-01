@@ -254,16 +254,16 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
             </div>
           </div>
 
-          <div className="bg-[#1a1d24] rounded-xl border border-gray-800 overflow-hidden">
+          <div className="bg-[#1a1d24] rounded-xl border border-gray-800 overflow-hidden hidden sm:block">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm text-gray-300">
                 <thead className="text-xs text-gray-400 uppercase bg-[#0f1115]/50 border-b border-gray-800">
                   <tr>
                     <th className="px-6 py-4 font-medium">Usuário</th>
-                    <th className="px-6 py-4 font-medium">Telefone</th>
+                    <th className="px-6 py-4 font-medium hidden sm:table-cell">Telefone</th>
                     <th className="px-6 py-4 font-medium">Permissão</th>
-                    <th className="px-6 py-4 font-medium">Cadastro</th>
-                    <th className="px-6 py-4 font-medium">Último Login</th>
+                    <th className="px-6 py-4 font-medium hidden md:table-cell">Cadastro</th>
+                    <th className="px-6 py-4 font-medium hidden lg:table-cell">Último Login</th>
                     <th className="px-6 py-4 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
@@ -272,13 +272,16 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                     <tr key={user.id} className="hover:bg-[#222630] transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400">
+                          <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
                             <User className="w-4 h-4" />
                           </div>
-                          <span className="font-medium text-white">{user.name || 'Sem nome'}</span>
+                          <div className="min-w-0">
+                            <div className="font-medium text-white truncate">{user.name || 'Sem nome'}</div>
+                            <div className="text-xs text-gray-500 sm:hidden font-mono">{user.phone}</div>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 font-mono text-gray-400">{user.phone}</td>
+                      <td className="px-6 py-4 font-mono text-gray-400 hidden sm:table-cell">{user.phone}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
                           user.role === 'admin' 
@@ -291,10 +294,10 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                           {user.role === 'admin' ? 'Administrador' : user.role === 'gerente' ? 'Gerente' : 'Estoque'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-gray-500">
+                      <td className="px-6 py-4 text-gray-500 hidden md:table-cell">
                         {new Date(user.created_at).toLocaleDateString('pt-BR')}
                       </td>
-                      <td className="px-6 py-4 text-gray-500">
+                      <td className="px-6 py-4 text-gray-500 hidden lg:table-cell">
                         {user.last_login ? new Date(user.last_login).toLocaleString('pt-BR') : 'Nunca'}
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -338,23 +341,73 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
               </table>
             </div>
           </div>
+
+          {/* Mobile Cards for Staff */}
+          <div className="grid grid-cols-1 gap-4 sm:hidden">
+            {users.map((user) => (
+              <div key={user.id} className="bg-[#1a1d24] rounded-2xl border border-gray-800 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-white">{user.name || 'Sem nome'}</div>
+                      <div className="text-xs text-gray-500 font-mono">{user.phone}</div>
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                    user.role === 'admin' 
+                      ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' 
+                      : user.role === 'gerente'
+                      ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                      : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  }`}>
+                    {user.role === 'admin' ? 'Admin' : user.role === 'gerente' ? 'Gerente' : 'Estoque'}
+                  </span>
+                </div>
+                
+                <div className="flex items-center justify-between pt-2 border-t border-gray-800/50">
+                  <div className="text-[10px] text-gray-500">
+                    Último login: {user.last_login ? new Date(user.last_login).toLocaleDateString('pt-BR') : 'Nunca'}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleToggleRole(user.id, user.role)}
+                      disabled={actionLoading === user.id}
+                      className="p-2.5 bg-gray-800 text-gray-400 rounded-xl hover:text-white transition-all"
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user.id, user.name)}
+                      disabled={actionLoading === user.id}
+                      className="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl hover:bg-rose-500/20 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* CLIENTS TABLE */}
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
             <Users className="w-6 h-6 text-emerald-400" />
             Gestão de Clientes
           </h2>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between sm:justify-end gap-4">
             <div className="text-sm text-gray-400">
               Total: {clients.length} cliente(s)
             </div>
             <button
               onClick={() => handleOpenClientModal()}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors text-sm font-medium"
+              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors text-sm font-bold shadow-lg shadow-emerald-500/20 whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
               Novo Cliente
@@ -362,16 +415,16 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
           </div>
         </div>
 
-        <div className="bg-[#1a1d24] rounded-xl border border-gray-800 overflow-hidden">
+        <div className="bg-[#1a1d24] rounded-xl border border-gray-800 overflow-hidden hidden sm:block">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-gray-300">
               <thead className="text-xs text-gray-400 uppercase bg-[#0f1115]/50 border-b border-gray-800">
                 <tr>
                   <th className="px-6 py-4 font-medium">Cliente</th>
-                  <th className="px-6 py-4 font-medium">Telefone</th>
-                  <th className="px-6 py-4 font-medium">Interesses</th>
-                  <th className="px-6 py-4 font-medium">Compras</th>
-                  <th className="px-6 py-4 font-medium">Cadastro</th>
+                  <th className="px-6 py-4 font-medium hidden sm:table-cell">Telefone</th>
+                  <th className="px-6 py-4 font-medium hidden md:table-cell">Interesses</th>
+                  <th className="px-6 py-4 font-medium hidden lg:table-cell">Compras</th>
+                  <th className="px-6 py-4 font-medium hidden xl:table-cell">Cadastro</th>
                   <th className="px-6 py-4 font-medium text-right">Ações</th>
                 </tr>
               </thead>
@@ -380,14 +433,17 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                   <tr key={client.id} className="hover:bg-[#222630] transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400">
+                        <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-gray-400 shrink-0">
                           <User className="w-4 h-4" />
                         </div>
-                        <span className="font-medium text-white">{client.name || 'Sem nome'}</span>
+                        <div className="min-w-0">
+                          <div className="font-medium text-white truncate">{client.name || 'Sem nome'}</div>
+                          <div className="text-xs text-gray-500 sm:hidden font-mono">{client.phone}</div>
+                        </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-gray-400">{client.phone}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 font-mono text-gray-400 hidden sm:table-cell">{client.phone}</td>
+                    <td className="px-6 py-4 hidden md:table-cell">
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
                         {parseJSON(client.interests, []).map((interest: string, idx: number) => (
                           <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 truncate max-w-[100px]" title={interest}>
@@ -397,7 +453,7 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                         {!client.interests && <span className="text-gray-500">-</span>}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 hidden lg:table-cell">
                       <div className="flex flex-wrap gap-1 max-w-[200px]">
                         {parseJSON(client.purchases, []).map((purchase: any, idx: number) => (
                           <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 truncate max-w-[100px]" title={`${purchase.item} - ${purchase.value}`}>
@@ -407,7 +463,7 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                         {!client.purchases && <span className="text-gray-500">-</span>}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-500">
+                    <td className="px-6 py-4 text-gray-500 hidden xl:table-cell">
                       {new Date(client.created_at).toLocaleDateString('pt-BR')}
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -445,6 +501,56 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Mobile Cards for Clients */}
+        <div className="grid grid-cols-1 gap-4 sm:hidden">
+          {clients.map((client) => (
+            <div key={client.id} className="bg-[#1a1d24] rounded-2xl border border-gray-800 p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-gray-400">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-white">{client.name || 'Sem nome'}</div>
+                    <div className="text-xs text-gray-500 font-mono">{client.phone}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenClientModal(client)}
+                    className="p-2.5 bg-gray-800 text-gray-400 rounded-xl hover:text-white transition-all"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteClient(client.id, client.name)}
+                    disabled={actionLoading === client.id}
+                    className="p-2.5 bg-rose-500/10 text-rose-400 rounded-xl hover:bg-rose-500/20 transition-all"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Tags Section */}
+              <div className="space-y-3 pt-2 border-t border-gray-800/50">
+                {client.interests && (
+                  <div className="flex flex-wrap gap-1">
+                    {parseJSON(client.interests, []).map((interest: string, idx: number) => (
+                      <span key={idx} className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        {interest}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <div className="text-[10px] text-gray-500">
+                  Cadastrado em: {new Date(client.created_at).toLocaleDateString('pt-BR')}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

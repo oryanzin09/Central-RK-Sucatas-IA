@@ -8531,6 +8531,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [motosActions, setMotosActions] = useState<{ edit: (item: any) => void, delete: (id: string) => void, focusSearch?: () => void } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
 
   // Atalho Ctrl + F para busca global
@@ -9037,7 +9038,19 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
             <h2 className={cn(
               "text-base md:text-lg font-semibold capitalize transition-colors truncate max-w-[120px] md:max-w-none",
               theme === 'dark' ? "text-white" : "text-zinc-900"
-            )}>{activeTab}</h2>
+            )}>
+              {activeTab === 'dashboard' ? 'Dashboard' :
+               activeTab === 'vendas' ? 'Vendas' :
+               activeTab === 'estoque' ? 'Estoque' :
+               activeTab === 'motos' ? 'Motos' :
+               activeTab === 'atendimento' ? 'Atendimento' :
+               activeTab === 'clients' ? 'Clientes' :
+               activeTab === 'mercadolivre' ? 'Mercado Livre' :
+               activeTab === 'frete' ? 'Frete' :
+               activeTab === 'users' ? 'Usuários' :
+               activeTab === 'audit' ? 'Auditoria' :
+               activeTab}
+            </h2>
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
@@ -9055,7 +9068,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
         </header>
 
         {/* Content Area */}
-        <div ref={contentRef} className="p-4 md:p-6 overflow-y-auto flex-1">
+        <div ref={contentRef} className="p-4 md:p-6 pb-32 md:pb-6 overflow-y-auto flex-1">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -9141,10 +9154,19 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           </AnimatePresence>
         </div>
       </main>
-      {userRole !== 'client' && <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} userRole={userRole} />}
+      {userRole !== 'client' && (
+        <MobileBottomNav 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          theme={theme} 
+          userRole={userRole} 
+          isMoreOpen={isMoreMenuOpen}
+          setIsMoreOpen={setIsMoreMenuOpen}
+        />
+      )}
       
       {/* Grupo de ações flutuantes - Only for Admin/Gerente/Estoque */}
-      {userRole !== 'client' && (
+      {userRole !== 'client' && !isMoreMenuOpen && (
         <div className="fixed bottom-[calc(5.5rem+var(--safe-bottom))] md:bottom-6 right-6 z-[60] flex flex-col gap-3">
           <GlobalSearch 
             theme={theme} 

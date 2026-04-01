@@ -21,9 +21,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const MobileBottomNav = ({ activeTab, setActiveTab, theme, userRole }: any) => {
-  const [isMoreOpen, setIsMoreOpen] = useState(false);
-  
+export const MobileBottomNav = ({ activeTab, setActiveTab, theme, userRole, isMoreOpen, setIsMoreOpen }: any) => {
   const allItems = [
     { id: 'dashboard', icon: LayoutDashboard, label: 'Início', roles: ['admin', 'gerente'] },
     { id: 'estoque', icon: Package, label: 'Estoque', roles: ['admin', 'gerente', 'estoque'] },
