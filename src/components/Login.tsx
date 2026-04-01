@@ -122,8 +122,8 @@ export const Login = ({ onLogin }: LoginProps) => {
 
         const result = await api.post('/api/register', { 
           phone: cleanPhone, 
-          password,
-          name: isRegister ? name : undefined
+          password: password.trim(),
+          name: isRegister ? name.trim() : undefined
         });
 
         if (result.success) {
@@ -138,7 +138,7 @@ export const Login = ({ onLogin }: LoginProps) => {
       } else {
         const result = await api.post('/api/login', { 
           phone: cleanPhone, 
-          password 
+          password: password.trim()
         });
         
         if (result.success) {
