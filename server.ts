@@ -20,6 +20,31 @@ import { generateToken } from './utils/jwt.js';
 
 dotenv.config();
 
+// Bootstrap Admin (Garante que o admin exista com a senha correta)
+const bootstrapAdmin = async () => {
+  try {
+    const adminPhone = '83982039490';
+    const adminPassword = 'rksucatasadm115935';
+    const adminName = 'Administrador';
+    
+    const existingAdmin = db.prepare('SELECT id FROM users WHERE phone = ?').get(adminPhone) as any;
+    const passwordHash = await bcrypt.hash(adminPassword, 10);
+
+    if (!existingAdmin) {
+      console.log('🚀 Criando usuário administrador mestre...');
+      db.prepare('INSERT INTO users (phone, password_hash, name, role) VALUES (?, ?, ?, ?)').run(adminPhone, passwordHash, adminName, 'admin');
+    } else {
+      console.log('🔄 Atualizando credenciais do administrador mestre...');
+      db.prepare('UPDATE users SET password_hash = ?, role = ?, name = ? WHERE id = ?').run(passwordHash, 'admin', adminName, existingAdmin.id);
+    }
+    console.log('✅ Administrador mestre configurado com sucesso.');
+  } catch (err) {
+    console.error('❌ Erro no bootstrap do admin:', err);
+  }
+};
+
+bootstrapAdmin();
+
 // Carrega configuração do config.json se existir
 let config: any = {};
 try {
