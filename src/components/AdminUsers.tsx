@@ -556,9 +556,9 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
 
       {/* MODAL CLIENTE */}
       {isClientModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#1a1d24] border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-gray-800 shrink-0">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1d24] border border-gray-800 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl flex flex-col my-auto">
+            <div className="flex items-center justify-between p-4 border-b border-gray-800 shrink-0 sticky top-0 bg-[#1a1d24] z-10">
               <h3 className="text-lg font-bold text-white">
                 {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
               </h3>
@@ -570,7 +570,8 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
               </button>
             </div>
             
-            <form onSubmit={handleSaveClient} className="p-5 space-y-4">
+            <form onSubmit={handleSaveClient} className="p-4 space-y-4">
+              {/* ... campos do formulário ... */}
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-1.5">Nome</label>
                 <input
@@ -677,7 +678,7 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                 </div>
               </div>
 
-              <div className="flex gap-3 pt-4 shrink-0">
+              <div className="flex gap-3 pt-4 shrink-0 sticky bottom-0 bg-[#1a1d24] py-4 border-t border-gray-800">
                 <button
                   type="button"
                   onClick={() => setIsClientModalOpen(false)}
