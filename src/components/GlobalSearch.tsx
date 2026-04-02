@@ -271,12 +271,12 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ theme, onSelectItem,
                 onClick={handleClose}
               />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
               className={cn(
                 "fixed z-[110] rounded-3xl shadow-2xl overflow-hidden border flex flex-col",
-                "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[95%] max-w-2xl max-h-[85vh]",
+                "bottom-[6px] left-1/2 -translate-x-1/2 w-[95%] max-w-2xl max-h-[85vh]",
                 theme === 'dark' ? "bg-zinc-900 border-zinc-800" : "bg-white border-indigo-600/10"
               )}
             >
