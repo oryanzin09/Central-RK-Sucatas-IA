@@ -398,8 +398,13 @@ async function startServer() {
 
       // Compara a senha
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      
       if (!isPasswordValid) {
-        return res.status(401).json({ success: false, error: 'Credenciais inválidas' });
+        return res.status(401).json({ 
+            success: false, 
+            error: 'Credenciais inválidas', 
+            debug: { passwordReceived: password, hashInDb: user.password_hash, isPasswordValid } 
+        });
       }
 
       // Atualiza o último login
