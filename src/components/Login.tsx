@@ -10,14 +10,11 @@ interface LoginProps {
 }
 
 const Marquee = React.memo(({ items, variant = 'default', speed = 40 }: { items: string[], variant?: 'default' | 'violet', speed?: number }) => {
-  const animateX = React.useMemo(() => ["0%", "-50%"], []);
-  
   return (
     <div className="relative w-full overflow-hidden py-1" style={{ maskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)', WebkitMaskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)' }}>
-      <motion.div
-        animate={{ x: animateX }}
-        transition={{ repeat: Infinity, duration: speed, ease: "linear" }}
-        className="flex gap-2 w-max pr-2"
+      <div
+        className="flex gap-2 w-max pr-2 will-change-transform"
+        style={{ animation: `marquee ${speed}s linear infinite` }}
       >
         {[...items, ...items].map((item, i) => (
           <span 
@@ -32,7 +29,7 @@ const Marquee = React.memo(({ items, variant = 'default', speed = 40 }: { items:
             {item}
           </span>
         ))}
-      </motion.div>
+      </div>
     </div>
   );
 });

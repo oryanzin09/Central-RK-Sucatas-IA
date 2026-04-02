@@ -2073,7 +2073,7 @@ const DashboardView = ({
                   )}>
                     <div className="flex items-center gap-3 min-w-0">
                       {sale.thumbnail && (
-                        <img src={sale.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800 shrink-0" referrerPolicy="no-referrer" />
+                        <img loading="lazy" src={sale.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800 shrink-0" referrerPolicy="no-referrer" />
                       )}
                       <span className={cn(
                         "text-sm font-semibold truncate",
@@ -2160,7 +2160,7 @@ const DashboardView = ({
                     <td className={cn("px-4 py-3 font-bold", theme === 'dark' ? "text-zinc-200" : "text-zinc-900")}>
                       <div className="flex items-center gap-3">
                         {source === 'mercadolivre' && item.thumbnail && (
-                          <img src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                          <img loading="lazy" src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                         )}
                         <span className="">{source === 'mercadolivre' ? (item.titulo || item.id) : (item.nome || item.title)}</span>
                       </div>
@@ -2211,7 +2211,7 @@ const DashboardView = ({
                 >
                   <div className="flex items-start gap-3">
                     {source === 'mercadolivre' && item.thumbnail && (
-                      <img src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800 shadow-sm shrink-0" referrerPolicy="no-referrer" />
+                      <img loading="lazy" src={item.thumbnail} className="w-10 h-10 rounded-lg object-cover border border-zinc-800 shadow-sm shrink-0" referrerPolicy="no-referrer" />
                     )}
                     <div className="flex flex-col min-w-0">
                       <span className={cn(
@@ -2417,7 +2417,7 @@ const DashboardView = ({
                               theme === 'dark' ? "bg-zinc-800/40 border-zinc-700 hover:bg-zinc-800" : "bg-white border-zinc-200 hover:bg-zinc-50"
                             )}
                           >
-                            <img src={item.thumbnail} className="w-16 h-16 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
+                            <img loading="lazy" src={item.thumbnail} className="w-16 h-16 rounded-xl object-cover border border-zinc-700" referrerPolicy="no-referrer" />
                             <div className="flex flex-col min-w-0 flex-1">
                               <span className="font-bold text-sm truncate">{pieceName}</span>
                               <div className="flex items-center gap-2 mt-1">
@@ -2459,7 +2459,7 @@ const DashboardView = ({
                         >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-4">
-                              <img src={item.thumbnail} className="w-12 h-12 rounded-xl object-cover border border-zinc-800" referrerPolicy="no-referrer" />
+                              <img loading="lazy" src={item.thumbnail} className="w-12 h-12 rounded-xl object-cover border border-zinc-800" referrerPolicy="no-referrer" />
                               <div className="flex flex-col min-w-0">
                                 <span className="font-bold text-white truncate max-w-[300px]">{item.titulo || item.id}</span>
                                 <span className="text-[10px] text-zinc-500 font-mono">{item.id}</span>
@@ -2603,6 +2603,7 @@ const InventoryRow = memo(({
             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
           )}>
             <img 
+              loading="lazy"
               src={item[col.key]} 
               alt={item.nome} 
               className="w-full h-full object-cover" 
@@ -3519,6 +3520,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
                             theme === 'dark' ? "border-zinc-800/50" : "border-zinc-200"
                           )}>
                             <img 
+                              loading="lazy"
                               src={item[col.key]} 
                               alt={item.nome} 
                               className="w-full h-full object-cover" 
@@ -3659,6 +3661,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
                   {item.imagem ? (
                     <>
                       <img 
+                        loading="lazy"
                         src={item.imagem} 
                         alt={item.nome} 
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
@@ -4983,7 +4986,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
                     <div className="flex items-center gap-3">
                       {item.imagem && (
                         <div className="w-8 h-8 rounded-lg overflow-hidden border border-zinc-800/50">
-                          <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          <img loading="lazy" src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         </div>
                       )}
                       {editingCell?.itemId === item.id && editingCell?.field === 'nome' ? (
@@ -5134,7 +5137,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
                 <div className="flex items-center gap-3">
                   {item.imagem && (
                     <div className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-800/50">
-                      <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      <img loading="lazy" src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                     </div>
                   )}
                   <div className="flex flex-col">
@@ -6844,7 +6847,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
                       <div className="flex items-center gap-3">
                         {item.imagem && (
                           <div className="w-10 h-10 rounded-lg overflow-hidden border border-zinc-800/50">
-                            <img src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            <img loading="lazy" src={item.imagem} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           </div>
                         )}
                         {editingRowId === item.id ? (
@@ -7161,7 +7164,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
                           exit={{ opacity: 0, scale: 0.8 }}
                           className="relative flex-shrink-0 w-24 aspect-square rounded-lg overflow-hidden border border-zinc-800 group cursor-grab active:cursor-grabbing"
                         >
-                          <img src={img} className="w-full h-full object-cover pointer-events-none" referrerPolicy="no-referrer" />
+                          <img loading="lazy" src={img} className="w-full h-full object-cover pointer-events-none" referrerPolicy="no-referrer" />
                           <button 
                             type="button"
                             onClick={() => setFormData({...formData, imagens: formData.imagens.filter((i) => i !== img)})}
@@ -7404,7 +7407,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
                           exit={{ opacity: 0, scale: 0.8 }}
                           className="relative flex-shrink-0 w-24 aspect-square rounded-lg overflow-hidden border border-zinc-800 group cursor-grab active:cursor-grabbing"
                         >
-                          <img src={img} className="w-full h-full object-cover pointer-events-none" referrerPolicy="no-referrer" />
+                          <img loading="lazy" src={img} className="w-full h-full object-cover pointer-events-none" referrerPolicy="no-referrer" />
                           <button 
                             type="button"
                             onClick={() => setEditFormData({...editFormData, imagens: editFormData.imagens.filter((i) => i !== img)})}
@@ -7884,7 +7887,7 @@ const DetailModal = ({ item, onClose, theme, userRole, onEdit, onDelete }: {
                       className="w-full h-full flex-shrink-0 cursor-zoom-in"
                       onClick={() => setFullScreenImage(src)}
                     >
-                      <img src={src} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                      <img loading="lazy" src={src} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                     </div>
                   ))}
                 </div>
@@ -8167,7 +8170,7 @@ const getMotoColor = (colorName: string) => {
   return MOTO_COLORS[normalized] || 'transparent';
 };
 
-const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, setIsDeleteConfirmOpen, getStatusColor, readOnly = false }: any) => {
+const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, setIsDeleteConfirmOpen, getStatusColor, readOnly = false }: any) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imgError, setImgError] = useState(false);
   const [imgLoading, setImgLoading] = useState(true);
@@ -8285,6 +8288,7 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
               {images.map((src: string, idx: number) => (
                 <div key={idx} className="w-full h-full flex-shrink-0 relative">
                   <img 
+                    loading="lazy"
                     src={src} 
                     onLoad={() => idx === currentImageIndex && setImgLoading(false)}
                     onError={(e) => {
@@ -8424,7 +8428,7 @@ const MotoCard = ({ item, theme, onSelectItem, handleEditMoto, setItemToDelete, 
       </div>
     </div>
   );
-};
+});
 
 const LogoutModal = memo(({ isOpen, onClose, onLogout, theme }: { isOpen: boolean, onClose: () => void, onLogout: () => void, theme: 'light' | 'dark' }) => {
   useEffect(() => {
@@ -8964,7 +8968,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                 )}
               >
                 {profilePhoto ? (
-                  <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                  <img loading="lazy" src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <div className={cn(
                     "w-full h-full flex items-center justify-center font-black text-lg uppercase",

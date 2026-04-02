@@ -37,6 +37,7 @@ const CatalogItemCard = ({ item, theme, onClick }: { item: any, theme: string, o
     )}>
       {item.imagem ? (
         <img 
+          loading="lazy"
           src={item.imagem} 
           alt={item.nome} 
           className="w-full h-full object-cover"
@@ -86,6 +87,7 @@ const MotoItemCard = ({ item, theme, onClick }: { item: any, theme: string, onCl
     )}>
       {item.imagens?.[0] || item.imagem ? (
         <img 
+          loading="lazy"
           src={item.imagens?.[0] || item.imagem} 
           alt={item.nome} 
           className="w-full h-full object-cover"
