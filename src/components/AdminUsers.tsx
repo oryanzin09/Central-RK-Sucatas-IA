@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../utils/api';
-import { Loader2, Shield, ShieldAlert, Trash2, User, UserCog, Users, Plus, Edit, X, Save } from 'lucide-react';
+import { cn } from '../utils';
+import { Loader2, Shield, ShieldAlert, Trash2, User, UserCog, Users, Plus, Edit, X, Save, Eye, EyeOff } from 'lucide-react';
 
 interface UserData {
   id: number;
@@ -21,7 +23,7 @@ interface ClientData {
   last_login: string | null;
 }
 
-export default function AdminUsers({ userRole }: { userRole?: string }) {
+export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: { userRole?: string, onModalChange?: (isOpen: boolean) => void, theme?: 'light' | 'dark' }) {
   const [users, setUsers] = useState<UserData[]>([]);
   const [clients, setClients] = useState<ClientData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -30,13 +32,26 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
 
   // Modal State for Clients
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (onModalChange) {
+      onModalChange(isClientModalOpen);
+    }
+    return () => {
+      if (onModalChange) {
+        onModalChange(false);
+      }
+    };
+  }, [isClientModalOpen, onModalChange]);
+
   const [editingClient, setEditingClient] = useState<ClientData | null>(null);
   const [clientFormData, setClientFormData] = useState({
     phone: '',
     name: '',
     password: '',
     interests: [] as string[],
-    purchases: [] as {item: string, value: string}[]
+    purchases: [] as string[]
   });
 
   const [interestInput, setInterestInput] = useState('');
@@ -154,18 +169,31 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
   };
 
   const handleAddPurchase = () => {
-    if (purchaseItemInput.trim() && purchaseValueInput.trim()) {
+    if (purchaseItemInput.trim()) {
       setClientFormData(prev => ({ 
         ...prev, 
-        purchases: [...prev.purchases, { item: purchaseItemInput.trim(), value: purchaseValueInput.trim() }] 
+        purchases: [...prev.purchases, purchaseItemInput.trim()] 
       }));
       setPurchaseItemInput('');
-      setPurchaseValueInput('');
     }
   };
 
   const handleRemovePurchase = (index: number) => {
     setClientFormData(prev => ({ ...prev, purchases: prev.purchases.filter((_, i) => i !== index) }));
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 11) value = value.slice(0, 11);
+    
+    if (value.length > 2) {
+      value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
+    }
+    if (value.length > 10) {
+      value = `${value.slice(0, 10)}-${value.slice(10)}`;
+    }
+    
+    setClientFormData({ ...clientFormData, phone: value });
   };
 
   const handleSaveClient = async (e: React.FormEvent) => {
@@ -554,150 +582,259 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
         </div>
       </div>
 
-      {/* MODAL CLIENTE */}
-      {isClientModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#1a1d24] border border-gray-800 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl flex flex-col my-auto">
-            <div className="flex items-center justify-between p-4 border-b border-gray-800 shrink-0 sticky top-0 bg-[#1a1d24] z-10">
-              <h3 className="text-lg font-bold text-white">
-                {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
-              </h3>
-              <button 
-                onClick={() => setIsClientModalOpen(false)}
-                className="text-gray-400 hover:text-white transition-colors p-1"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSaveClient} className="p-4 space-y-4">
-              {/* ... campos do formulário ... */}
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Nome</label>
-                <input
-                  type="text"
-                  value={clientFormData.name}
-                  onChange={e => setClientFormData({...clientFormData, name: e.target.value})}
-                  className="w-full bg-[#0f1115] border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all"
-                  placeholder="Nome do cliente"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">Telefone (Login)*</label>
-                <input
-                  type="text"
-                  required
-                  value={clientFormData.phone}
-                  onChange={e => setClientFormData({...clientFormData, phone: e.target.value})}
-                  className="w-full bg-[#0f1115] border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all"
-                  placeholder="Ex: 11999999999"
-                />
+      {/* NOVO MODAL CLIENTE (ESTILO HUB) */}
+      <AnimatePresence>
+        {isClientModalOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsClientModalOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+            />
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={cn(
+                "fixed bottom-0 left-0 right-0 z-[105] rounded-t-[2.5rem] p-6 pt-0 pb-0 overflow-hidden",
+                "md:bottom-10 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-full md:max-w-xl md:rounded-[2.5rem] md:shadow-2xl",
+                theme === 'dark' ? "bg-zinc-900 border-t md:border border-zinc-800" : "bg-white border-t md:border border-zinc-200",
+                "shadow-2xl shadow-black/50"
+              )}
+            >
+              {/* Handle for mobile */}
+              <div className="w-full flex justify-center pt-2 pb-4">
+                <div className={cn(
+                  "w-12 h-1.5 rounded-full",
+                  theme === 'dark' ? "bg-zinc-800" : "bg-zinc-200"
+                )} />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">
-                  Senha {editingClient ? '(Deixe em branco para não alterar)' : '(Opcional)'}
-                </label>
-                <input
-                  type="password"
-                  value={clientFormData.password}
-                  onChange={e => setClientFormData({...clientFormData, password: e.target.value})}
-                  className="w-full bg-[#0f1115] border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all"
-                  placeholder="Senha de acesso"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Interesses (Etiquetas)</label>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={interestInput}
-                    onChange={e => setInterestInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddInterest())}
-                    className="flex-1 bg-[#0f1115] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                    placeholder="Ex: Peças para Honda CG 160"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddInterest}
-                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex flex-col">
+                  <h3 className={cn(
+                    "text-xl font-black tracking-tight",
+                    theme === 'dark' ? "text-white" : "text-zinc-900"
+                  )}>
+                    {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
+                  </h3>
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">
+                    {editingClient ? 'Atualize os dados do perfil' : 'Cadastre um novo perfil no sistema'}
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {clientFormData.interests.map((interest, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      {interest}
-                      <button type="button" onClick={() => handleRemoveInterest(idx)} className="hover:text-emerald-300">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Histórico de Compras</label>
-                <div className="flex gap-2 mb-2">
-                  <input
-                    type="text"
-                    value={purchaseItemInput}
-                    onChange={e => setPurchaseItemInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddPurchase())}
-                    className="flex-[2] bg-[#0f1115] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                    placeholder="Item (Ex: Pneu traseiro)"
-                  />
-                  <input
-                    type="text"
-                    value={purchaseValueInput}
-                    onChange={e => setPurchaseValueInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddPurchase())}
-                    className="flex-1 bg-[#0f1115] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
-                    placeholder="Valor (Ex: R$ 150)"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddPurchase}
-                    className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {clientFormData.purchases.map((purchase, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                      {purchase.item} - {purchase.value}
-                      <button type="button" onClick={() => handleRemovePurchase(idx)} className="hover:text-blue-300">
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-4 shrink-0 sticky bottom-0 bg-[#1a1d24] py-4 border-t border-gray-800">
-                <button
-                  type="button"
+                <button 
                   onClick={() => setIsClientModalOpen(false)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors font-medium"
+                  className={cn(
+                    "w-10 h-10 flex items-center justify-center rounded-full transition-all active:scale-90",
+                    theme === 'dark' ? "bg-zinc-800 text-zinc-400 hover:text-white" : "bg-zinc-100 text-zinc-500 hover:text-zinc-900"
+                  )}
                 >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading === -1}
-                  className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 transition-colors font-medium disabled:opacity-50"
-                >
-                  {actionLoading === -1 ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Salvar Cliente'}
+                  <X size={20} />
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+
+              {/* CONTEÚDO DO FORMULÁRIO */}
+              <div className="max-h-[60vh] overflow-y-auto -mx-6 px-6 no-scrollbar pb-32">
+                <form id="client-form" onSubmit={handleSaveClient} className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* NOME */}
+                    <div>
+                      <label className={cn(
+                        "block text-[10px] font-black uppercase tracking-[0.2em] mb-2",
+                        theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                      )}>Nome Completo</label>
+                      <input
+                        type="text"
+                        value={clientFormData.name}
+                        onChange={e => setClientFormData({...clientFormData, name: e.target.value})}
+                        className={cn(
+                          "w-full border rounded-2xl px-4 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
+                          theme === 'dark' 
+                            ? "bg-zinc-950 border-zinc-800 text-zinc-200" 
+                            : "bg-zinc-50 border-zinc-200 text-zinc-900"
+                        )}
+                        placeholder="Ex: João Silva"
+                      />
+                    </div>
+                    
+                    {/* TELEFONE / NUMERO */}
+                    <div>
+                      <label className={cn(
+                        "block text-[10px] font-black uppercase tracking-[0.2em] mb-2",
+                        theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                      )}>Número (Login)*</label>
+                      <input
+                        type="text"
+                        required
+                        value={clientFormData.phone}
+                        onChange={handlePhoneChange}
+                        className={cn(
+                          "w-full border rounded-2xl px-4 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50",
+                          theme === 'dark' 
+                            ? "bg-zinc-950 border-zinc-800 text-zinc-200" 
+                            : "bg-zinc-50 border-zinc-200 text-zinc-900"
+                        )}
+                        placeholder="(00) 00000-0000"
+                      />
+                    </div>
+                  </div>
+
+                  {/* SENHA COM TOGGLE */}
+                  <div className="pb-2">
+                    <label className={cn(
+                      "block text-[10px] font-black uppercase tracking-[0.2em] mb-2",
+                      theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                    )}>
+                      Senha
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={clientFormData.password}
+                        onChange={e => setClientFormData({...clientFormData, password: e.target.value})}
+                        className={cn(
+                          "w-full border rounded-2xl px-4 py-3.5 text-sm outline-none transition-all focus:ring-2 focus:ring-violet-500/50 pr-12",
+                          theme === 'dark' 
+                            ? "bg-zinc-950 border-zinc-800 text-zinc-200" 
+                            : "bg-zinc-50 border-zinc-200 text-zinc-900"
+                        )}
+                        placeholder="••••••••"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className={cn(
+                          "absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors",
+                          theme === 'dark' ? "text-zinc-500 hover:text-zinc-300" : "text-zinc-400 hover:text-zinc-600"
+                        )}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* INTERESSES (ETIQUETAS) */}
+                  <div className="pt-2">
+                    <label className={cn(
+                      "block text-[10px] font-black uppercase tracking-[0.2em] mb-2",
+                      theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                    )}>Interesses / Peças</label>
+                    <div className="flex gap-2 mb-3">
+                      <input
+                        type="text"
+                        value={interestInput}
+                        onChange={e => setInterestInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddInterest())}
+                        className={cn(
+                          "flex-1 border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500/50",
+                          theme === 'dark' 
+                            ? "bg-zinc-950 border-zinc-800 text-zinc-200" 
+                            : "bg-zinc-50 border-zinc-200 text-zinc-900"
+                        )}
+                        placeholder="Ex: Motor Titan 160"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddInterest}
+                        className={cn(
+                          "w-12 h-12 flex items-center justify-center rounded-2xl transition-all active:scale-95 shrink-0",
+                          theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600"
+                        )}
+                      >
+                        <Plus size={20} />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {clientFormData.interests.map((interest, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                          {interest}
+                          <button type="button" onClick={() => handleRemoveInterest(idx)} className="hover:text-violet-300">
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* COMPRAS (ETIQUETAS) */}
+                  <div className="pt-2">
+                    <label className={cn(
+                      "block text-[10px] font-black uppercase tracking-[0.2em] mb-2",
+                      theme === 'dark' ? "text-zinc-500" : "text-zinc-400"
+                    )}>Histórico de Compras</label>
+                    <div className="flex gap-2 mb-3">
+                      <input
+                        type="text"
+                        value={purchaseItemInput}
+                        onChange={e => setPurchaseItemInput(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleAddPurchase())}
+                        className={cn(
+                          "flex-1 border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500/50",
+                          theme === 'dark' 
+                            ? "bg-zinc-950 border-zinc-800 text-zinc-200" 
+                            : "bg-zinc-50 border-zinc-200 text-zinc-900"
+                        )}
+                        placeholder="Ex: Pneu R$150"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddPurchase}
+                        className={cn(
+                          "w-12 h-12 flex items-center justify-center rounded-2xl transition-all active:scale-95 shrink-0",
+                          theme === 'dark' ? "bg-zinc-800 text-zinc-300" : "bg-zinc-100 text-zinc-600"
+                        )}
+                      >
+                        <Plus size={20} />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {clientFormData.purchases.map((purchase, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {purchase}
+                          <button type="button" onClick={() => handleRemovePurchase(idx)} className="hover:text-emerald-300">
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              {/* RODAPÉ FIXO */}
+              <div className={cn(
+                "absolute bottom-0 left-0 right-0 p-6 pt-4 pb-6 md:pb-8 border-t backdrop-blur-md z-10",
+                theme === 'dark' ? "bg-zinc-900/90 border-zinc-800" : "bg-white/90 border-zinc-200"
+              )}>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsClientModalOpen(false)}
+                    className={cn(
+                      "flex-1 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all border",
+                      theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800" : "bg-white border-zinc-200 text-zinc-500 hover:bg-zinc-50"
+                    )}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    form="client-form"
+                    disabled={actionLoading === -1}
+                    className="flex-[1.5] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2"
+                  >
+                    {actionLoading === -1 ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingClient ? 'Salvar Alterações' : 'Salvar Cliente')}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }

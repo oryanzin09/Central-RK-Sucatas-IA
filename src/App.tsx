@@ -67,8 +67,7 @@ import {
   Copy,
   ArrowDownAZ,
   LogOut,
-  UserCog,
-  Activity
+  UserCog
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -8495,7 +8494,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const [userRole, setUserRole] = useState<string>('client');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users'>('motos');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>('motos');
+  const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
 
   useEffect(() => {
     const role = localStorage.getItem('user_role') || 'client';
@@ -8503,7 +8503,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     
     // Roteamento Client-Side: Sincronizar aba com a URL
     const path = window.location.pathname.replace('/', '');
-    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users'];
+    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
     
     if (path && validTabs.includes(path)) {
       setActiveTab(path as any);
@@ -8582,15 +8582,21 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [showAllMlAds, setShowAllMlAds] = useState(false);
 
   useEffect(() => {
-    if (showAllMlAds || showPaymentFilter || isBudgetModalOpen || isLogoutModalOpen || selectedDetailItem) {
+    const shouldLock = showAllMlAds || showPaymentFilter || isBudgetModalOpen || isLogoutModalOpen || selectedDetailItem || isAnyModalOpen;
+    
+    if (shouldLock) {
       document.body.style.overflow = 'hidden';
+      if (contentRef.current) contentRef.current.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
+      if (contentRef.current) contentRef.current.style.overflow = 'auto';
     }
+    
     return () => {
       document.body.style.overflow = 'unset';
+      if (contentRef.current) contentRef.current.style.overflow = 'auto';
     };
-  }, [showAllMlAds, showPaymentFilter, isBudgetModalOpen, isLogoutModalOpen, selectedDetailItem]);
+  }, [showAllMlAds, showPaymentFilter, isBudgetModalOpen, isLogoutModalOpen, selectedDetailItem, isAnyModalOpen]);
   const [isMlListingsLoading, setIsMlListingsLoading] = useState(false);
   
   // Estados para filtros, ordenação e paginação
@@ -9069,15 +9075,15 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
         {/* Content Area */}
         <div ref={contentRef} className="p-4 md:p-6 pb-32 md:pb-6 overflow-y-auto flex-1">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="transform-gpu"
-            >
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeTab}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="w-full h-full"
+                >
               {activeTab === 'dashboard' ? (
                 <DashboardView 
                   theme={theme} 
@@ -9134,7 +9140,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
               ) : activeTab === 'mercadolivre' ? (
                 <MercadoLivre theme={theme} />
               ) : activeTab === 'users' ? (
-                <AdminUsers userRole={userRole} />
+                <AdminUsers userRole={userRole} onModalChange={setIsAnyModalOpen} theme={theme} />
               ) : activeTab === 'audit' ? (
                 <AuditLogs />
               ) : activeTab === 'atendimento' ? (
@@ -9166,8 +9172,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       )}
       
       {/* Grupo de ações flutuantes - Only for Admin/Gerente/Estoque */}
-      {userRole !== 'client' && !isMoreMenuOpen && (
-        <div className="fixed bottom-[calc(5.5rem+var(--safe-bottom))] md:bottom-6 right-6 z-[60] flex flex-col gap-3">
+      {userRole !== 'client' && !isMoreMenuOpen && !isAnyModalOpen && (
+        <div className="fixed bottom-24 md:bottom-8 right-6 z-[60] flex flex-col gap-3">
           <GlobalSearch 
             theme={theme} 
             onSelectItem={setSelectedDetailItem} 
