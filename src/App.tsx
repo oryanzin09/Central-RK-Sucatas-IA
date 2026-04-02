@@ -321,8 +321,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         try {
           const data = await parseJson(results[0].value);
           if (data.success) {
-            setInventory(data.data);
-            try { localStorage.setItem('rk_inventory', JSON.stringify(data.data)); } catch (e) { console.warn('Cache de estoque cheio'); }
+            setInventory(prev => {
+              const newDataStr = JSON.stringify(data.data);
+              const prevDataStr = JSON.stringify(prev);
+              if (newDataStr !== prevDataStr) {
+                try { localStorage.setItem('rk_inventory', newDataStr); } catch (e) { console.warn('Cache de estoque cheio'); }
+                return data.data;
+              }
+              return prev;
+            });
           }
         } catch (e) {
           console.error('❌ Erro ao processar estoque:', e);
@@ -336,8 +343,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         try {
           const data = await parseJson(results[1].value);
           if (data.success) {
-            setSales(data.data);
-            try { localStorage.setItem('rk_sales', JSON.stringify(data.data)); } catch (e) { console.warn('Cache de vendas cheio'); }
+            setSales(prev => {
+              const newDataStr = JSON.stringify(data.data);
+              const prevDataStr = JSON.stringify(prev);
+              if (newDataStr !== prevDataStr) {
+                try { localStorage.setItem('rk_sales', newDataStr); } catch (e) { console.warn('Cache de vendas cheio'); }
+                return data.data;
+              }
+              return prev;
+            });
           }
         } catch (e) {
           console.error('❌ Erro ao processar vendas:', e);
@@ -355,8 +369,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             // não sobrescrevemos o estado das motos para evitar que itens novos sumam (eventual consistency do Notion)
             const isRecentMutation = (Date.now() - lastMutationRef.current) < 15000;
             if (!silent || !isRecentMutation || motos.length === 0) {
-              setMotos(data.data);
-              try { localStorage.setItem('rk_motos', JSON.stringify(data.data)); } catch (e) { console.warn('Cache de motos cheio'); }
+              setMotos(prev => {
+                const newDataStr = JSON.stringify(data.data);
+                const prevDataStr = JSON.stringify(prev);
+                if (newDataStr !== prevDataStr) {
+                  try { localStorage.setItem('rk_motos', newDataStr); } catch (e) { console.warn('Cache de motos cheio'); }
+                  return data.data;
+                }
+                return prev;
+              });
             } else {
               console.log('⏳ Pulando atualização de motos devido a mutação recente');
             }
