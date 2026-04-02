@@ -556,53 +556,53 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
 
       {/* MODAL CLIENTE */}
       {isClientModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-[#1a1d24] border border-gray-800 rounded-xl w-full max-w-md overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-gray-800">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#1a1d24] border border-gray-800 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-gray-800 shrink-0">
               <h3 className="text-lg font-bold text-white">
                 {editingClient ? 'Editar Cliente' : 'Novo Cliente'}
               </h3>
               <button 
                 onClick={() => setIsClientModalOpen(false)}
-                className="text-gray-400 hover:text-white transition-colors"
+                className="text-gray-400 hover:text-white transition-colors p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleSaveClient} className="p-6 space-y-4">
+            <form onSubmit={handleSaveClient} className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Nome</label>
+                <label className="block text-sm font-medium text-gray-400 mb-1.5">Nome</label>
                 <input
                   type="text"
                   value={clientFormData.name}
                   onChange={e => setClientFormData({...clientFormData, name: e.target.value})}
-                  className="w-full bg-[#0f1115] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#0f1115] border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all"
                   placeholder="Nome do cliente"
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">Telefone (Login)*</label>
+                <label className="block text-sm font-medium text-gray-400 mb-1.5">Telefone (Login)*</label>
                 <input
                   type="text"
                   required
                   value={clientFormData.phone}
                   onChange={e => setClientFormData({...clientFormData, phone: e.target.value})}
-                  className="w-full bg-[#0f1115] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#0f1115] border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all"
                   placeholder="Ex: 11999999999"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1">
+                <label className="block text-sm font-medium text-gray-400 mb-1.5">
                   Senha {editingClient ? '(Deixe em branco para não alterar)' : '(Opcional)'}
                 </label>
                 <input
                   type="password"
                   value={clientFormData.password}
                   onChange={e => setClientFormData({...clientFormData, password: e.target.value})}
-                  className="w-full bg-[#0f1115] border border-gray-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#0f1115] border border-gray-800 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/50 transition-all"
                   placeholder="Senha de acesso"
                 />
               </div>
@@ -677,25 +677,20 @@ export default function AdminUsers({ userRole }: { userRole?: string }) {
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-end gap-3">
+              <div className="flex gap-3 pt-4 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsClientModalOpen(false)}
-                  className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors font-medium"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={actionLoading === -1}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors disabled:opacity-50"
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500 transition-colors font-medium disabled:opacity-50"
                 >
-                  {actionLoading === -1 ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  Salvar Cliente
+                  {actionLoading === -1 ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Salvar Cliente'}
                 </button>
               </div>
             </form>
