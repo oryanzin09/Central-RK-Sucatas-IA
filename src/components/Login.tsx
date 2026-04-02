@@ -169,30 +169,32 @@ export const Login = ({ onLogin }: LoginProps) => {
 
   return (
     <div className="min-h-screen bg-[#09090b] font-sans relative overflow-x-hidden no-scrollbar">
-      {/* Efeito Aura de Fundo Dinâmico */}
-      <motion.div 
-        animate={{ 
-          scale: [1, 1.2, 1],
-          opacity: [0.1, 0.15, 0.1],
-          x: [0, 50, 0],
-          y: [0, -30, 0]
-        }}
-        transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-violet-600/20 blur-[120px] rounded-full pointer-events-none" 
-      />
-      <motion.div 
-        animate={{ 
-          scale: [1, 1.3, 1],
-          opacity: [0.1, 0.2, 0.1],
-          x: [0, -60, 0],
-          y: [0, 40, 0]
-        }}
-        transition={{ duration: 20, repeat: Infinity, ease: "easeInOut", delay: 2 }}
-        className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-blue-600/20 blur-[120px] rounded-full pointer-events-none" 
-      />
+      {/* Efeito Aura de Fundo Dinâmico (Apenas Desktop) */}
+      <div className="hidden md:block">
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.2, 1],
+            opacity: [0.1, 0.15, 0.1],
+            x: [0, 50, 0],
+            y: [0, -30, 0]
+          }}
+          transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-violet-600/20 blur-[120px] rounded-full pointer-events-none" 
+        />
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.3, 1],
+            opacity: [0.1, 0.2, 0.1],
+            x: [0, -60, 0],
+            y: [0, 40, 0]
+          }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+          className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-blue-600/20 blur-[120px] rounded-full pointer-events-none" 
+        />
+      </div>
       
-      {/* Overlay de Ruído Sutil */}
-      <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
+      {/* Overlay de Ruído Sutil (Apenas Desktop) */}
+      <div className="hidden md:block absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
 
       <div className="h-[100dvh] md:min-h-screen flex items-center justify-center p-0 md:p-4 relative z-10 no-scrollbar overflow-hidden">
         <motion.div 
@@ -223,20 +225,18 @@ export const Login = ({ onLogin }: LoginProps) => {
               <div className="group">
                 <div className="text-[7px] md:text-[9px] font-bold text-zinc-600 uppercase tracking-[0.2em] mb-1.5 md:mb-3 text-center">Resumo do Estoque</div>
                 <div className="grid grid-cols-2 gap-2 md:gap-3">
-                  <motion.div 
-                    whileHover={{ y: -2, borderColor: 'rgba(139, 92, 246, 0.4)' }}
-                    className="bg-zinc-900/40 backdrop-blur-xl p-2.5 md:p-4 rounded-lg md:rounded-xl border border-zinc-800/50 transition-all shadow-2xl shadow-black/20"
+                  <div 
+                    className="bg-zinc-900/40 backdrop-blur-xl p-2.5 md:p-4 rounded-lg md:rounded-xl border border-zinc-800/50 transition-all shadow-2xl shadow-black/20 hover:-translate-y-0.5 hover:border-violet-500/40"
                   >
                     <div className="text-lg md:text-3xl font-black text-white mb-0.5 tracking-tighter">{stats.totalPecas}</div>
                     <div className="text-[6px] md:text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Peças em Linha</div>
-                  </motion.div>
-                  <motion.div 
-                    whileHover={{ y: -2, borderColor: 'rgba(139, 92, 246, 0.4)' }}
-                    className="bg-zinc-900/40 backdrop-blur-xl p-2.5 md:p-4 rounded-lg md:rounded-xl border border-zinc-800/50 transition-all shadow-2xl shadow-black/20"
+                  </div>
+                  <div 
+                    className="bg-zinc-900/40 backdrop-blur-xl p-2.5 md:p-4 rounded-lg md:rounded-xl border border-zinc-800/50 transition-all shadow-2xl shadow-black/20 hover:-translate-y-0.5 hover:border-violet-500/40"
                   >
                     <div className="text-lg md:text-3xl font-black text-white mb-0.5 tracking-tighter">{stats.totalMotos}</div>
                     <div className="text-[6px] md:text-[8px] font-bold text-zinc-500 uppercase tracking-widest">Motos no Pátio</div>
-                  </motion.div>
+                  </div>
                 </div>
               </div>
 
@@ -266,12 +266,9 @@ export const Login = ({ onLogin }: LoginProps) => {
                   className="w-full bg-gradient-to-r from-violet-600 to-blue-600 text-white py-3.5 rounded-xl font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 group shadow-[0_10px_40px_rgba(139,92,246,0.3)] active:shadow-none text-[10px]"
                 >
                   Ver Catálogo
-                  <motion.div
-                    animate={{ y: [0, 3, 0] }}
-                    transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-                  >
+                  <div className="group-hover:-translate-y-1 transition-transform duration-300">
                     <Package size={16} className="text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-                  </motion.div>
+                  </div>
                 </motion.button>
               </div>
 
