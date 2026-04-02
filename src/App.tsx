@@ -101,6 +101,19 @@ import { Capacitor } from '@capacitor/core';
 const modelosMotos = MOTOS_OFICIAIS;
 const modelosUnicos = MOTOS_OFICIAIS;
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
+}
+
 const parseJson = async (res: Response) => {
   const text = await res.text();
   try {
@@ -2721,6 +2734,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
   
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [selectedCategory, setSelectedCategory] = useState('Todas');
   const [selectedMoto, setSelectedMoto] = useState('Todas');
   const [onlyWithStock, setOnlyWithStock] = useState(false);
@@ -2728,7 +2742,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(window.innerWidth < 768 ? 10 : 25);
 
   // Sort states
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' | null }>({
@@ -2782,7 +2796,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
 
   // Filtering and Sorting logic
   const filteredAndSortedItems = useMemo(() => {
-    const searchTerms = searchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
+    const searchTerms = debouncedSearchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
     
     let result = [...items].filter(item => {
       const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => 
@@ -2825,7 +2839,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
     });
 
     return result;
-  }, [items, searchTerm, selectedCategory, selectedMoto, onlyWithStock, sortConfig, showWithPhotoFirst]);
+  }, [items, debouncedSearchTerm, selectedCategory, selectedMoto, onlyWithStock, sortConfig, showWithPhotoFirst]);
 
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -4362,9 +4376,10 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(window.innerWidth < 768 ? 10 : 25);
   
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -4613,8 +4628,8 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
     let result = [...items];
 
     // Filtro de busca
-    if (searchTerm) {
-      const searchTerms = searchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
+    if (debouncedSearchTerm) {
+      const searchTerms = debouncedSearchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
       result = result.filter(item => 
         searchTerms.every(term => 
           (item.nome?.toLowerCase() || '').includes(term) ||
@@ -4698,7 +4713,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
     }
 
     return result;
-  }, [items, searchTerm, quickFilter, startDate, endDate, paymentType]);
+  }, [items, debouncedSearchTerm, quickFilter, startDate, endDate, paymentType]);
 
   const totalValue = useMemo(() => {
     return filteredItems.reduce((acc, item) => acc + (item.valor || 0), 0);
@@ -5809,8 +5824,9 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(window.innerWidth < 768 ? 10 : 25);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -6404,8 +6420,8 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
   const filteredItems = useMemo(() => {
     let result = [...items];
 
-    if (searchTerm) {
-      const searchTerms = searchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
+    if (debouncedSearchTerm) {
+      const searchTerms = debouncedSearchTerm.toLowerCase().split(' ').filter(t => t.length > 0);
       result = result.filter(item => 
         searchTerms.every(term => 
           (item.nome?.toLowerCase() || '').includes(term) ||
@@ -6493,7 +6509,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
     });
 
     return result;
-  }, [items, searchTerm, brandFilter, statusFilter, cilindradaFilter, anoMinFilter, valorMinFilter, valorMaxFilter, sortOrder, readOnly]);
+  }, [items, debouncedSearchTerm, brandFilter, statusFilter, cilindradaFilter, anoMinFilter, valorMinFilter, valorMaxFilter, sortOrder, readOnly]);
 
   const paginatedItems = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;

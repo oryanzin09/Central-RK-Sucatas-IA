@@ -76,3 +76,49 @@ input[type=number] {
   100% { transform: translateX(-50%); }
 }
 
+/* Otimizações para dispositivos móveis (Desativar efeitos pesados e usar gradientes) */
+@media (max-width: 768px) {
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl,
+  .backdrop-blur-2xl,
+  .backdrop-blur-\[2px\] {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  
+  /* Gradientes elegantes para tema escuro */
+  .dark .bg-zinc-900\/40, 
+  .dark .bg-zinc-900\/50, 
+  .dark .bg-zinc-900\/80, 
+  .dark .bg-zinc-900\/90,
+  .dark .bg-zinc-950\/50,
+  .bg-zinc-900\/40, 
+  .bg-zinc-900\/50, 
+  .bg-zinc-900\/80, 
+  .bg-zinc-900\/90,
+  .bg-zinc-950\/50 {
+    background: linear-gradient(135deg, #18181b 0%, #09090b 100%) !important;
+  }
+
+  /* Gradientes elegantes para tema claro */
+  .bg-white\/50, 
+  .bg-white\/80, 
+  .bg-white\/90 {
+    background: linear-gradient(135deg, #ffffff 0%, #f4f4f5 100%) !important;
+  }
+
+  /* Overlay de modais mais sólido */
+  .bg-black\/60, .bg-black\/80 {
+    background: rgba(0,0,0,0.9) !important;
+  }
+  
+  /* Reduzir sombras pesadas */
+  .shadow-2xl, 
+  .shadow-\[0_8px_30px_rgb\(0\,0\,0\,0\.2\)\], 
+  .shadow-\[0_0_50px_-12px_rgba\(0\,0\,0\,0\.5\)\] {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3) !important;
+  }
+}
+
