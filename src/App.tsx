@@ -8581,28 +8581,38 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const [userRole, setUserRole] = useState<string>(localStorage.getItem('user_role') || 'client');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>(() => {
+    const path = window.location.pathname.replace('/', '');
+    const role = localStorage.getItem('user_role') || 'client';
+    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
+    
+    if (role === 'client') {
+      return 'motos';
+    }
+    
+    if (validTabs.includes(path)) {
+      return path as any;
+    }
+    return 'dashboard';
+  });
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
 
   useEffect(() => {
-    // Roteamento Client-Side: Sincronizar aba com a URL
+    // Roteamento Client-Side: Sincronizar URL e restringir acesso
     const path = window.location.pathname.replace('/', '');
-    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
-    const adminTabs = ['dashboard', 'users', 'audit'];
-    
     const role = localStorage.getItem('user_role') || 'client';
+    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
     
-    if (path && validTabs.includes(path)) {
-      if (adminTabs.includes(path) && role !== 'admin') {
-        setActiveTab('motos');
+    if (role === 'client') {
+      if (path !== 'motos') {
         window.history.replaceState(null, '', '/motos');
-      } else {
-        setActiveTab(path as any);
+        setActiveTab('motos');
       }
-    } else {
-      const defaultTab = role === 'admin' ? 'dashboard' : 'motos';
-      setActiveTab(defaultTab);
-      window.history.replaceState(null, '', `/${defaultTab}`);
+    } else if (role === 'admin') {
+      if (!validTabs.includes(path)) {
+        window.history.replaceState(null, '', '/dashboard');
+        setActiveTab('dashboard');
+      }
     }
   }, []);
 
