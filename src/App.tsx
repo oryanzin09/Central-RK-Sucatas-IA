@@ -127,12 +127,20 @@ const parseJson = async (res: Response) => {
 };
 
 const fetchWithRetry = async (url: string, init?: RequestInit, retries = 8) => {
-  const token = localStorage.getItem('auth_token');
   const isInternal = url.startsWith('/') || url.startsWith(window.location.origin);
+  let firebaseToken = null;
+  
+  if (isInternal && auth.currentUser) {
+    try {
+      firebaseToken = await auth.currentUser.getIdToken();
+    } catch (e) {
+      console.error("Failed to get Firebase token for fetchWithRetry", e);
+    }
+  }
   
   const headers: HeadersInit = {
     ...(init?.headers || {}),
-    ...(token && isInternal ? { 'Authorization': `Bearer ${token}` } : {})
+    ...(firebaseToken ? { 'Authorization': `Bearer ${firebaseToken}` } : {})
   };
   
   console.log(`🔍 Fetching ${url} with method ${init?.method || 'GET'} and headers:`, headers);
@@ -158,16 +166,19 @@ const fetchWithRetry = async (url: string, init?: RequestInit, retries = 8) => {
         throw new Error('Servidor ainda iniciando (HTML recebido)');
       }
 
-      if (res.status === 401) {
-        localStorage.removeItem('auth_token');
-        window.location.href = '/login';
-        throw new Error('Sessão expirada. Faça login novamente.');
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        return res; // Return directly, don't retry client errors
       }
 
       if (!res.ok) throw new Error(`Status ${res.status}`);
       
       return res;
     } catch (err) {
+      // Don't retry if it's a known non-retryable error
+      if (err instanceof Error && err.message.includes('Sessão expirada')) {
+        throw err;
+      }
+      
       if (i === retries) {
         console.error(`❌ Falha definitiva ao buscar ${url}:`, err);
         throw err;
@@ -8538,7 +8549,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const [userRole, setUserRole] = useState<string>('client');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>('motos');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>('dashboard');
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
 
   useEffect(() => {
@@ -8755,9 +8766,9 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const handleProfilePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const phone = localStorage.getItem('user_phone');
-    const token = localStorage.getItem('auth_token');
+    const firebaseToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
 
-    if (file && phone && token) {
+    if (file && phone && firebaseToken) {
       const formData = new FormData();
       formData.append('photo', file);
       formData.append('phone', phone);
@@ -8766,7 +8777,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
         const res = await fetch('/api/upload/profile', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${firebaseToken}`
           },
           body: formData
         });

@@ -1,3 +1,5 @@
+import { auth } from '../firebase';
+
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function apiRequest(endpoint: string, options: RequestInit = {}) {
@@ -5,6 +7,16 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
+  
+  // Attach Firebase ID token if user is logged in
+  if (auth.currentUser) {
+    try {
+      const token = await auth.currentUser.getIdToken();
+      headers['Authorization'] = `Bearer ${token}`;
+    } catch (e) {
+      console.error("Failed to get Firebase token", e);
+    }
+  }
   
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
@@ -14,12 +26,11 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
   
   // Se não autorizado, redirecionar para login (exceto se for a própria rota de login)
   const isLoginRoute = endpoint.includes('/login');
-  console.log(`📡 API Response Status: ${response.status}, Endpoint: ${endpoint}, isLoginRoute: ${isLoginRoute}`);
   
   if (response.status === 401 && !isLoginRoute) {
-    localStorage.removeItem('auth_token');
-    window.location.href = '/login';
-    throw new Error('Sessão expirada. Faça login novamente.');
+    // We don't want to aggressively redirect here if we're using Firebase Auth, 
+    // because Firebase manages the session. Just throw an error.
+    throw new Error('Sessão expirada ou não autorizada. Faça login novamente.');
   }
   
   return response.json();
