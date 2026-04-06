@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { api } from './utils/api';
 import QuestionsDashboard from './components/QuestionsDashboard';
 import AdminUsers from './components/AdminUsers';
@@ -7716,8 +7717,39 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        try {
+          // Sync user to Firestore
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userRef);
+          
+          let role = 'client';
+          
+          if (!userSnap.exists()) {
+            if (user.email === 'oryanzin09@gmail.com') {
+              role = 'admin';
+            }
+            await setDoc(userRef, {
+              name: user.displayName || 'Usuário',
+              email: user.email,
+              role: role,
+              createdAt: new Date().toISOString(),
+              lastLogin: new Date().toISOString()
+            });
+          } else {
+            role = userSnap.data().role || 'client';
+            await setDoc(userRef, { lastLogin: new Date().toISOString() }, { merge: true });
+          }
+
+          const token = await user.getIdToken();
+          localStorage.setItem('auth_token', token);
+          localStorage.setItem('user_role', role);
+          localStorage.setItem('user_name', user.displayName || 'Usuário');
+        } catch (error) {
+          console.error("Error syncing user to Firestore:", error);
+        }
+
         setIsAuthenticated(true);
         if (window.location.pathname === '/login') {
           window.history.replaceState(null, '', '/');

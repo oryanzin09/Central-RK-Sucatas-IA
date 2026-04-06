@@ -5,7 +5,7 @@ import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
 import { CATEGORIAS_OFICIAIS } from '../constants/lists';
 import { auth, googleProvider, db } from '../firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface LoginProps {
@@ -62,45 +62,43 @@ export const Login = ({ onLogin }: LoginProps) => {
       .catch(console.error);
   }, []);
 
+  useEffect(() => {
+    // Check for redirect result when component mounts
+    const checkRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result && result.user) {
+          setLoading(true);
+          // App.tsx onAuthStateChanged will handle the rest
+        }
+      } catch (err: any) {
+        console.error("Redirect login error:", err);
+        setError(err.message || 'Erro ao fazer login com o Google');
+        setLoading(false);
+      }
+    };
+    
+    checkRedirectResult();
+  }, []);
+
   const handleGoogleLogin = async () => {
     setError(null);
     setLoading(true);
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const user = result.user;
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       
-      // Check if user exists in Firestore
-      const userRef = doc(db, 'users', user.uid);
-      const userSnap = await getDoc(userRef);
-      
-      let role = 'client';
-      
-      if (!userSnap.exists()) {
-        // If it's the master admin
-        if (user.email === 'oryanzin09@gmail.com') {
-          role = 'admin';
-        }
-        await setDoc(userRef, {
-          name: user.displayName || 'Usuário',
-          email: user.email,
-          role: role,
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString()
-        });
+      if (isMobile) {
+        // Use redirect for mobile to avoid popup blockers and blank screens
+        await signInWithRedirect(auth, googleProvider);
+        // The page will redirect, so we don't do anything else here
       } else {
-        role = userSnap.data().role || 'client';
-        await setDoc(userRef, { lastLogin: new Date().toISOString() }, { merge: true });
+        // Use popup for desktop
+        await signInWithPopup(auth, googleProvider);
+        // App.tsx onAuthStateChanged will handle the rest
       }
-
-      const token = await user.getIdToken();
-      localStorage.setItem('auth_token', token);
-      localStorage.setItem('user_role', role);
-      localStorage.setItem('user_name', user.displayName || 'Usuário');
-      onLogin();
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Erro ao fazer login com o Google');
-    } finally {
       setLoading(false);
     }
   };

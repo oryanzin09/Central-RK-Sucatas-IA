@@ -13,6 +13,9 @@ interface UserData {
   role: string;
   createdAt: string;
   lastLogin: string | null;
+  phone?: string;
+  interests?: string | null;
+  purchases?: string | null;
 }
 
 interface ClientData {
@@ -72,11 +75,26 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
       const usersSnap = await getDocs(collection(db, 'users'));
       const clientsSnap = await getDocs(collection(db, 'clients'));
 
-      const usersData = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
+      const allUsers = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData & ClientData));
       const clientsData = clientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientData));
 
-      setUsers(usersData);
-      setClients(clientsData);
+      // Staff are users with roles other than 'client'
+      const staffUsers = allUsers.filter(u => u.role !== 'client');
+      
+      // Clients are users with role 'client' PLUS the dedicated clients collection
+      const authClients = allUsers.filter(u => u.role === 'client').map(u => ({
+        ...u,
+        phone: u.phone || 'Sem telefone',
+        interests: u.interests || null,
+        purchases: u.purchases || null
+      }));
+      
+      // Combine and remove duplicates by ID just in case
+      const combinedClients = [...authClients, ...clientsData];
+      const uniqueClients = Array.from(new Map(combinedClients.map(c => [c.id, c])).values());
+
+      setUsers(staffUsers);
+      setClients(uniqueClients);
     } catch (err: any) {
       setError(err.message || 'Erro de conexão ao buscar dados');
     } finally {
