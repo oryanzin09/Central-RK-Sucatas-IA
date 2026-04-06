@@ -132,6 +132,7 @@ const fetchWithRetry = async (url: string, init?: RequestInit, retries = 8) => {
   let firebaseToken = null;
   
   if (isInternal && auth.currentUser) {
+    console.log('🔍 auth.currentUser (fetchWithRetry):', auth.currentUser ? 'Logado' : 'Não logado');
     try {
       firebaseToken = await auth.currentUser.getIdToken();
     } catch (e) {
@@ -5863,6 +5864,7 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(window.innerWidth < 768 ? 10 : 25);
   
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -5872,6 +5874,96 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [editingMoto, setEditingMoto] = useState<any | null>(null);
+
+  // Filter Modal Component
+  const FilterModal = () => (
+    <AnimatePresence>
+      {isFilterModalOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsFilterModalOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100]"
+          />
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className={cn(
+              "fixed bottom-0 left-0 right-0 z-[101] rounded-t-3xl p-6 pb-10 border-t",
+              theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-white border-zinc-100"
+            )}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className={cn("text-lg font-black", theme === 'dark' ? "text-white" : "text-zinc-900")}>Filtros e Ordenação</h3>
+              <button onClick={() => setIsFilterModalOpen(false)} className={cn("p-2 rounded-full", theme === 'dark' ? "hover:bg-zinc-800" : "hover:bg-zinc-100")}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Marca</label>
+                <CustomDropdown
+                  theme={theme}
+                  icon={<Filter size={14} />}
+                  value={brandFilter}
+                  className="w-full"
+                  onChange={(val) => {
+                    setBrandFilter(val);
+                    setCurrentPage(1);
+                  }}
+                  options={brands.map(brand => ({ value: brand, label: brand }))}
+                />
+              </div>
+
+              {!readOnly && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Status</label>
+                  <CustomDropdown
+                    theme={theme}
+                    icon={<Layers size={14} />}
+                    value={statusFilter}
+                    className="w-full"
+                    onChange={(val) => {
+                      setStatusFilter(val);
+                      setCurrentPage(1);
+                    }}
+                    options={statuses.map(s => ({ value: s, label: s }))}
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">Ordenação</label>
+                <CustomDropdown
+                  theme={theme}
+                  icon={<ArrowDownAZ size={14} />}
+                  value={sortOrder}
+                  className="w-full"
+                  onChange={(val) => setSortOrder(val)}
+                  options={[
+                    { value: "Data de Criação", label: "Mais recente" },
+                    { value: "Data de Criação Antigo", label: "Mais antigo" },
+                    { value: "Nome", label: "Nome" },
+                    { value: "Mais baratas", label: "Mais baratas" },
+                    { value: "Mais caras", label: "Mais caras" },
+                    { value: "Baixa cilindrada", label: "Baixa cilindrada" },
+                    { value: "Alta cilindrada", label: "Alta cilindrada" },
+                    { value: "Ano", label: "Ano" },
+                    ...(readOnly ? [] : [{ value: "Lote", label: "Lote" }]),
+                  ]}
+                />
+              </div>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
 
   useEffect(() => {
     if (isModalOpen || isEditModalOpen || isDeleteConfirmOpen || isBulkDeleteConfirmOpen) {
@@ -6514,8 +6606,17 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
       // 3. Ordenação selecionada
       let comparison = 0;
       switch (sortOrder) {
-        case 'Cilindrada':
+        case 'Mais baratas':
+          comparison = (Number(a.valor) || 0) - (Number(b.valor) || 0);
+          break;
+        case 'Mais caras':
+          comparison = (Number(b.valor) || 0) - (Number(a.valor) || 0);
+          break;
+        case 'Baixa cilindrada':
           comparison = (Number(a.cilindrada) || 0) - (Number(b.cilindrada) || 0);
+          break;
+        case 'Alta cilindrada':
+          comparison = (Number(b.cilindrada) || 0) - (Number(a.cilindrada) || 0);
           break;
         case 'Nome':
           comparison = (a.nome || '').localeCompare(b.nome || '');
@@ -6528,9 +6629,6 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
           break;
         case 'Ano':
           comparison = (Number(a.ano) || 0) - (Number(b.ano) || 0);
-          break;
-        case 'Valor':
-          comparison = (a.valor || 0) - (b.valor || 0);
           break;
         case 'Lote':
           comparison = (a.lote || '').localeCompare(b.lote || '');
@@ -6597,117 +6695,94 @@ const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, 
           />
         </div>
 
-        {/* Filtros e Ações Compactos */}
-        <div className="flex flex-col gap-3 overflow-visible">
-          <div className="flex items-center gap-3 flex-wrap md:flex-nowrap overflow-visible">
-            <div className="flex-1 md:flex-none md:min-w-[160px] flex flex-col gap-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 ml-1">Marca</label>
-              <CustomDropdown
-                theme={theme}
-                icon={<Filter size={14} />}
-                value={brandFilter}
-                className="w-full"
-                onChange={(val) => {
-                  setBrandFilter(val);
-                  setCurrentPage(1);
-                }}
-                options={brands.map(brand => ({ value: brand, label: brand }))}
-              />
-            </div>
-
+        {/* Ações (Refresh, Nova Moto) */}
+        <div className="flex items-center justify-end mt-1">
+          <div className="flex items-center gap-2">
             {!readOnly && (
-              <div className="flex-1 md:flex-none md:min-w-[160px] flex flex-col gap-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 ml-1">Status</label>
-                <CustomDropdown
-                  theme={theme}
-                  icon={<Layers size={14} />}
-                  value={statusFilter}
-                  className="w-full"
-                  onChange={(val) => {
-                    setStatusFilter(val);
-                    setCurrentPage(1);
-                  }}
-                  options={statuses.map(s => ({ value: s, label: s }))}
-                />
-              </div>
-            )}
-
-            <div className="flex-1 md:flex-none md:min-w-[160px] flex flex-col gap-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 ml-1">Ordenação</label>
-              <CustomDropdown
-                theme={theme}
-                icon={<ArrowDownAZ size={14} />}
-                value={sortOrder}
-                className="w-full"
-                onChange={(val) => setSortOrder(val)}
-                options={[
-                  { value: "Data de Criação", label: "Mais recente" },
-                  { value: "Data de Criação Antigo", label: "Mais antigo" },
-                  { value: "Nome", label: "Nome" },
-                  { value: "Cilindrada", label: "Cilindrada" },
-                  { value: "Ano", label: "Ano" },
-                  { value: "Valor", label: "Valor" },
-                  ...(readOnly ? [] : [{ value: "Lote", label: "Lote" }]),
-                ]}
-              />
-            </div>
-
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              {!readOnly && (
-                <button 
-                  onClick={handleManualRefresh}
-                  disabled={loading || isRefreshing}
-                  className={cn(
-                    "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
-                    theme === 'dark' 
-                      ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
-                      : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
-                  )}
-                >
-                  <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
-                  <span className="hidden md:inline">Sincronizar</span>
-                </button>
-              )}
-
-              {!readOnly && (
-                <button 
-                  onClick={() => setIsModalOpen(true)}
-                  className={cn(
-                    "flex-1 md:flex-none flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
-                    theme === 'dark' 
-                      ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
-                      : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
-                  )}
-                >
-                  <Plus size={16} />
-                  <span>Nova Moto</span>
-                </button>
-              )}
-            </div>
-
-            {(searchTerm || brandFilter !== 'Todas' || statusFilter !== 'Todos' || cilindradaFilter !== 'Todas' || anoMinFilter || valorMinFilter || valorMaxFilter) && (
               <button 
-                onClick={() => {
-                  setSearchTerm('');
-                  setBrandFilter('Todas');
-                  setStatusFilter('Todos');
-                  setCilindradaFilter('Todas');
-                  setAnoMinFilter('');
-                  setValorMinFilter('');
-                  setValorMaxFilter('');
-                  setCurrentPage(1);
-                }}
+                onClick={handleManualRefresh}
+                disabled={loading || isRefreshing}
                 className={cn(
-                  "w-full md:w-auto flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  "flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
                   theme === 'dark' 
-                    ? "bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20" 
-                    : "bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100"
+                    ? "bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700" 
+                    : "bg-zinc-100 border-zinc-200 text-zinc-500 hover:bg-zinc-200"
                 )}
               >
-                <X size={16} />
-                <span>Limpar</span>
+                <RefreshCw size={14} className={cn((loading || isRefreshing) && "animate-spin")} />
               </button>
             )}
+
+            {!readOnly && (
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className={cn(
+                  "flex items-center justify-center gap-2 h-10 px-4 rounded-xl transition-all duration-200 border text-[11px] font-bold uppercase tracking-wider shadow-sm backdrop-blur-md",
+                  theme === 'dark' 
+                    ? "bg-violet-600 border-violet-500 text-white shadow-violet-900/20 hover:bg-violet-500" 
+                    : "bg-violet-600 border-violet-500 text-white shadow-violet-200/50 hover:bg-violet-700"
+                )}
+              >
+                <Plus size={16} />
+                <span className="hidden md:inline">Nova Moto</span>
+              </button>
+            )}
+          </div>
+        </div>
+        <FilterModal />
+      </div>
+
+      {/* Filtros e Ordenação (Fora da div principal) */}
+      <div className="flex flex-col gap-4 mt-2 px-1">
+        {/* Row for Brand Filter */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">Filtrar por marca</span>
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mx-2 px-2 md:mx-0 md:px-0">
+            {brands.map(brand => (
+              <button
+                key={brand}
+                onClick={() => { setBrandFilter(brand); setCurrentPage(1); }}
+                className={cn(
+                  "px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
+                  brandFilter === brand
+                    ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-transparent shadow-md shadow-violet-500/20"
+                    : (theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 border-zinc-700/50 hover:bg-zinc-800 hover:text-zinc-300" : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:text-zinc-900")
+                )}
+              >
+                {brand}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row for Sort Order */}
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider ml-1">Ordenar por</span>
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 -mx-2 px-2 md:mx-0 md:px-0">
+            {[
+              { value: "Data de Criação", label: "Mais recente" },
+              { value: "Data de Criação Antigo", label: "Mais antigo" },
+              { value: "Nome", label: "Nome" },
+              { value: "Mais baratas", label: "Mais baratas" },
+              { value: "Mais caras", label: "Mais caras" },
+              { value: "Baixa cilindrada", label: "Baixa cilindrada" },
+              { value: "Alta cilindrada", label: "Alta cilindrada" },
+              { value: "Ano", label: "Ano" },
+              ...(readOnly ? [] : [{ value: "Lote", label: "Lote" }]),
+            ].map(sortOption => (
+              <button
+                key={sortOption.value}
+                onClick={() => { setSortOrder(sortOption.value); setCurrentPage(1); }}
+                className={cn(
+                  "px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
+                  sortOrder === sortOption.value
+                    ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white border-transparent shadow-md shadow-violet-500/20"
+                    : (theme === 'dark' ? "bg-zinc-800/50 text-zinc-400 border-zinc-700/50 hover:bg-zinc-800 hover:text-zinc-300" : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:text-zinc-900")
+                )}
+              >
+                {sortOption.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>

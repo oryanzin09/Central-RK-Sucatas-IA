@@ -9,6 +9,7 @@ async function apiRequest(endpoint: string, options: RequestInit = {}) {
   };
   
   // Attach Firebase ID token if user is logged in
+  console.log('🔍 auth.currentUser:', auth.currentUser ? 'Logado' : 'Não logado');
   if (auth.currentUser) {
     try {
       const token = await auth.currentUser.getIdToken();
