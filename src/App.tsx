@@ -7746,8 +7746,7 @@ export default function App() {
 
   if (!isAuthenticated) {
     return <Login onLogin={() => {
-      setIsAuthenticated(true);
-      window.history.replaceState(null, '', '/');
+      // No-op: onAuthStateChanged will handle the state update
     }} />;
   }
 
