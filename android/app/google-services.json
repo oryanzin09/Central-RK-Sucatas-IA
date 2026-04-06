@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "987595911324",
+    "project_id": "gen-lang-client-0969674405",
+    "storage_bucket": "gen-lang-client-0969674405.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:987595911324:android:213934e85304d6f41abd59",
+        "android_client_info": {
+          "package_name": "com.rksucatas.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "987595911324-g3f2cs0uk31lsmrrsff5rvd96dohoshp.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjyGhgPE8kHwqKTDOvX37w4lb7_KZPXhA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "987595911324-g3f2cs0uk31lsmrrsff5rvd96dohoshp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

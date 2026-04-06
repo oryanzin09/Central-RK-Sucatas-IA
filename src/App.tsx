@@ -8580,20 +8580,25 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
-  const [userRole, setUserRole] = useState<string>('client');
+  const [userRole, setUserRole] = useState<string>(localStorage.getItem('user_role') || 'client');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>('dashboard');
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
 
   useEffect(() => {
-    const role = localStorage.getItem('user_role') || 'client';
-    setUserRole(role as 'admin' | 'client');
-    
     // Roteamento Client-Side: Sincronizar aba com a URL
     const path = window.location.pathname.replace('/', '');
     const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
+    const adminTabs = ['dashboard', 'users', 'audit'];
+    
+    const role = localStorage.getItem('user_role') || 'client';
     
     if (path && validTabs.includes(path)) {
-      setActiveTab(path as any);
+      if (adminTabs.includes(path) && role !== 'admin') {
+        setActiveTab('motos');
+        window.history.replaceState(null, '', '/motos');
+      } else {
+        setActiveTab(path as any);
+      }
     } else {
       const defaultTab = role === 'admin' ? 'dashboard' : 'motos';
       setActiveTab(defaultTab);
