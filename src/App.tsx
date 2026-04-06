@@ -2,7 +2,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-// Force git commit update
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
 import { auth, db } from './firebase';
@@ -7719,7 +7718,6 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log("Auth state changed:", user);
       if (user) {
         try {
           // Sync user to Firestore
@@ -7752,13 +7750,11 @@ export default function App() {
           console.error("Error syncing user to Firestore:", error);
         }
 
-        console.log("Auth state: Authenticated");
         setIsAuthenticated(true);
         if (window.location.pathname === '/login') {
           window.history.replaceState(null, '', '/');
         }
       } else {
-        console.log("Auth state: Not Authenticated");
         setIsAuthenticated(false);
         if (window.location.pathname !== '/login') {
           window.history.replaceState(null, '', '/login');
