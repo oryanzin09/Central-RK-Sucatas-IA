@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
+import { auth } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { api } from './utils/api';
 import QuestionsDashboard from './components/QuestionsDashboard';
 import AdminUsers from './components/AdminUsers';
@@ -7703,25 +7705,28 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      setIsAuthenticated(true);
-      if (window.location.pathname === '/login') {
-        window.history.replaceState(null, '', '/');
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setIsAuthenticated(true);
+        if (window.location.pathname === '/login') {
+          window.history.replaceState(null, '', '/');
+        }
+      } else {
+        setIsAuthenticated(false);
+        if (window.location.pathname !== '/login') {
+          window.history.replaceState(null, '', '/login');
+        }
       }
-    } else {
-      setIsAuthenticated(false);
-      if (window.location.pathname !== '/login') {
-        window.history.replaceState(null, '', '/login');
-      }
-    }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
     try {
-      await api.post('/api/logout', {});
+      await signOut(auth);
     } catch (error) {
-      console.error('Erro ao fazer logout no servidor', error);
+      console.error('Erro ao fazer logout no Firebase', error);
     }
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_role');
@@ -7740,8 +7745,7 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <Login onLogin={(token) => {
-      localStorage.setItem('auth_token', token);
+    return <Login onLogin={() => {
       setIsAuthenticated(true);
       window.history.replaceState(null, '', '/');
     }} />;

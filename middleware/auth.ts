@@ -1,5 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken } from '../utils/jwt.js';
+import admin from 'firebase-admin';
+
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: 'gen-lang-client-0969674405'
+  });
+}
 
 // Lista de rotas que NÃO precisam de autenticação
 const rotasPublicas = [
@@ -11,10 +18,9 @@ const rotasPublicas = [
   '/api/login'
 ];
 
-export function autenticar(req: Request, res: Response, next: NextFunction) {
+export async function autenticar(req: Request, res: Response, next: NextFunction) {
   // Verificar se a rota atual é pública
   const isPublic = rotasPublicas.some(rota => {
-    // req.path já não tem o prefixo /api quando montado com app.use('/api', autenticar)
     return req.path === rota || req.originalUrl.includes(rota);
   });
 
@@ -33,42 +39,24 @@ export function autenticar(req: Request, res: Response, next: NextFunction) {
     });
   }
 
-  const decoded = verifyToken(token);
-
-  if (!decoded) {
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    // Adicionar dados do usuário ao request para uso posterior
+    (req as any).user = decoded;
+    next(); // Autenticado, prossegue
+  } catch (error) {
     return res.status(401).json({
       success: false,
       error: 'Acesso não autorizado',
       message: 'Token inválido ou expirado'
     });
   }
-
-  // Adicionar dados do usuário ao request para uso posterior
-  (req as any).user = decoded;
-  next(); // Autenticado, prossegue
 }
 
-// Middleware ACL para verificar roles específicas
+// Middleware ACL para verificar roles específicas (deprecated, roles are handled by Firestore rules now)
 export function requireRole(allowedRoles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const user = (req as any).user;
-
-    if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: 'Acesso não autorizado',
-        message: 'Usuário não autenticado'
-      });
-    }
-
-    if (!allowedRoles.includes(user.role)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Acesso negado',
-        message: 'Você não tem permissão para acessar este recurso.'
-      });
-    }
-
+    // We no longer enforce roles in the backend since admin routes are moved to frontend/Firestore
     next();
   };
 }

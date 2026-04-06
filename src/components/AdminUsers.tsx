@@ -3,24 +3,26 @@ import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../utils/api';
 import { cn } from '../utils';
 import { Loader2, Shield, ShieldAlert, Trash2, User, UserCog, Users, Plus, Edit, X, Save, Eye, EyeOff } from 'lucide-react';
+import { db } from '../firebase';
+import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
 
 interface UserData {
-  id: number;
-  phone: string;
+  id: string;
+  email: string;
   name: string;
   role: string;
-  created_at: string;
-  last_login: string | null;
+  createdAt: string;
+  lastLogin: string | null;
 }
 
 interface ClientData {
-  id: number;
+  id: string;
   phone: string;
   name: string;
   interests: string | null;
   purchases: string | null;
-  created_at: string;
-  last_login: string | null;
+  createdAt: string;
+  lastLogin: string | null;
 }
 
 export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: { userRole?: string, onModalChange?: (isOpen: boolean) => void, theme?: 'light' | 'dark' }) {
@@ -28,7 +30,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
   const [clients, setClients] = useState<ClientData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // Modal State for Clients
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -67,22 +69,14 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
     setIsLoading(true);
     setError(null);
     try {
-      const [usersRes, clientsRes] = await Promise.all([
-        api.get('/api/admin/users'),
-        api.get('/api/admin/clients')
-      ]);
+      const usersSnap = await getDocs(collection(db, 'users'));
+      const clientsSnap = await getDocs(collection(db, 'clients'));
 
-      if (usersRes.success) {
-        setUsers(usersRes.data);
-      } else {
-        setError(usersRes.error || 'Erro ao carregar usuários');
-      }
+      const usersData = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData));
+      const clientsData = clientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientData));
 
-      if (clientsRes.success) {
-        setClients(clientsRes.data);
-      } else {
-        setError(clientsRes.error || 'Erro ao carregar clientes');
-      }
+      setUsers(usersData);
+      setClients(clientsData);
     } catch (err: any) {
       setError(err.message || 'Erro de conexão ao buscar dados');
     } finally {
@@ -95,8 +89,8 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
   }, []);
 
   // --- Users Handlers ---
-  const handleToggleRole = async (userId: number, currentRole: string) => {
-    const roles = ['admin', 'gerente', 'estoque'];
+  const handleToggleRole = async (userId: string, currentRole: string) => {
+    const roles = ['admin', 'gerente', 'estoque', 'client'];
     const currentIndex = roles.indexOf(currentRole);
     const newRole = roles[(currentIndex + 1) % roles.length];
     
@@ -105,12 +99,8 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
     setActionLoading(userId);
     
     try {
-      const response = await api.put(`/api/admin/users/${userId}/role`, { role: newRole });
-      if (response.success) {
-        setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
-      } else {
-        alert(response.error || 'Erro ao atualizar permissão');
-      }
+      await updateDoc(doc(db, 'users', userId), { role: newRole });
+      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
     } catch (err: any) {
       alert(err.message || 'Erro de conexão');
     } finally {
@@ -118,17 +108,13 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
     }
   };
 
-  const handleDeleteUser = async (userId: number, userName: string) => {
+  const handleDeleteUser = async (userId: string, userName: string) => {
     if (!window.confirm(`ATENÇÃO: Tem certeza que deseja excluir permanentemente o usuário ${userName || userId}?`)) return;
     
     setActionLoading(userId);
     try {
-      const response = await api.delete(`/api/admin/users/${userId}`);
-      if (response.success) {
-        setUsers(users.filter(u => u.id !== userId));
-      } else {
-        alert(response.error || 'Erro ao excluir usuário');
-      }
+      await deleteDoc(doc(db, 'users', userId));
+      setUsers(users.filter(u => u.id !== userId));
     } catch (err: any) {
       alert(err.message || 'Erro de conexão');
     } finally {
@@ -198,30 +184,27 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
 
   const handleSaveClient = async (e: React.FormEvent) => {
     e.preventDefault();
-    setActionLoading(-1); // Use -1 for modal loading
+    setActionLoading('save_client');
     try {
       const payload = {
-        ...clientFormData,
+        phone: clientFormData.phone,
+        name: clientFormData.name,
         interests: JSON.stringify(clientFormData.interests),
         purchases: JSON.stringify(clientFormData.purchases)
       };
 
       if (editingClient) {
-        const res = await api.put(`/api/admin/clients/${editingClient.id}`, payload);
-        if (res.success) {
-          setClients(clients.map(c => c.id === editingClient.id ? { ...c, ...payload } : c));
-          setIsClientModalOpen(false);
-        } else {
-          alert(res.error || 'Erro ao atualizar cliente');
-        }
+        await updateDoc(doc(db, 'clients', editingClient.id), { ...payload, updatedAt: new Date().toISOString() });
+        setClients(clients.map(c => c.id === editingClient.id ? { ...c, ...payload } : c));
+        setIsClientModalOpen(false);
       } else {
-        const res = await api.post('/api/admin/clients', payload);
-        if (res.success) {
-          setClients([...clients, { ...payload, id: res.id, created_at: new Date().toISOString(), last_login: null }]);
-          setIsClientModalOpen(false);
-        } else {
-          alert(res.error || 'Erro ao criar cliente');
-        }
+        const newDoc = await addDoc(collection(db, 'clients'), {
+          ...payload,
+          createdAt: new Date().toISOString(),
+          lastLogin: null
+        });
+        setClients([...clients, { ...payload, id: newDoc.id, createdAt: new Date().toISOString(), lastLogin: null }]);
+        setIsClientModalOpen(false);
       }
     } catch (err: any) {
       alert(err.message || 'Erro de conexão');
@@ -230,17 +213,13 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
     }
   };
 
-  const handleDeleteClient = async (clientId: number, clientName: string) => {
+  const handleDeleteClient = async (clientId: string, clientName: string) => {
     if (!window.confirm(`ATENÇÃO: Tem certeza que deseja excluir permanentemente o cliente ${clientName || clientId}?`)) return;
     
     setActionLoading(clientId);
     try {
-      const response = await api.delete(`/api/admin/clients/${clientId}`);
-      if (response.success) {
-        setClients(clients.filter(c => c.id !== clientId));
-      } else {
-        alert(response.error || 'Erro ao excluir cliente');
-      }
+      await deleteDoc(doc(db, 'clients', clientId));
+      setClients(clients.filter(c => c.id !== clientId));
     } catch (err: any) {
       alert(err.message || 'Erro de conexão');
     } finally {
@@ -305,11 +284,11 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                           </div>
                           <div className="min-w-0">
                             <div className="font-medium text-white truncate">{user.name || 'Sem nome'}</div>
-                            <div className="text-xs text-gray-500 sm:hidden font-mono">{user.phone}</div>
+                            <div className="text-xs text-gray-500 sm:hidden font-mono">{user.email}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 font-mono text-gray-400 hidden sm:table-cell">{user.phone}</td>
+                      <td className="px-6 py-4 font-mono text-gray-400 hidden sm:table-cell">{user.email}</td>
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
                           user.role === 'admin' 
@@ -323,10 +302,10 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                         </span>
                       </td>
                       <td className="px-6 py-4 text-gray-500 hidden md:table-cell">
-                        {new Date(user.created_at).toLocaleDateString('pt-BR')}
+                        {new Date(user.createdAt).toLocaleDateString('pt-BR')}
                       </td>
                       <td className="px-6 py-4 text-gray-500 hidden lg:table-cell">
-                        {user.last_login ? new Date(user.last_login).toLocaleString('pt-BR') : 'Nunca'}
+                        {user.lastLogin ? new Date(user.lastLogin).toLocaleString('pt-BR') : 'Nunca'}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -381,7 +360,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                     </div>
                     <div>
                       <div className="font-bold text-white">{user.name || 'Sem nome'}</div>
-                      <div className="text-xs text-gray-500 font-mono">{user.phone}</div>
+                      <div className="text-xs text-gray-500 font-mono">{user.email}</div>
                     </div>
                   </div>
                   <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -397,7 +376,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                 
                 <div className="flex items-center justify-between pt-2 border-t border-gray-800/50">
                   <div className="text-[10px] text-gray-500">
-                    Último login: {user.last_login ? new Date(user.last_login).toLocaleDateString('pt-BR') : 'Nunca'}
+                    Último login: {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString('pt-BR') : 'Nunca'}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -492,7 +471,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-500 hidden xl:table-cell">
-                      {new Date(client.created_at).toLocaleDateString('pt-BR')}
+                      {new Date(client.createdAt).toLocaleDateString('pt-BR')}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -574,7 +553,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                   </div>
                 )}
                 <div className="text-[10px] text-gray-500">
-                  Cadastrado em: {new Date(client.created_at).toLocaleDateString('pt-BR')}
+                  Cadastrado em: {new Date(client.createdAt).toLocaleDateString('pt-BR')}
                 </div>
               </div>
             </div>
@@ -823,10 +802,10 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                   <button
                     type="submit"
                     form="client-form"
-                    disabled={actionLoading === -1}
+                    disabled={actionLoading === 'save_client'}
                     className="flex-[1.5] bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2"
                   >
-                    {actionLoading === -1 ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingClient ? 'Salvar Alterações' : 'Salvar Cliente')}
+                    {actionLoading === 'save_client' ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingClient ? 'Salvar Alterações' : 'Salvar Cliente')}
                   </button>
                 </div>
               </div>

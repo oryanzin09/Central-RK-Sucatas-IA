@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System administrators and staff",
+      "type": "object",
+      "properties": {
+        "phone": { "type": "string", "description": "User's phone number or email" },
+        "password_hash": { "type": "string", "description": "Hashed password" },
+        "name": { "type": "string", "description": "User's full name" },
+        "role": { "type": "string", "enum": ["admin", "client"], "description": "User role" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phone", "password_hash", "role"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Customers",
+      "type": "object",
+      "properties": {
+        "phone": { "type": "string", "description": "Client's phone number" },
+        "password_hash": { "type": "string", "description": "Hashed password" },
+        "name": { "type": "string", "description": "Client's full name" },
+        "interests": { "type": "string", "description": "Client's interests" },
+        "purchases": { "type": "string", "description": "Client's purchases" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLogin": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phone"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System audit logs",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "action": { "type": "string" },
+        "entityType": { "type": "string" },
+        "entityId": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "entityType"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Collection of users"
+    },
+    "/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Collection of clients"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Collection of audit logs"
+    }
+  }
+}

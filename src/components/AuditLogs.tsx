@@ -1,17 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '../utils/api';
 import { Loader2, Activity, User, Clock, FileText } from 'lucide-react';
+import { db } from '../firebase';
+import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 
 interface AuditLog {
-  id: number;
-  user_id: number | null;
-  user_name: string | null;
-  user_phone: string | null;
+  id: string;
+  userId: string | null;
+  userName: string | null;
+  userEmail: string | null;
   action: string;
-  entity_type: string;
-  entity_id: number | null;
+  entityType: string;
+  entityId: string | null;
   details: string | null;
-  created_at: string;
+  createdAt: string;
 }
 
 export default function AuditLogs() {
@@ -23,12 +24,10 @@ export default function AuditLogs() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await api.get('/api/admin/audit-logs');
-      if (response.success) {
-        setLogs(response.data);
-      } else {
-        setError(response.error || 'Erro ao carregar logs de auditoria');
-      }
+      const q = query(collection(db, 'audit_logs'), orderBy('createdAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const logsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AuditLog));
+      setLogs(logsData);
     } catch (err: any) {
       setError(err.message || 'Erro de conexão ao buscar logs');
     } finally {
@@ -123,7 +122,7 @@ export default function AuditLogs() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-2 text-gray-400">
                       <Clock className="w-4 h-4" />
-                      {new Date(log.created_at).toLocaleString('pt-BR')}
+                      {new Date(log.createdAt).toLocaleString('pt-BR')}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -132,7 +131,7 @@ export default function AuditLogs() {
                         <User className="w-4 h-4" />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-medium text-white truncate">{log.user_name || 'Sistema'}</div>
+                        <div className="font-medium text-white truncate">{log.userName || 'Sistema'}</div>
                         <div className="text-xs text-gray-500 sm:hidden">{log.action.replace(/_/g, ' ')}</div>
                       </div>
                     </div>
@@ -142,7 +141,7 @@ export default function AuditLogs() {
                   </td>
                   <td className="px-6 py-4 hidden md:table-cell">
                     <span className="text-gray-400">
-                      {log.entity_type} <span className="font-mono text-gray-500">#{log.entity_id}</span>
+                      {log.entityType} <span className="font-mono text-gray-500">#{log.entityId}</span>
                     </span>
                   </td>
                   <td className="px-6 py-4 hidden lg:table-cell text-right">
@@ -172,10 +171,10 @@ export default function AuditLogs() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs text-gray-500 font-mono">
                 <Clock className="w-3.5 h-3.5" />
-                {new Date(log.created_at).toLocaleString('pt-BR')}
+                {new Date(log.createdAt).toLocaleString('pt-BR')}
               </div>
               <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                {log.entity_type}
+                {log.entityType}
               </span>
             </div>
 
@@ -184,7 +183,7 @@ export default function AuditLogs() {
                 <User className="w-5 h-5" />
               </div>
               <div>
-                <div className="font-bold text-white">{log.user_name || 'Sistema'}</div>
+                <div className="font-bold text-white">{log.userName || 'Sistema'}</div>
                 <div className="text-xs text-emerald-400 font-medium">{formatAction(log.action)}</div>
               </div>
             </div>

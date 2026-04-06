@@ -4,9 +4,12 @@ import { cn } from '../utils';
 import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
 import { CATEGORIAS_OFICIAIS } from '../constants/lists';
+import { auth, googleProvider, db } from '../firebase';
+import { signInWithPopup } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface LoginProps {
-  onLogin: (token: string) => void;
+  onLogin: () => void;
 }
 
 const Marquee = React.memo(({ items, variant = 'default', speed = 40 }: { items: string[], variant?: 'default' | 'violet', speed?: number }) => {
@@ -35,16 +38,10 @@ const Marquee = React.memo(({ items, variant = 'default', speed = 40 }: { items:
 });
 
 export const Login = ({ onLogin }: LoginProps) => {
-  const [phone, setPhone] = useState('');
-  const [name, setName] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isRegister, setIsRegister] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Inicializa com dados do localStorage para evitar o \"0\" inicial
+  // Inicializa com dados do localStorage para evitar o "0" inicial
   const [stats, setStats] = useState(() => {
     const saved = localStorage.getItem('rk_public_stats');
     return saved ? JSON.parse(saved) : { totalPecas: 0, totalMotos: 0, marcas: [] };
@@ -65,92 +62,44 @@ export const Login = ({ onLogin }: LoginProps) => {
       .catch(console.error);
   }, []);
 
-  const formatPhone = (val: string) => {
-    if (val.includes('@')) return val;
-    const cleaned = val.replace(/\D/g, '').slice(0, 11);
-    const match = cleaned.match(/^(\d{2})(\d{5})(\d{4})$/) || cleaned.match(/^(\d{2})(\d{4,5})(\d{0,4})$/);
-    if (match) {
-      return `(${match[1]}) ${match[2]}${match[3] ? '-' + match[3] : ''}`;
-    }
-    return cleaned;
-  };
-
-  const validatePassword = (pass: string) => {
-    const hasMinLength = pass.length >= 8;
-    const hasTwoNumbers = (pass.match(/\d/g) || []).length >= 2;
-    return hasMinLength && hasTwoNumbers;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGoogleLogin = async () => {
     setError(null);
     setLoading(true);
-    
-    const isEmail = phone.includes('@');
-    const cleanPhone = isEmail ? phone.trim() : phone.replace(/\D/g, '');
-    const whatsappRegex = /^\d{10,13}$/;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!isEmail && !whatsappRegex.test(cleanPhone)) {
-      setError('Número de WhatsApp inválido (deve ter entre 10 e 13 dígitos)');
-      setLoading(false);
-      return;
-    }
-
-    if (isEmail && !emailRegex.test(cleanPhone)) {
-      setError('E-mail inválido');
-      setLoading(false);
-      return;
-    }
-
     try {
-      if (isRegister) {
-        if (password !== confirmPassword) {
-          setError('As senhas não coincidem');
-          setLoading(false);
-          return;
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      // Check if user exists in Firestore
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      
+      let role = 'client';
+      
+      if (!userSnap.exists()) {
+        // If it's the master admin
+        if (user.email === 'oryanzin09@gmail.com') {
+          role = 'admin';
         }
-
-        if (!validatePassword(password)) {
-          setError('A senha deve ter no mínimo 8 caracteres e 2 números');
-          setLoading(false);
-          return;
-        }
-
-        const result = await api.post('/api/register', { 
-          phone: cleanPhone, 
-          password: password.trim(),
-          name: isRegister ? name.trim() : undefined
+        await setDoc(userRef, {
+          name: user.displayName || 'Usuário',
+          email: user.email,
+          role: role,
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
         });
-
-        if (result.success) {
-          localStorage.setItem('auth_token', result.token);
-          localStorage.setItem('user_role', result.user?.role || 'client');
-          localStorage.setItem('user_name', result.user?.name || name || 'Cliente');
-          localStorage.setItem('user_phone', cleanPhone);
-          onLogin(result.token);
-        } else {
-          setError(result.error || 'Erro ao criar conta');
-        }
       } else {
-        const result = await api.post('/api/login', { 
-          phone: cleanPhone, 
-          password: password.trim()
-        });
-        
-        if (result.success) {
-          localStorage.setItem('auth_token', result.token);
-          localStorage.setItem('user_role', result.user?.role || 'client');
-          localStorage.setItem('user_name', result.user?.name || 'Cliente');
-          localStorage.setItem('user_phone', cleanPhone);
-          onLogin(result.token);
-        } else {
-          setError(result.error || 'Telefone/E-mail ou senha incorretos');
-        }
+        role = userSnap.data().role || 'client';
+        await setDoc(userRef, { lastLogin: new Date().toISOString() }, { merge: true });
       }
-    } catch (error) {
-      console.error('Erro na autenticação:', error);
-      setError('Erro ao conectar ao servidor');
+
+      const token = await user.getIdToken();
+      localStorage.setItem('auth_token', token);
+      localStorage.setItem('user_role', role);
+      localStorage.setItem('user_name', user.displayName || 'Usuário');
+      onLogin();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Erro ao fazer login com o Google');
     } finally {
       setLoading(false);
     }
@@ -287,12 +236,10 @@ export const Login = ({ onLogin }: LoginProps) => {
             <div className="max-w-[320px] w-full mx-auto">
               <div className="mb-6 md:mb-10">
                 <h2 className="text-xl md:text-2xl font-black text-white mb-2 tracking-tight">
-                  {isRegister ? 'Criar Conta' : 'Bem-vindo!'}
+                  Bem-vindo!
                 </h2>
                 <p className="text-zinc-400 font-medium text-[10px] md:text-xs leading-relaxed">
-                  {isRegister 
-                    ? 'Preencha os dados abaixo para se cadastrar no sistema.' 
-                    : 'Entre com seu WhatsApp e senha para acessar o painel administrativo.'}
+                  Entre com sua conta Google para acessar o painel administrativo.
                 </p>
               </div>
               
@@ -307,91 +254,23 @@ export const Login = ({ onLogin }: LoginProps) => {
                 </motion.div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-2.5 md:space-y-4">
-                {isRegister && (
-                  <div className="space-y-1 md:space-y-1.5">
-                    <label className="text-[7px] md:text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] ml-1">Nome Completo</label>
-                    <input 
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Ex: João da Silva"
-                      className="w-full bg-zinc-950/40 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border border-zinc-800/50 text-white placeholder:text-zinc-800 focus:ring-2 focus:ring-violet-600/50 focus:border-violet-500/50 outline-none transition-all font-bold text-xs md:text-sm shadow-inner"
-                      required={isRegister}
-                    />
-                  </div>
-                )}
-
-                <div className="space-y-1 md:space-y-1.5">
-                  <label className="text-[7px] md:text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] ml-1">Seu WhatsApp</label>
-                  <input 
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(formatPhone(e.target.value))}
-                    placeholder="(00) 00000-0000"
-                    className="w-full bg-zinc-950/40 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border border-zinc-800/50 text-white placeholder:text-zinc-800 focus:ring-2 focus:ring-violet-600/50 focus:border-violet-500/50 outline-none transition-all font-bold text-xs md:text-sm shadow-inner"
-                    required
-                  />
-                </div>
-                
-                <div className="space-y-1 md:space-y-1.5 relative">
-                  <label className="text-[7px] md:text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] ml-1">Sua Senha</label>
-                  <div className="relative">
-                    <input 
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••••••••••"
-                      className="w-full bg-zinc-950/40 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border border-zinc-800/50 text-white placeholder:text-zinc-800 focus:ring-2 focus:ring-violet-600/50 focus:border-violet-500/50 outline-none transition-all font-bold text-xs md:text-sm shadow-inner"
-                      required
-                    />
-                    <button 
-                      type="button" 
-                      onClick={() => setShowPassword(!showPassword)} 
-                      className="absolute right-2 md:right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors p-1.5"
-                    >
-                      {showPassword ? <EyeOff className="w-3.5 h-3.5 md:w-[18px] md:h-[18px]" /> : <Eye className="w-3.5 h-3.5 md:w-[18px] md:h-[18px]" />}
-                    </button>
-                  </div>
-                  {isRegister && (
-                    <p className="text-[6px] md:text-[8px] text-zinc-500 font-bold uppercase tracking-wider mt-1 ml-1">
-                      Mínimo 8 caracteres e 2 números
-                    </p>
-                  )}
-                </div>
-
-                {isRegister && (
-                  <div className="space-y-1 md:space-y-1.5">
-                    <label className="text-[7px] md:text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] ml-1">Confirmar Senha</label>
-                    <input 
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="••••••••••••••••"
-                      className="w-full bg-zinc-950/40 px-3.5 py-2.5 md:px-4 md:py-3 rounded-lg md:rounded-xl border border-zinc-800/50 text-white placeholder:text-zinc-800 focus:ring-2 focus:ring-violet-600/50 focus:border-violet-500/50 outline-none transition-all font-bold text-xs md:text-sm shadow-inner"
-                      required
-                    />
-                  </div>
-                )}
-
+              <div className="space-y-4">
                 <button 
-                  type="submit" 
+                  onClick={handleGoogleLogin}
                   disabled={loading}
-                  className="w-full bg-violet-600 text-white py-3 md:py-4 rounded-lg md:rounded-xl font-black uppercase tracking-widest hover:bg-violet-500 transition-all active:scale-[0.98] flex items-center justify-center gap-2.5 mt-3 md:mt-5 shadow-2xl shadow-violet-600/30 disabled:opacity-50 text-[8px] md:text-xs"
+                  className="w-full bg-white text-zinc-900 py-3 md:py-4 rounded-lg md:rounded-xl font-black uppercase tracking-widest hover:bg-zinc-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2.5 mt-3 md:mt-5 shadow-xl disabled:opacity-50 text-[10px] md:text-xs"
                 >
-                  {loading ? <Loader2 className="animate-spin w-4 h-4 md:w-5 md:h-5" /> : (isRegister ? 'Criar Minha Conta' : 'Entrar no Sistema')}
-                </button>
-              </form>
-
-              <div className="mt-4 md:mt-6 text-center">
-                <button 
-                  onClick={() => {
-                    setIsRegister(!isRegister);
-                    setError(null);
-                  }}
-                  className="text-[8px] md:text-[10px] font-black text-zinc-500 uppercase tracking-[0.15em] hover:text-violet-400 transition-colors"
-                >
-                  {isRegister ? 'Já tem uma conta? Faça Login' : 'Não tem conta? Registre-se'}
+                  {loading ? <Loader2 className="animate-spin w-4 h-4 md:w-5 md:h-5" /> : (
+                    <>
+                      <svg viewBox="0 0 24 24" className="w-5 h-5 md:w-6 md:h-6" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
+                      Entrar com o Google
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -408,4 +287,4 @@ export const Login = ({ onLogin }: LoginProps) => {
       </div>
     </div>
   );
-};
+}
