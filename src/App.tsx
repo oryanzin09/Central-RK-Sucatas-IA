@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { api } from './utils/api';
 import QuestionsDashboard from './components/QuestionsDashboard';
@@ -7717,11 +7717,6 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Handle redirect result to catch errors
-    getRedirectResult(auth).catch((error) => {
-      console.error("Error during redirect login:", error);
-    });
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {

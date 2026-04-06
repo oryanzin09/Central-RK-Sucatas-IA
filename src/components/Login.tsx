@@ -5,7 +5,7 @@ import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
 import { CATEGORIAS_OFICIAIS } from '../constants/lists';
 import { auth, googleProvider, db } from '../firebase';
-import { signInWithRedirect } from 'firebase/auth';
+import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface LoginProps {
@@ -64,9 +64,9 @@ export const Login = ({ onLogin }: LoginProps) => {
 
   const handleGoogleLogin = async () => {
     try {
+      await signInWithPopup(auth, googleProvider);
       setLoading(true);
       setError(null);
-      await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Erro ao fazer login com o Google');
