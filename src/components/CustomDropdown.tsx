@@ -76,7 +76,7 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({
         className={cn(
           variant === 'form' ? formStyles : (compact ? "w-10 h-10 rounded-xl flex items-center justify-center border transition-all shadow-sm" : pillStyles),
           isOpen && variant !== 'form' && "ring-2 ring-violet-500/20 border-violet-500/50",
-          compact && !isDefault ? "bg-violet-50 border-violet-200 text-violet-600 dark:bg-violet-500/10 dark:border-violet-500/30 dark:text-violet-500" : compact ? (theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400" : "bg-white border-[#eef2f6] text-zinc-500") : ""
+          compact && !isDefault ? (theme === 'dark' ? "bg-violet-500/10 border-violet-500/30 text-violet-500" : "bg-violet-50 border-violet-200 text-violet-600") : compact ? (theme === 'dark' ? "bg-zinc-900 border-zinc-800 text-zinc-400" : "bg-white border-[#eef2f6] text-zinc-500") : ""
         )}
       >
         <div className="flex items-center justify-between w-full gap-2">
@@ -92,7 +92,8 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({
         <div className={cn(
           "absolute top-full mt-2 rounded-2xl border shadow-2xl z-[150] overflow-y-auto max-h-60 py-2 animate-in fade-in slide-in-from-top-2 duration-200",
           compact ? "right-0 w-48" : "left-0 min-w-[180px] w-full",
-          "bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-zinc-100 dark:border-zinc-800 shadow-zinc-200/50 dark:shadow-black/50"
+          theme === 'dark' ? "bg-zinc-900/95 border-zinc-800 shadow-black/50" : "bg-white/95 border-zinc-100 shadow-zinc-200/50",
+          "backdrop-blur-xl"
         )}>
           {options.map((option) => (
             <button
@@ -105,13 +106,13 @@ export const CustomDropdown: React.FC<CustomDropdownProps> = ({
               className={cn(
                 "w-full text-left px-4 py-2.5 text-xs transition-colors flex items-center justify-between",
                 value === option.value
-                  ? "bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 font-bold"
-                  : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                  ? (theme === 'dark' ? "bg-violet-500/10 text-violet-400 font-bold" : "bg-violet-50 text-violet-600 font-bold")
+                  : (theme === 'dark' ? "text-zinc-400 hover:bg-zinc-800/50" : "text-zinc-600 hover:bg-zinc-50")
               )}
             >
               {option.label}
               {value === option.value && (
-                <div className="w-1.5 h-1.5 rounded-full bg-violet-600 dark:bg-violet-400" />
+                <div className={cn("w-1.5 h-1.5 rounded-full", theme === 'dark' ? "bg-violet-400" : "bg-violet-600")} />
               )}
             </button>
           ))}

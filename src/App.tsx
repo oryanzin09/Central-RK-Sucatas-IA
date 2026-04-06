@@ -1198,7 +1198,7 @@ const DashboardView = ({
                     </div>
 
                     {mlPeriod === 'custom' && (
-                      <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                      <div className={cn("space-y-2 pt-2 border-t", theme === 'dark' ? "border-zinc-800" : "border-zinc-200")}>
                         <div>
                           <label className={cn("block text-[10px] font-bold uppercase mb-1", theme === 'dark' ? "text-zinc-500" : "text-zinc-400")}>Início</label>
                           <input
@@ -2661,7 +2661,7 @@ const InventoryRow = memo(({
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
             />
-            <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+            <div className={cn("absolute inset-0 flex items-center justify-center -z-10", theme === 'dark' ? "bg-zinc-900" : "bg-zinc-100")}>
               <Package size={12} className="text-zinc-400 opacity-50" />
             </div>
           </div>
@@ -3579,7 +3579,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
                             />
-                            <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+                            <div className={cn("absolute inset-0 flex items-center justify-center -z-10", theme === 'dark' ? "bg-zinc-900" : "bg-zinc-100")}>
                               <Package size={12} className="text-zinc-400 opacity-50" />
                             </div>
                           </div>
@@ -3638,7 +3638,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
             </table>
           </div>
         ) : (
-          <div className="p-3 md:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 bg-zinc-50/50 dark:bg-zinc-900/20">
+          <div className={cn("p-3 md:p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4", theme === 'dark' ? "bg-zinc-900/20" : "bg-zinc-50/50")}>
             {loading && items.length === 0 ? (
               Array(8).fill(0).map((_, i) => (
                 <div key={i} className={cn("h-64 rounded-2xl animate-pulse", theme === 'dark' ? "bg-zinc-800/50" : "bg-zinc-200/50")} />
@@ -3720,7 +3720,7 @@ const InventoryView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOp
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
                       />
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-900 -z-10">
+                      <div className={cn("absolute inset-0 flex flex-col items-center justify-center -z-10", theme === 'dark' ? "bg-zinc-900" : "bg-zinc-100")}>
                         <Package size={32} className="text-zinc-400 opacity-20" />
                         <span className="text-[8px] uppercase font-bold tracking-widest mt-2 text-zinc-500 opacity-40">Sem Imagem</span>
                       </div>
@@ -4917,7 +4917,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
           </div>
 
           <div className="flex flex-col sm:flex-row items-center gap-3">
-            <div className="w-full sm:w-auto flex items-center gap-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5">
+            <div className={cn("w-full sm:w-auto flex items-center gap-2 border rounded-xl px-3 py-1.5", theme === 'dark' ? "bg-zinc-950 border-zinc-800" : "bg-zinc-50 border-zinc-200")}>
               <Calendar size={14} className="text-zinc-500" />
               <input 
                 type="date"
@@ -5254,7 +5254,7 @@ const SalesView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen }
                     e.stopPropagation();
                     handleEditSale(item);
                   }}
-                  className="flex-1 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-xl flex items-center justify-center gap-2 text-xs font-bold"
+                  className={cn("flex-1 py-2 rounded-xl flex items-center justify-center gap-2 text-xs font-bold", theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-600")}
                 >
                   <Edit size={14} />
                   Editar
@@ -8431,11 +8431,11 @@ const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setIte
       )}
     >
       {/* Image Container */}
-      <div className="aspect-[4/3] relative overflow-hidden bg-zinc-100 dark:bg-zinc-950">
+      <div className={cn("aspect-[4/3] relative overflow-hidden", theme === 'dark' ? "bg-zinc-950" : "bg-zinc-100")}>
         {images.length > 0 ? (
           <div className="w-full h-full relative">
             {imgLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900">
+              <div className={cn("absolute inset-0 flex items-center justify-center", theme === 'dark' ? "bg-zinc-900" : "bg-zinc-100")}>
                 <Loader2 size={24} className="animate-spin text-violet-500/50" />
               </div>
             )}
@@ -8463,7 +8463,7 @@ const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setIte
                     referrerPolicy="no-referrer" 
                   />
                   {/* Fallback if single image fails */}
-                  <div className="absolute inset-0 -z-10 flex flex-col items-center justify-center text-zinc-400 bg-zinc-100 dark:bg-zinc-900/50">
+                  <div className={cn("absolute inset-0 -z-10 flex flex-col items-center justify-center text-zinc-400", theme === 'dark' ? "bg-zinc-900/50" : "bg-zinc-100")}>
                     <Bike size={48} strokeWidth={1} className="opacity-20" />
                     <span className="text-[10px] uppercase font-bold tracking-tighter mt-2 opacity-40">Erro ao carregar</span>
                   </div>
@@ -8486,7 +8486,7 @@ const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setIte
             )}
           </div>
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 bg-zinc-100 dark:bg-zinc-900/50">
+          <div className={cn("w-full h-full flex flex-col items-center justify-center text-zinc-400", theme === 'dark' ? "bg-zinc-900/50" : "bg-zinc-100")}>
             <Bike size={48} strokeWidth={1} className="opacity-20" />
             <span className="text-[10px] uppercase font-bold tracking-tighter mt-2 opacity-40">Sem Imagem</span>
           </div>
@@ -8530,7 +8530,7 @@ const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setIte
             <div className="flex items-center gap-2">
               <span className="text-[8px] md:text-[10px] font-bold text-violet-500 uppercase tracking-widest">{item.marca}</span>
             </div>
-            <span className="text-[8px] md:text-[10px] font-mono text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1 md:px-1.5 py-0.5 rounded">{item.rk_id}</span>
+            <span className={cn("text-[8px] md:text-[10px] font-mono text-zinc-500 px-1 md:px-1.5 py-0.5 rounded", theme === 'dark' ? "bg-zinc-800" : "bg-zinc-100")}>{item.rk_id}</span>
           </div>
           
           <div>
@@ -8547,24 +8547,24 @@ const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setIte
 
           <div className="flex flex-wrap items-center gap-y-1 md:gap-y-2 gap-x-2 md:gap-x-3 pt-1">
             {item.lote && !readOnly && (
-              <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+              <div className={cn("flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200")}>
                 <Layers size={10} className="text-violet-500" />
                 <span className="font-bold">Lote: {item.lote}</span>
               </div>
             )}
-            <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+            <div className={cn("flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200")}>
               <Calendar size={10} className="text-violet-500" />
               <span>{item.ano}</span>
             </div>
-            <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+            <div className={cn("flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200")}>
               <div 
-                className="w-2 md:w-2.5 h-2 md:h-2.5 rounded-full border border-zinc-300 dark:border-zinc-700 shadow-inner" 
+                className={cn("w-2 md:w-2.5 h-2 md:h-2.5 rounded-full border shadow-inner", theme === 'dark' ? "border-zinc-700" : "border-zinc-300")} 
                 style={{ backgroundColor: getMotoColor(item.cor) }} 
               />
               <span>{item.cor || '-'}</span>
             </div>
             {item.cilindrada && item.cilindrada !== '-' && (
-              <div className="flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-900/50 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border border-zinc-100 dark:border-zinc-800">
+              <div className={cn("flex items-center gap-1 md:gap-1.5 text-[9px] md:text-xs text-zinc-500 px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg border", theme === 'dark' ? "bg-zinc-900/50 border-zinc-800" : "bg-zinc-50 border-zinc-200")}>
                 <TrendingUp size={10} className="text-violet-500" />
                 <span>{item.cilindrada}cc</span>
               </div>
@@ -8572,7 +8572,7 @@ const MotoCard = React.memo(({ item, theme, onSelectItem, handleEditMoto, setIte
           </div>
         </div>
 
-        <div className="pt-2 md:pt-4 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+        <div className={cn("pt-2 md:pt-4 border-t flex items-center justify-between", theme === 'dark' ? "border-zinc-800" : "border-zinc-100")}>
           <div className="flex flex-col">
             <span className="text-[8px] md:text-[10px] text-zinc-500 uppercase font-bold tracking-wider">{readOnly ? 'Valor' : 'Investimento'}</span>
             <span className="text-sm md:text-xl font-black text-violet-500">
