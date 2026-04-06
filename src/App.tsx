@@ -2,6 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
+// Force git commit update
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
 import { auth, db } from './firebase';
