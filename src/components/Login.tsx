@@ -5,7 +5,7 @@ import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
 import { CATEGORIAS_OFICIAIS } from '../constants/lists';
 import { auth, googleProvider, db } from '../firebase';
-import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface LoginProps {
@@ -62,40 +62,19 @@ export const Login = ({ onLogin }: LoginProps) => {
       .catch(console.error);
   }, []);
 
-  useEffect(() => {
-    // Check for redirect result when component mounts
-    const checkRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result && result.user) {
-          setLoading(true);
-          // App.tsx onAuthStateChanged will handle the rest
-        }
-      } catch (err: any) {
-        console.error("Redirect login error:", err);
-        setError(err.message || 'Erro ao fazer login com o Google');
-        setLoading(false);
-      }
-    };
-    
-    checkRedirectResult();
-  }, []);
-
   const handleGoogleLogin = async () => {
-    setError(null);
-    setLoading(true);
+    // CRITICAL: Do NOT set any React state before calling signInWithPopup.
+    // Mobile browsers will block the popup or lose the opener context if the 
+    // window.open call is not strictly synchronous with the user's click event.
     try {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      // 1. Call popup immediately on click
+      await signInWithPopup(auth, googleProvider);
       
-      if (isMobile) {
-        // Use redirect for mobile to avoid popup blockers and blank screens
-        await signInWithRedirect(auth, googleProvider);
-        // The page will redirect, so we don't do anything else here
-      } else {
-        // Use popup for desktop
-        await signInWithPopup(auth, googleProvider);
-        // App.tsx onAuthStateChanged will handle the rest
-      }
+      // 2. Only after the popup is successfully opened and handled, set the loading state
+      setLoading(true);
+      setError(null);
+      
+      // App.tsx onAuthStateChanged will handle the rest
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Erro ao fazer login com o Google');
