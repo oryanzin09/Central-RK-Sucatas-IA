@@ -5,10 +5,8 @@ import { Eye, EyeOff, Loader2, Package, Bike, Tag, Layers } from 'lucide-react';
 import { api } from '../utils/api';
 import { CATEGORIAS_OFICIAIS } from '../constants/lists';
 import { auth, googleProvider, db } from '../firebase';
-import { signInWithPopup, signInWithRedirect, getRedirectResult, signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithRedirect } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { Capacitor } from '@capacitor/core';
-import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 interface LoginProps {
   onLogin: () => void;
@@ -64,52 +62,11 @@ export const Login = ({ onLogin }: LoginProps) => {
       .catch(console.error);
   }, []);
 
-  useEffect(() => {
-    // Check for redirect result when component mounts (Crucial for PWA mobile login)
-    const checkRedirectResult = async () => {
-      try {
-        const result = await getRedirectResult(auth);
-        if (result && result.user) {
-          setLoading(true);
-          // App.tsx onAuthStateChanged will handle the rest (syncing to Firestore, etc.)
-        }
-      } catch (err: any) {
-        console.error("Redirect login error:", err);
-        setError(err.message || 'Erro ao fazer login com o Google');
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    checkRedirectResult();
-  }, []);
-
   const handleGoogleLogin = async () => {
-    setError(null);
-    setLoading(true);
     try {
-      if (Capacitor.isNativePlatform()) {
-        // 1. Native Android/iOS Login via Capacitor Plugin
-        const result = await FirebaseAuthentication.signInWithGoogle();
-        if (result.credential?.idToken) {
-          const credential = GoogleAuthProvider.credential(result.credential.idToken);
-          await signInWithCredential(auth, credential);
-          // App.tsx onAuthStateChanged will handle the rest
-        } else {
-          throw new Error("Falha ao obter token do Google.");
-        }
-      } else {
-        // 2. Web/PWA Login
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        
-        if (isMobile) {
-          // Use redirect for mobile web to avoid popup blockers
-          await signInWithRedirect(auth, googleProvider);
-        } else {
-          // Use popup for desktop web
-          await signInWithPopup(auth, googleProvider);
-        }
-      }
+      setLoading(true);
+      setError(null);
+      await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Erro ao fazer login com o Google');
