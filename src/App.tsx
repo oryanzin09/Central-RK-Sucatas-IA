@@ -8661,12 +8661,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     const path = window.location.pathname.replace('/', '');
     const role = localStorage.getItem('user_role') || 'client';
     
-    // Se for ADM, abre no dashboard
-    if (role === 'admin') {
-      return path === 'Login' ? 'dashboard' : (path as any) || 'dashboard';
+    // Se for ADM, abre no dashboard ou na aba da URL
+    if (role === 'admin' || role === 'gerente') {
+      return (path && ['dashboard', 'estoque', 'vendas', 'motos', 'catalogo', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'].includes(path)) ? path as any : 'dashboard';
     }
     
-    // Se for cliente, abre no catálogo
+    // Se for cliente, abre sempre no catálogo
     return 'catalogo';
   });
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);

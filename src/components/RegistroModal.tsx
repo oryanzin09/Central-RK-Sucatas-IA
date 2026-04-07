@@ -17,8 +17,8 @@ export const RegistroModal = ({ isOpen, onClose, theme }: { isOpen: boolean; onC
     setLoading(true);
     try {
       await addDoc(collection(db, 'clients'), {
-        nome,
-        telefone,
+        name: nome,
+        phone: telefone,
         createdAt: serverTimestamp(),
         status: 'ativo'
       });

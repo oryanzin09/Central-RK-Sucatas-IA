@@ -76,7 +76,15 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
       const clientsSnap = await getDocs(collection(db, 'clients'));
 
       const allUsers = usersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserData & ClientData));
-      const clientsData = clientsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ClientData));
+      const clientsData = clientsSnap.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          ...data,
+          name: data.name || data.nome || 'Sem nome',
+          phone: data.phone || data.telefone || 'Sem telefone'
+        } as ClientData;
+      });
 
       // Staff are users with roles other than 'client'
       const staffUsers = allUsers.filter(u => u.role !== 'client');
