@@ -8660,16 +8660,14 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'catalogo' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>(() => {
     const path = window.location.pathname.replace('/', '');
     const role = localStorage.getItem('user_role') || 'client';
-    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'catalogo', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
     
-    if (role === 'client') {
-      return 'catalogo';
+    // Se for ADM, abre no dashboard
+    if (role === 'admin') {
+      return path === 'Login' ? 'dashboard' : (path as any) || 'dashboard';
     }
     
-    if (validTabs.includes(path)) {
-      return path as any;
-    }
-    return 'dashboard';
+    // Se for cliente, abre no catálogo
+    return 'catalogo';
   });
   const [isAnyModalOpen, setIsAnyModalOpen] = useState(false);
 
@@ -9123,6 +9121,15 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
               )}
               {(userRole === 'admin' || userRole === 'gerente') && (
                 <SidebarItem 
+                  icon={Users} 
+                  label={isSidebarOpen ? "Clientes" : ""} 
+                  active={activeTab === 'clients'} 
+                  onClick={() => setActiveTab('clients')} 
+                  theme={theme}
+                />
+              )}
+              {(userRole === 'admin' || userRole === 'gerente') && (
+                <SidebarItem 
                   icon={MessageSquare} 
                   label={isSidebarOpen ? "Atendimento" : ""} 
                   active={activeTab === 'atendimento'} 
@@ -9384,6 +9391,11 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                   isSearchOpen={isSearchOpen} 
                   readOnly={true}
                 />
+              ) : activeTab === 'clients' ? (
+                <div className={cn("p-6", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+                  <h2 className="text-2xl font-bold mb-4">Clientes</h2>
+                  <p>Funcionalidade de visualização de clientes em breve.</p>
+                </div>
               ) : activeTab === 'mercadolivre' ? (
                 <MercadoLivre theme={theme} />
               ) : activeTab === 'users' ? (
