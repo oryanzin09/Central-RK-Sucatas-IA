@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, query, collection, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { api } from './utils/api';
 import QuestionsDashboard from './components/QuestionsDashboard';
 import AdminUsers from './components/AdminUsers';
@@ -97,6 +97,7 @@ import { FreteView } from './components/FreteView';
 import { Atendimento } from './pages/Atendimento';
 import { MercadoLivre } from './pages/MercadoLivre';
 import { Clients } from './pages/Clients';
+import { RegistroModal } from './components/RegistroModal';
 import { io } from 'socket.io-client';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { Capacitor } from '@capacitor/core';
@@ -5855,7 +5856,7 @@ const MotoRow = memo(({
   </tr>
 ));
 
-const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean, readOnly?: boolean }) => {
+export const MotosView = memo(({ theme, onSelectItem, onRegisterActions, isSearchOpen, readOnly = false }: { theme: 'light' | 'dark', onSelectItem: (item: any) => void, onRegisterActions?: (actions: any) => void, isSearchOpen?: boolean, readOnly?: boolean }) => {
   const { motos: items, loading, refreshData, setMotos } = useContext(DataContext);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -8656,13 +8657,13 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const [userRole, setUserRole] = useState<string>(localStorage.getItem('user_role') || 'client');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>(() => {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'catalogo' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>(() => {
     const path = window.location.pathname.replace('/', '');
     const role = localStorage.getItem('user_role') || 'client';
-    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
+    const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'catalogo', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
     
     if (role === 'client') {
-      return 'motos';
+      return 'catalogo';
     }
     
     if (validTabs.includes(path)) {
@@ -8679,9 +8680,9 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     const validTabs = ['dashboard', 'estoque', 'vendas', 'motos', 'atendimento', 'frete', 'clients', 'mercadolivre', 'users', 'audit'];
     
     if (role === 'client') {
-      if (path !== 'motos') {
-        window.history.replaceState(null, '', '/motos');
-        setActiveTab('motos');
+      if (path !== 'catalogo') {
+        window.history.replaceState(null, '', '/catalogo');
+        setActiveTab('catalogo');
       }
     } else if (role === 'admin') {
       if (!validTabs.includes(path)) {
@@ -8729,6 +8730,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [mlPeriod, setMlPeriod] = useState('30d');
   const [mlCustomDate, setMlCustomDate] = useState({ start: '', end: '' });
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<{id: string, title: string, message: string, read: boolean}[]>([]);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -8755,6 +8758,17 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       setProfilePhoto(null);
     }
   }, []);
+
+  useEffect(() => {
+    // Notificações
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(20));
+    const unsubscribeNotifications = onSnapshot(q, (snapshot) => {
+      const newNotifications = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
+      setNotifications(newNotifications);
+    });
+    return () => unsubscribeNotifications();
+  }, []);
+
   const [allMlListings, setAllMlListings] = useState<any[]>([]);
   const [showAllMlAds, setShowAllMlAds] = useState(false);
 
@@ -9226,6 +9240,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                activeTab === 'vendas' ? 'Vendas' :
                activeTab === 'estoque' ? 'Estoque' :
                activeTab === 'motos' ? 'Motos' :
+               activeTab === 'catalogo' ? 'Catálogo' :
                activeTab === 'atendimento' ? 'Atendimento' :
                activeTab === 'clients' ? 'Clientes' :
                activeTab === 'mercadolivre' ? 'Mercado Livre' :
@@ -9237,6 +9252,19 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           </div>
 
           <div className="flex items-center gap-2 md:gap-4">
+            <button
+              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              className={cn(
+                "p-2 rounded-lg transition-all duration-300 relative",
+                theme === 'dark' ? "hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200" : "hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700"
+              )}
+              title="Notificações"
+            >
+              <Bell size={20} />
+              {notifications.filter(n => !n.read).length > 0 && (
+                <span className="absolute top-1 right-1 w-2 h-2 bg-rose-500 rounded-full" />
+              )}
+            </button>
             <button 
               onClick={toggleTheme}
               className={cn(
@@ -9249,6 +9277,40 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
             </button>
           </div>
         </header>
+        
+        {/* Notification Dropdown */}
+        <AnimatePresence>
+          {isNotificationsOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className={cn(
+                "absolute right-4 top-16 w-80 rounded-2xl shadow-2xl border z-[110] overflow-hidden backdrop-blur-2xl",
+                theme === 'dark' ? "bg-zinc-900/90 border-zinc-800" : "bg-white/90 border-zinc-200"
+              )}
+            >
+              <div className="p-4 border-b border-zinc-800/50 flex justify-between items-center">
+                <h3 className="font-bold text-sm">Notificações</h3>
+                <button onClick={() => setIsNotificationsOpen(false)} className="p-1 rounded-full hover:bg-zinc-800">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-zinc-500">Nenhuma notificação</div>
+                ) : (
+                  notifications.map(n => (
+                    <div key={n.id} className={cn("p-4 border-b border-zinc-800/50 text-sm", !n.read && "bg-violet-500/10")}>
+                      <p className="font-bold">{n.title}</p>
+                      <p className="text-xs text-zinc-400">{n.message}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Content Area */}
         <div ref={contentRef} className="p-4 md:p-6 pb-32 md:pb-6 overflow-y-auto flex-1">
@@ -9313,6 +9375,14 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                   onRegisterActions={setMotosActions} 
                   isSearchOpen={isSearchOpen} 
                   readOnly={userRole === 'client'}
+                />
+              ) : activeTab === 'catalogo' ? (
+                <MotosView 
+                  theme={theme} 
+                  onSelectItem={setSelectedDetailItem} 
+                  onRegisterActions={setMotosActions} 
+                  isSearchOpen={isSearchOpen} 
+                  readOnly={true}
                 />
               ) : activeTab === 'mercadolivre' ? (
                 <MercadoLivre theme={theme} />
@@ -9402,6 +9472,13 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           />
         )}
       </AnimatePresence>
+
+      {/* Modal de Registro */}
+      <RegistroModal 
+        isOpen={activeTab === 'catalogo' && !localStorage.getItem('rk_client_registered')} 
+        onClose={() => {}} 
+        theme={theme} 
+      />
 
       {/* Modal de Logout */}
       <AnimatePresence>

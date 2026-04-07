@@ -10,7 +10,8 @@ import {
   Store, 
   UserCog, 
   Activity,
-  X
+  X,
+  LayoutGrid
 } from 'lucide-react';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -27,6 +28,7 @@ export const MobileBottomNav = ({ activeTab, setActiveTab, theme, userRole, isMo
     { id: 'estoque', icon: Package, label: 'Estoque', roles: ['admin', 'gerente', 'estoque'] },
     { id: 'vendas', icon: ShoppingCart, label: 'Vendas', roles: ['admin', 'gerente'] },
     { id: 'motos', icon: Bike, label: 'Motos', roles: ['admin', 'gerente', 'estoque', 'client'] },
+    { id: 'catalogo', icon: LayoutGrid, label: 'Catálogo', roles: ['admin', 'gerente', 'estoque', 'client'] },
     { id: 'atendimento', icon: MessageSquare, label: 'Chat', roles: ['admin', 'gerente', 'estoque'] },
     { id: 'clients', icon: Users, label: 'Clientes', roles: ['admin', 'gerente'] },
     { id: 'mercadolivre', icon: Store, label: 'ML', roles: ['admin', 'gerente'] },
