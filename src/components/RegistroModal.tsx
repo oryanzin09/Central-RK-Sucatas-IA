@@ -10,6 +10,19 @@ export const RegistroModal = ({ isOpen, onClose, theme }: { isOpen: boolean; onC
   const [telefone, setTelefone] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const handleTelefoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (value.length > 11) value = value.slice(0, 11);
+    
+    if (value.length > 2) {
+      value = `(${value.slice(0, 2)}) ${value.slice(2)}`;
+    }
+    if (value.length > 10) {
+      value = `${value.slice(0, 10)}-${value.slice(10)}`;
+    }
+    setTelefone(value);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nome || !telefone) return;
@@ -94,7 +107,7 @@ export const RegistroModal = ({ isOpen, onClose, theme }: { isOpen: boolean; onC
                     type="tel"
                     required
                     value={telefone}
-                    onChange={(e) => setTelefone(e.target.value)}
+                    onChange={handleTelefoneChange}
                     className={cn(
                       "w-full pl-10 pr-4 py-3 rounded-xl border outline-none transition-all",
                       theme === 'dark' ? "bg-zinc-800/50 border-zinc-700 text-white focus:border-violet-500" : "bg-zinc-50 border-zinc-200 text-zinc-900 focus:border-violet-500 focus:bg-white"

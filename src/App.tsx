@@ -7827,13 +7827,18 @@ export default function App() {
         }
 
         setIsAuthenticated(true);
-        if (window.location.pathname === '/login') {
-          window.history.replaceState(null, '', '/');
+        if (window.location.pathname.toLowerCase() === '/login') {
+          const role = localStorage.getItem('user_role') || 'client';
+          if (role === 'client') {
+            window.history.replaceState(null, '', '/catalogo');
+          } else {
+            window.history.replaceState(null, '', '/dashboard');
+          }
         }
       } else {
         setIsAuthenticated(false);
-        if (window.location.pathname !== '/login') {
-          window.history.replaceState(null, '', '/login');
+        if (window.location.pathname === '/' || window.location.pathname === '') {
+          window.history.replaceState(null, '', '/catalogo');
         }
       }
     });
@@ -7852,7 +7857,7 @@ export default function App() {
     localStorage.removeItem('user_name');
     localStorage.removeItem('user_phone');
     setIsAuthenticated(false);
-    window.history.replaceState(null, '', '/login');
+    window.history.replaceState(null, '', '/catalogo');
   };
 
   if (isAuthenticated === null) {
@@ -7863,7 +7868,9 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  const isLoginRoute = window.location.pathname.toLowerCase() === '/login';
+
+  if (isLoginRoute && !isAuthenticated) {
     return <Login onLogin={() => {
       // No-op: onAuthStateChanged will handle the state update
     }} />;
