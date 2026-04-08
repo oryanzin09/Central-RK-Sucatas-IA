@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useContext, createContext, useRef, useCallback, memo } from 'react';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc, query, collection, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { api } from './utils/api';
 import QuestionsDashboard from './components/QuestionsDashboard';
@@ -7791,10 +7791,12 @@ const formatRelativeTime = (dateString: string) => {
 import { Login } from './components/Login';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isUserAuthenticated, setIsUserAuthenticated] = useState<boolean | null>(null);
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
       if (user) {
         try {
           // Sync user to Firestore
@@ -7827,7 +7829,7 @@ export default function App() {
           console.error("Error syncing user to Firestore:", error);
         }
 
-        setIsAuthenticated(true);
+        setIsUserAuthenticated(true);
         if (window.location.pathname.toLowerCase() === '/login') {
           const role = localStorage.getItem('user_role') || 'client';
           if (role === 'client') {
@@ -7837,7 +7839,7 @@ export default function App() {
           }
         }
       } else {
-        setIsAuthenticated(false);
+        setIsUserAuthenticated(false);
         if (window.location.pathname === '/' || window.location.pathname === '') {
           window.history.replaceState(null, '', '/catalogo');
         }
@@ -7857,11 +7859,11 @@ export default function App() {
     localStorage.removeItem('user_role');
     localStorage.removeItem('user_name');
     localStorage.removeItem('user_phone');
-    setIsAuthenticated(false);
+    setIsUserAuthenticated(false);
     window.history.replaceState(null, '', '/catalogo');
   };
 
-  if (isAuthenticated === null) {
+  if (isUserAuthenticated === null) {
     return (
       <div className="min-h-screen bg-[#0f1115] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
@@ -7871,7 +7873,7 @@ export default function App() {
 
   const isLoginRoute = window.location.pathname.toLowerCase() === '/login';
 
-  if (isLoginRoute && !isAuthenticated) {
+  if (isLoginRoute && !isUserAuthenticated) {
     return <Login onLogin={() => {
       // No-op: onAuthStateChanged will handle the state update
     }} />;
@@ -7879,7 +7881,7 @@ export default function App() {
 
   return (
     <DataProvider>
-      <AppContent onLogout={handleLogout} />
+      <AppContent onLogout={handleLogout} currentUser={currentUser} />
     </DataProvider>
   );
 }
@@ -8660,11 +8662,12 @@ const LogoutModal = memo(({ isOpen, onClose, onLogout, theme }: { isOpen: boolea
   );
 });
 
-function AppContent({ onLogout }: { onLogout: () => void }) {
+function AppContent({ onLogout, currentUser }: { onLogout: () => void, currentUser: FirebaseUser | null }) {
   const context = useContext(DataContext);
   const showSensitiveInfo = context?.showSensitiveInfo ?? true;
   const setShowSensitiveInfo = context?.setShowSensitiveInfo ?? (() => {});
   const [userRole, setUserRole] = useState<string>(localStorage.getItem('user_role') || 'client');
+  const [isClientRegistered, setIsClientRegistered] = useState<boolean>(localStorage.getItem('rk_client_registered') === 'true');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'estoque' | 'vendas' | 'motos' | 'catalogo' | 'atendimento' | 'frete' | 'clients' | 'mercadolivre' | 'users' | 'audit'>(() => {
     const path = window.location.pathname.replace('/', '');
     const role = localStorage.getItem('user_role') || 'client';
@@ -8766,6 +8769,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
+
     // Notificações
     const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(20));
     const unsubscribeNotifications = onSnapshot(q, (snapshot) => {
@@ -8773,7 +8778,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       setNotifications(newNotifications);
     });
     return () => unsubscribeNotifications();
-  }, []);
+  }, [currentUser]);
 
   const [allMlListings, setAllMlListings] = useState<any[]>([]);
   const [showAllMlAds, setShowAllMlAds] = useState(false);
@@ -9146,6 +9151,14 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
                   badge={unreadCount > 0 ? unreadCount : undefined}
                 />
               )}
+              <SidebarItem 
+                icon={LogOut} 
+                label={isSidebarOpen ? "Sair" : ""} 
+                active={false} 
+                onClick={() => setIsLogoutModalOpen(true)} 
+                theme={theme}
+                className="text-rose-500 hover:bg-rose-500/10 hover:text-rose-600"
+              />
             </nav>
           </div>
         </aside>
@@ -9159,94 +9172,6 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
           theme === 'dark' ? "bg-zinc-950/40 border-zinc-800/50" : "bg-white/50 border-zinc-200"
         )}>
           <div className="flex items-center gap-2 md:gap-4 relative z-50">
-            <div className="relative z-50" ref={dropdownRef}>
-              <button 
-                onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
-                className={cn(
-                  "relative w-10 h-10 rounded-full overflow-hidden border-2 transition-all flex items-center justify-center shrink-0",
-                  theme === 'dark' 
-                    ? "border-zinc-800 hover:border-violet-500 bg-zinc-900" 
-                    : "border-zinc-200 hover:border-violet-400 bg-zinc-100"
-                )}
-              >
-                {profilePhoto ? (
-                  <img loading="lazy" src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <div className={cn(
-                    "w-full h-full flex items-center justify-center font-black text-lg uppercase",
-                    theme === 'dark' ? "text-violet-400 bg-violet-500/10" : "text-violet-600 bg-violet-50"
-                  )}>
-                    {(localStorage.getItem('user_name') || 'U').charAt(0)}
-                  </div>
-                )}
-              </button>
-
-              <AnimatePresence>
-                {isProfileDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className={cn(
-                      "absolute left-0 mt-3 w-56 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] border z-50 overflow-hidden backdrop-blur-2xl",
-                      theme === 'dark' ? "bg-zinc-900/90 border-zinc-800" : "bg-white/90 border-zinc-200"
-                    )}
-                  >
-                    <div className="p-3 border-b border-zinc-800/50 mb-1">
-                      <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Conta</p>
-                      <p className="text-sm font-bold truncate">{localStorage.getItem('user_name') || 'Usuário'}</p>
-                    </div>
-                    <div className="p-2 space-y-1">
-                      <button
-                        onClick={() => {
-                          fileInputRef.current?.click();
-                          setIsProfileDropdownOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                          theme === 'dark' ? "hover:bg-violet-600/20 hover:text-violet-400 text-zinc-300" : "hover:bg-violet-50 hover:text-violet-600 text-zinc-700"
-                        )}
-                      >
-                        <Camera size={18} />
-                        {profilePhoto ? 'Trocar foto' : 'Escolher foto'}
-                      </button>
-                      {profilePhoto && (
-                        <button
-                          onClick={handleRemovePhoto}
-                          className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all",
-                            theme === 'dark' ? "hover:bg-rose-500/10 text-rose-400" : "hover:bg-rose-50 text-rose-600"
-                          )}
-                        >
-                          <Trash2 size={18} />
-                          Remover foto
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          setIsLogoutModalOpen(true);
-                          setIsProfileDropdownOpen(false);
-                        }}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-bold transition-all text-rose-500",
-                          theme === 'dark' ? "hover:bg-rose-500/10" : "hover:bg-rose-50"
-                        )}
-                      >
-                        <LogOut size={18} />
-                        Sair da conta
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                accept="image/*" 
-                className="hidden" 
-                onChange={handleProfilePhotoUpload} 
-              />
-            </div>
             <h2 className={cn(
               "text-base md:text-lg font-semibold capitalize transition-colors truncate max-w-[120px] md:max-w-none",
               theme === 'dark' ? "text-white" : "text-zinc-900"
@@ -9495,9 +9420,9 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
       {/* Modal de Registro */}
       <RegistroModal 
-        isOpen={activeTab === 'catalogo' && localStorage.getItem('rk_client_registered') !== 'true'} 
+        isOpen={activeTab === 'catalogo' && !isClientRegistered} 
         onClose={() => {
-          // Força uma re-renderização para garantir que o modal suma e o catálogo apareça
+          setIsClientRegistered(true);
           setPendingEditItem(null); 
         }} 
         theme={theme} 

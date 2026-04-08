@@ -126,7 +126,25 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
     
     try {
       await updateDoc(doc(db, 'users', userId), { role: newRole });
-      setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      
+      if (newRole === 'client') {
+        // Movendo de staff para client
+        const userToMove = users.find(u => u.id === userId);
+        if (userToMove) {
+          setUsers(users.filter(u => u.id !== userId));
+          setClients([...clients, { ...userToMove, role: newRole } as any]);
+        }
+      } else if (currentRole === 'client') {
+        // Movendo de client para staff
+        const clientToMove = clients.find(c => c.id === userId);
+        if (clientToMove) {
+          setClients(clients.filter(c => c.id !== userId));
+          setUsers([...users, { ...clientToMove, role: newRole } as any]);
+        }
+      } else {
+        // Apenas mudando cargo dentro de staff
+        setUsers(users.map(u => u.id === userId ? { ...u, role: newRole } : u));
+      }
     } catch (err: any) {
       alert(err.message || 'Erro de conexão');
     } finally {
@@ -271,6 +289,20 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
       </div>
     );
   }
+
+  const formatDate = (dateValue: any) => {
+    if (!dateValue) return '-';
+    try {
+      if (dateValue && typeof dateValue.toDate === 'function') {
+        return dateValue.toDate().toLocaleDateString('pt-BR');
+      }
+      const date = new Date(dateValue);
+      if (isNaN(date.getTime())) return 'Inválida';
+      return date.toLocaleDateString('pt-BR');
+    } catch (e) {
+      return 'Inválida';
+    }
+  };
 
   return (
     <div className="space-y-10">
@@ -497,10 +529,20 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                       </div>
                     </td>
                     <td className="px-6 py-4 text-gray-500 hidden xl:table-cell">
-                      {new Date(client.createdAt).toLocaleDateString('pt-BR')}
+                      {formatDate(client.createdAt)}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        {client.role === 'client' && (
+                          <button
+                            onClick={() => handleToggleRole(client.id, client.role)}
+                            disabled={actionLoading === client.id}
+                            className="p-2 text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
+                            title="Promover a Staff"
+                          >
+                            <ShieldAlert className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleOpenClientModal(client)}
                           className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
@@ -551,6 +593,16 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {client.role === 'client' && (
+                    <button
+                      onClick={() => handleToggleRole(client.id, client.role)}
+                      disabled={actionLoading === client.id}
+                      className="p-2.5 bg-purple-500/10 text-purple-400 rounded-xl hover:bg-purple-500/20 transition-all"
+                      title="Promover a Staff"
+                    >
+                      <ShieldAlert className="w-4 h-4" />
+                    </button>
+                  )}
                   <button
                     onClick={() => handleOpenClientModal(client)}
                     className="p-2.5 bg-gray-800 text-gray-400 rounded-xl hover:text-white transition-all"
@@ -579,7 +631,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
                   </div>
                 )}
                 <div className="text-[10px] text-gray-500">
-                  Cadastrado em: {new Date(client.createdAt).toLocaleDateString('pt-BR')}
+                  Cadastrado em: {formatDate(client.createdAt)}
                 </div>
               </div>
             </div>
