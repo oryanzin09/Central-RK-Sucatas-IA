@@ -28,20 +28,26 @@ export const RegistroModal = ({ isOpen, onClose, theme }: { isOpen: boolean; onC
     if (!nome || !telefone) return;
     
     setLoading(true);
+    
+    // Feedback visual imediato (fecha o modal logo após iniciar o loading)
+    // e salva no localStorage para liberar o catálogo imediatamente.
+    localStorage.setItem('rk_client_registered', 'true');
+    
     try {
-      await addDoc(collection(db, 'clients'), {
+      // Executa a gravação no Firestore em background sem bloquear a UI
+      addDoc(collection(db, 'clients'), {
         name: nome,
         phone: telefone,
         createdAt: serverTimestamp(),
         status: 'ativo'
-      });
-      // Salva no dispositivo para não pedir de novo
-      localStorage.setItem('rk_client_registered', 'true');
-      onClose();
+      }).catch(err => console.error("Erro silencioso ao salvar cliente no Firestore:", err));
+      
+      // Pequeno delay apenas para a animação do botão ser percebida
+      setTimeout(() => {
+        onClose();
+      }, 500);
     } catch (error) {
-      console.error("Erro ao salvar cliente:", error);
-      alert("Erro ao registrar. Tente novamente.");
-    } finally {
+      console.error("Erro ao processar registro:", error);
       setLoading(false);
     }
   };

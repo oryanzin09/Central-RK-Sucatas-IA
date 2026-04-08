@@ -418,6 +418,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    // Carrega os dados imediatamente ao montar o componente
     loadData();
 
     // Socket global para WhatsApp e Notificações
@@ -9494,8 +9495,11 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
       {/* Modal de Registro */}
       <RegistroModal 
-        isOpen={activeTab === 'catalogo' && !localStorage.getItem('rk_client_registered')} 
-        onClose={() => {}} 
+        isOpen={activeTab === 'catalogo' && localStorage.getItem('rk_client_registered') !== 'true'} 
+        onClose={() => {
+          // Força uma re-renderização para garantir que o modal suma e o catálogo apareça
+          setPendingEditItem(null); 
+        }} 
         theme={theme} 
       />
 

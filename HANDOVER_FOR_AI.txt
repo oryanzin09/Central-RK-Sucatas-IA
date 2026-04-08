@@ -1,0 +1,45 @@
+# CONTEXTO DO PROJETO: RK SUCATAS (HANDOVER PARA IA)
+
+## 1. Visão Geral
+O projeto "RK Sucatas" é um sistema full-stack de gerenciamento de desmonte de motos, controle de estoque, vendas e catálogo público. Ele integra múltiplas APIs externas para sincronização de dados e comunicação.
+
+## 2. Stack Tecnológico
+- **Frontend:** React 18, TypeScript, Tailwind CSS, Vite, Lucide React (ícones).
+- **Backend:** Node.js, Express (integrado via Vite middleware em `server.ts`).
+- **Banco de Dados Principal:** Notion API (usado como CMS/Banco de dados para Estoque, Vendas e Motos).
+- **Banco de Dados Secundário/Auth:** Firebase (Firestore para usuários, clientes, logs; Authentication para login Google).
+- **Integrações:**
+  - **Mercado Livre API:** Sincronização de vendas, anúncios e mensagens.
+  - **WhatsApp (Baileys):** Bot de atendimento e notificações.
+
+## 3. Estrutura de Arquivos Principal
+- `src/App.tsx`: Ponto de entrada do frontend. Gerencia roteamento (baseado em estado `activeTab`), autenticação (Firebase) e layout principal.
+- `server.ts`: Backend Express. Contém rotas da API (`/api/notion`, `/api/ml`, `/api/whatsapp`).
+- `src/components/`: Componentes React modulares.
+  - `ml/`: Componentes específicos da integração com Mercado Livre.
+  - `RegistroModal`: Modal de captura de leads (visitantes do catálogo).
+- `firestore.rules`: Regras de segurança do Firebase.
+
+## 4. Regras de Negócio e Padrões Críticos (NÃO IGNORAR)
+1. **Mercado Livre (ML):**
+   - SEMPRE use o header `x-format-new: true` nas requisições de `shipments` para obter os substatus corretos.
+   - A classificação de vendas deve usar `status` + `substatus` (ex: `ready_to_ship` + `printed`).
+   - O cliente ML (`mlClient`) gerencia o refresh token automaticamente.
+2. **Notion API:**
+   - O Notion é a fonte da verdade para o catálogo.
+   - SEMPRE use cache nas requisições do Notion para evitar rate limits (implementado no backend).
+   - Os dados do Notion devem passar por formatadores (`formatInventoryItem`, etc.) antes de irem para o frontend.
+3. **Frontend e UI:**
+   - O site possui duas "caras": Catálogo Público (para visitantes/clientes) e Dashboard Administrativo (para gerentes/admins).
+   - Visitantes não precisam de login (Google Auth), apenas preenchem um modal de registro (Nome/Telefone) salvo no Firestore (`clients`).
+   - Dropdowns devem seguir o padrão visual estabelecido (fundo branco, bordas arredondadas, sem transparência).
+4. **Segurança:**
+   - NUNCA hardcode tokens ou chaves de API. Use `process.env` no backend e `import.meta.env` no frontend.
+
+## 5. Status Atual e Últimas Modificações
+- O roteamento foi ajustado para que a raiz (`/`) redirecione para `/catalogo` sem forçar login.
+- O Firebase Firestore foi configurado para permitir a criação de clientes (`clients`) sem autenticação (`allow create: if true;`).
+- O catálogo público deve carregar os dados do Notion independentemente do status de autenticação do Firebase.
+
+## 6. Como Continuar
+Ao assumir este projeto, sempre verifique os logs do backend (`server.ts`) para debugar integrações (ML/Notion). Mantenha o foco em performance (cache) e estabilidade das conexões (WhatsApp).
