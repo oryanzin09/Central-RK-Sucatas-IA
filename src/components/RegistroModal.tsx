@@ -60,33 +60,31 @@ export const RegistroModal = ({ isOpen, onClose, theme }: { isOpen: boolean; onC
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] md:hidden"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70]"
           />
-          <motion.div
-            initial={{ y: "100%" }}
-            animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className={cn(
-              "fixed bottom-0 left-0 right-0 z-[75] md:hidden rounded-t-3xl p-6 pb-nav-safe",
-              theme === 'dark' ? "bg-zinc-900 border-t border-zinc-800" : "bg-white border-t border-zinc-200"
-            )}
-          >
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className={cn("text-xl font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>
-                  Bem-vindo!
-                </h3>
-                <p className={cn("text-sm mt-1", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
-                  Preencha para acessar o catálogo
-                </p>
+          <div className="fixed inset-0 z-[75] flex items-end md:items-center justify-center pointer-events-none">
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className={cn(
+                "w-full md:max-w-md pointer-events-auto rounded-t-3xl md:rounded-3xl p-6 pb-nav-safe md:pb-6",
+                theme === 'dark' ? "bg-zinc-900 border-t md:border border-zinc-800" : "bg-white border-t md:border border-zinc-200"
+              )}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className={cn("text-xl font-bold", theme === 'dark' ? "text-white" : "text-zinc-900")}>
+                    Bem-vindo!
+                  </h3>
+                  <p className={cn("text-sm mt-1", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>
+                    Preencha para acessar o catálogo
+                  </p>
+                </div>
               </div>
-              <button onClick={onClose} className={cn("p-2 rounded-full", theme === 'dark' ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500")}>
-                <X size={20} />
-              </button>
-            </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className={cn("text-xs font-bold mb-1.5 block uppercase tracking-wider", theme === 'dark' ? "text-zinc-400" : "text-zinc-500")}>Nome Completo</label>
                 <div className="relative">
@@ -131,7 +129,8 @@ export const RegistroModal = ({ isOpen, onClose, theme }: { isOpen: boolean; onC
                 {loading ? <Loader2 size={20} className="animate-spin" /> : 'Acessar Catálogo'}
               </button>
             </form>
-          </motion.div>
+            </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>
