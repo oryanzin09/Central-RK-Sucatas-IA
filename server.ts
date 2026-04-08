@@ -261,6 +261,21 @@ async function startServer() {
     res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  // Rota pública para leitura do catálogo de motos
+  app.get("/api/motos", async (req, res) => {
+    try {
+      const force = req.query.force === 'true';
+      if (force) invalidateCache(MOTOS_DATABASE_ID);
+      console.log(`🏍️ Consultando banco de motos: ${MOTOS_DATABASE_ID}`);
+      const allItems = await fetchAllFromNotion(MOTOS_DATABASE_ID);
+      const formattedData = allItems.map(formatMotosItem);
+      res.json({ success: true, data: formattedData, total: allItems.length });
+    } catch (error: any) {
+      console.error("Motos API Error:", error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // Middleware de autenticação global para todas as rotas de API subsequentes
   app.use('/api', autenticar);
 
