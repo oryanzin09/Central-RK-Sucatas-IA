@@ -26,6 +26,7 @@ interface ClientData {
   purchases: string | null;
   createdAt: string;
   lastLogin: string | null;
+  sourceCollection?: 'users' | 'clients';
 }
 
 export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: { userRole?: string, onModalChange?: (isOpen: boolean) => void, theme?: 'light' | 'dark' }) {
@@ -82,7 +83,8 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
           id: doc.id, 
           ...data,
           name: data.name || data.nome || 'Sem nome',
-          phone: data.phone || data.telefone || 'Sem telefone'
+          phone: data.phone || data.telefone || 'Sem telefone',
+          sourceCollection: 'clients'
         } as ClientData;
       });
 
@@ -94,7 +96,8 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
         ...u,
         phone: u.phone || 'Sem telefone',
         interests: u.interests || null,
-        purchases: u.purchases || null
+        purchases: u.purchases || null,
+        sourceCollection: 'users'
       }));
       
       // Combine and remove duplicates by ID just in case
@@ -238,7 +241,8 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
       };
 
       if (editingClient) {
-        await updateDoc(doc(db, 'clients', editingClient.id), { ...payload, updatedAt: new Date().toISOString() });
+        const collectionName = editingClient.sourceCollection || 'clients';
+        await updateDoc(doc(db, collectionName, editingClient.id), { ...payload, updatedAt: new Date().toISOString() });
         setClients(clients.map(c => c.id === editingClient.id ? { ...c, ...payload } : c));
         setIsClientModalOpen(false);
       } else {
@@ -247,7 +251,7 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
           createdAt: new Date().toISOString(),
           lastLogin: null
         });
-        setClients([...clients, { ...payload, id: newDoc.id, createdAt: new Date().toISOString(), lastLogin: null }]);
+        setClients([...clients, { ...payload, id: newDoc.id, createdAt: new Date().toISOString(), lastLogin: null, sourceCollection: 'clients' }]);
         setIsClientModalOpen(false);
       }
     } catch (err: any) {
@@ -262,7 +266,9 @@ export default function AdminUsers({ userRole, onModalChange, theme = 'dark' }: 
     
     setActionLoading(clientId);
     try {
-      await deleteDoc(doc(db, 'clients', clientId));
+      const clientToDelete = clients.find(c => c.id === clientId);
+      const collectionName = clientToDelete?.sourceCollection || 'clients';
+      await deleteDoc(doc(db, collectionName, clientId));
       setClients(clients.filter(c => c.id !== clientId));
     } catch (err: any) {
       alert(err.message || 'Erro de conexão');
