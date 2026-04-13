@@ -276,6 +276,92 @@ async function startServer() {
     }
   });
 
+    // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
+  app.get('/api/peca/preco', async (req, res) => {
+    try {
+      const { termo } = req.query;
+      
+      if (!termo || String(termo).length < 3) {
+        return res.json({ sucesso: false, mensagem: "Termo muito curto" });
+      }
+      
+      const termoLower = String(termo).toLowerCase();
+      
+      // Buscar no estoque (usando os dados do Notion já formatados)
+      const allItems = await fetchAllFromNotion(DATABASE_ID);
+      const produtos = allItems.map(formatInventoryItem);
+      
+      // Buscar produto mais relevante
+      let melhorMatch = null;
+      let maiorScore = 0;
+      
+      for (const produto of produtos) {
+        let score = 0;
+        const nomeLower = (produto.nome || '').toLowerCase();
+        const motoLower = (produto.moto || '').toLowerCase();
+        const categoriaLower = (produto.categoria || '').toLowerCase();
+        
+        // Match exato no nome
+        if (nomeLower === termoLower) score = 100;
+        // Match no nome contém o termo
+        else if (nomeLower.includes(termoLower)) score = 80;
+        // Match na moto
+        else if (motoLower.includes(termoLower)) score = 60;
+        // Match na categoria
+        else if (categoriaLower.includes(termoLower)) score = 40;
+        // Match parcial (palavras individuais)
+        else {
+          const termoPalavras = termoLower.split(' ');
+          const nomePalavras = nomeLower.split(' ');
+          for (const tp of termoPalavras) {
+            if (tp.length < 3) continue;
+            for (const np of nomePalavras) {
+              if (np.includes(tp) || tp.includes(np)) {
+                score += 20;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Priorizar itens com estoque
+        if (produto.estoque > 0 && score > 0) score += 10;
+        
+        if (score > maiorScore && score > 0) {
+          maiorScore = score;
+          melhorMatch = produto;
+        }
+      }
+      
+      if (melhorMatch && melhorMatch.valor > 0) {
+        return res.json({
+          sucesso: true,
+          nome: melhorMatch.nome,
+          preco: melhorMatch.valor,
+          categoria: melhorMatch.categoria,
+          estoque: melhorMatch.estoque
+        });
+      } else {
+        // Sugerir produtos similares
+        const sugestoes = produtos
+          .filter(p => p.nome && p.valor > 0)
+          .slice(0, 5)
+          .map(p => `${p.nome} - R$ ${p.valor}`);
+        
+        return res.json({
+          sucesso: false,
+          mensagem: `"${termo}" não encontrado no estoque`,
+          sugestoes: sugestoes.length > 0 ? sugestoes : undefined
+        });
+      }
+    } catch (error: any) {
+      console.error('Erro ao buscar preço:', error);
+      return res.status(500).json({
+        sucesso: false,
+        mensagem: "Erro interno do servidor"
+      });
+    }
+  });
   // Middleware de autenticação global para todas as rotas de API subsequentes
   app.use('/api', autenticar);
 
@@ -3200,96 +3286,7 @@ async function startServer() {
     } catch (error) {
       console.error('Erro ao detectar intenção:', error);
     }
-  }
-// EXTENSÃO DO CHROME - PREÇOS //
-  // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
-  app.get('/api/peca/preco', async (req, res) => {
-    try {
-      const { termo } = req.query;
-      
-      if (!termo || String(termo).length < 3) {
-        return res.json({ sucesso: false, mensagem: "Termo muito curto" });
-      }
-      
-      const termoLower = String(termo).toLowerCase();
-      
-      // Buscar no estoque (usando os dados do Notion já formatados)
-      const allItems = await fetchAllFromNotion(DATABASE_ID);
-      const produtos = allItems.map(formatInventoryItem);
-      
-      // Buscar produto mais relevante
-      let melhorMatch = null;
-      let maiorScore = 0;
-      
-      for (const produto of produtos) {
-        let score = 0;
-        const nomeLower = (produto.nome || '').toLowerCase();
-        const motoLower = (produto.moto || '').toLowerCase();
-        const categoriaLower = (produto.categoria || '').toLowerCase();
-        
-        // Match exato no nome
-        if (nomeLower === termoLower) score = 100;
-        // Match no nome contém o termo
-        else if (nomeLower.includes(termoLower)) score = 80;
-        // Match na moto
-        else if (motoLower.includes(termoLower)) score = 60;
-        // Match na categoria
-        else if (categoriaLower.includes(termoLower)) score = 40;
-        // Match parcial (palavras individuais)
-        else {
-          const termoPalavras = termoLower.split(' ');
-          const nomePalavras = nomeLower.split(' ');
-          for (const tp of termoPalavras) {
-            if (tp.length < 3) continue;
-            for (const np of nomePalavras) {
-              if (np.includes(tp) || tp.includes(np)) {
-                score += 20;
-                break;
-              }
-            }
-          }
-        }
-        
-        // Priorizar itens com estoque
-        if (produto.estoque > 0 && score > 0) score += 10;
-        
-        if (score > maiorScore && score > 0) {
-          maiorScore = score;
-          melhorMatch = produto;
-        }
-      }
-      
-      if (melhorMatch && melhorMatch.valor > 0) {
-        return res.json({
-          sucesso: true,
-          nome: melhorMatch.nome,
-          preco: melhorMatch.valor,
-          categoria: melhorMatch.categoria,
-          estoque: melhorMatch.estoque
-        });
-      } else {
-        // Sugerir produtos similares
-        const sugestoes = produtos
-          .filter(p => p.nome && p.valor > 0)
-          .slice(0, 5)
-          .map(p => `${p.nome} - R$ ${p.valor}`);
-        
-        return res.json({
-          sucesso: false,
-          mensagem: `"${termo}" não encontrado no estoque`,
-          sugestoes: sugestoes.length > 0 ? sugestoes : undefined
-        });
-      }
-    } catch (error: any) {
-      console.error('Erro ao buscar preço:', error);
-      return res.status(500).json({
-        sucesso: false,
-        mensagem: "Erro interno do servidor"
-      });
-    }
-  });
-
-  
+  }  
   // ==================== MERCADO LIVRE ROUTES ====================
 
   // Endpoint de teste
