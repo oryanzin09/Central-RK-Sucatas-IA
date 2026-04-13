@@ -277,100 +277,82 @@ async function startServer() {
   });
 
     // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
-  // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
+ // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
 app.get('/api/peca/preco', async (req, res) => {
   try {
     const { termo } = req.query;
     
     if (!termo || String(termo).length < 3) {
-      return res.json({ sucesso: false, mensagem: "Termo muito curto" });
+      return res.json({ 
+        sucesso: false, 
+        mensagem: "Digite pelo menos 3 caracteres",
+        termo: termo 
+      });
     }
     
-    const termoLower = String(termo).toLowerCase();
-    console.log(`🔍 Buscando por: "${termoLower}"`);
+    const termoOriginal = String(termo);
+    const termoLower = termoOriginal.toLowerCase();
+    
+    console.log(`🔍 Buscando: "${termoOriginal}"`);
     
     // Buscar no estoque
     const allItems = await fetchAllFromNotion(DATABASE_ID);
     const produtos = allItems.map(formatInventoryItem);
     
-    // Extrair cilindrada e modelo do termo
-    const cilindradaMatch = termoLower.match(/\b(125|150|160|250|300|400|500|600|1000)\b/);
-    const cilindrada = cilindradaMatch ? cilindradaMatch[1] : null;
+    // 1. BUSCA POR NOME EXATO (case insensitive)
+    let matchExato = produtos.find(p => 
+      p.nome && p.nome.toLowerCase() === termoLower
+    );
     
-    const modeloMatch = termoLower.match(/\b(cb|xre|broz|fan|titan|twister|fazer|factor|ybr|intruder)\b/);
-    const modelo = modeloMatch ? modeloMatch[1] : null;
-    
-    console.log(`📊 Extraído: modelo=${modelo}, cilindrada=${cilindrada}`);
-    
-    // Buscar produto mais relevante
-    let melhorMatch = null;
-    let maiorScore = 0;
-    
-    for (const produto of produtos) {
-      let score = 0;
-      const nomeLower = (produto.nome || '').toLowerCase();
-      const motoLower = (produto.moto || '').toLowerCase();
-      const categoriaLower = (produto.categoria || '').toLowerCase();
-      
-      // PRIORIDADE MÁXIMA: match no modelo da moto (ex: CB 300)
-      if (modelo && motoLower.includes(modelo)) {
-        score += 100;
-        console.log(`   +100 por modelo "${modelo}" em "${produto.moto}"`);
-      }
-      
-      // PRIORIDADE ALTA: match na cilindrada
-      if (cilindrada && motoLower.includes(cilindrada)) {
-        score += 80;
-        console.log(`   +80 por cilindrada "${cilindrada}" em "${produto.moto}"`);
-      }
-      
-      // Match no nome do produto
-      if (nomeLower.includes(termoLower)) {
-        score += 60;
-      }
-      
-      // Match parcial no nome (palavras individuais)
-      const termoPalavras = termoLower.split(' ');
-      let matchCount = 0;
-      for (const tp of termoPalavras) {
-        if (tp.length < 3) continue;
-        if (nomeLower.includes(tp)) matchCount++;
-        if (motoLower.includes(tp)) matchCount++;
-      }
-      score += matchCount * 20;
-      
-      // Bônus por ser da categoria Motor
-      if (categoriaLower.includes('motor') || nomeLower.includes('motor')) {
-        score += 30;
-      }
-      
-      // Bônus pequeno por ter estoque
-      if (produto.estoque > 0 && score > 0) {
-        score += 5;
-      }
-      
-      if (score > maiorScore && score > 10) {
-        maiorScore = score;
-        melhorMatch = produto;
-        console.log(`   ✅ Novo melhor: "${produto.nome}" (score: ${score})`);
-      }
+    if (matchExato) {
+      console.log(`✅ Match EXATO: "${matchExato.nome}"`);
+      return res.json({
+        sucesso: true,
+        nome: matchExato.nome,
+        preco: matchExato.valor,
+        categoria: matchExato.categoria,
+        estoque: matchExato.estoque,
+        tipo_match: "exato"
+      });
     }
     
-    if (melhorMatch && melhorMatch.valor > 0) {
-      console.log(`✅ RESULTADO FINAL: "${melhorMatch.nome}" (score: ${maiorScore})`);
+    // 2. BUSCA POR NOME CONTÉM (ordem de relevância)
+    const matches = produtos
+      .filter(p => p.nome && p.valor > 0)
+      .map(p => ({
+        ...p,
+        relevancia: calcularRelevancia(p, termoLower)
+      }))
+      .filter(p => p.relevancia > 0)
+      .sort((a, b) => b.relevancia - a.relevancia);
+    
+    if (matches.length > 0) {
+      const melhorMatch = matches[0];
+      console.log(`✅ Match relevante: "${melhorMatch.nome}" (score: ${melhorMatch.relevancia})`);
       return res.json({
         sucesso: true,
         nome: melhorMatch.nome,
         preco: melhorMatch.valor,
         categoria: melhorMatch.categoria,
-        estoque: melhorMatch.estoque
-      });
-    } else {
-      return res.json({
-        sucesso: false,
-        mensagem: `"${termo}" não encontrado no estoque`
+        estoque: melhorMatch.estoque,
+        tipo_match: "relevante"
       });
     }
+    
+    // 3. NENHUM RESULTADO - Retorna sugestões
+    const sugestoes = produtos
+      .filter(p => p.nome && p.valor > 0)
+      .slice(0, 5)
+      .map(p => `${p.nome} - R$ ${p.valor}`);
+    
+    console.log(`❌ Nenhum resultado para: "${termoOriginal}"`);
+    return res.json({
+      sucesso: false,
+      mensagem: `"${termoOriginal}" não encontrado`,
+      sugestoes: sugestoes,
+      termo: termoOriginal
+    });
+    
   } catch (error: any) {
     console.error('Erro ao buscar preço:', error);
     return res.status(500).json({
@@ -379,6 +361,30 @@ app.get('/api/peca/preco', async (req, res) => {
     });
   }
 });
+
+// Função auxiliar para calcular relevância
+function calcularRelevancia(produto: any, termo: string): number {
+  let score = 0;
+  const nomeLower = (produto.nome || '').toLowerCase();
+  const motoLower = (produto.moto || '').toLowerCase();
+  
+  // Palavras do termo
+  const palavrasTermo = termo.split(' ').filter(p => p.length > 2);
+  
+  for (const palavra of palavrasTermo) {
+    if (nomeLower.includes(palavra)) score += 30;
+    if (motoLower.includes(palavra)) score += 20;
+    if (nomeLower === palavra) score += 50;
+  }
+  
+  // Bônus para produtos que começam com o termo
+  if (nomeLower.startsWith(termo)) score += 40;
+  
+  // Bônus para motores quando termo inclui "motor"
+  if (termo.includes('motor') && nomeLower.includes('motor')) score += 30;
+  
+  return score;
+}
   // Middleware de autenticação global para todas as rotas de API subsequentes
   app.use('/api', autenticar);
 
