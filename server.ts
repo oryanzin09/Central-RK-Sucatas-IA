@@ -287,28 +287,20 @@ app.get('/api/peca/preco', async (req, res) => {
     }
     
     const termoLower = String(termo).toLowerCase();
+    console.log(`🔍 Buscando por: "${termoLower}"`);
     
     // Buscar no estoque
     const allItems = await fetchAllFromNotion(DATABASE_ID);
     const produtos = allItems.map(formatInventoryItem);
     
-    // Palavras-chave para priorizar certas categorias
-    const keywords = {
-      motor: ['motor', 'partida', 'cilindro', 'pistao', 'virabrequim', 'biela'],
-      carburador: ['carburador', 'alimentacao', 'tbi', 'corpo de borboleta'],
-      eletrica: ['farol', 'lanterna', 'retificador', 'bateria', 'chicote', 'sonda'],
-      transmissao: ['embreagem', 'corrente', 'pinhão', 'coroa', 'relacao'],
-      freio: ['pastilha', 'disco', 'cabo', 'fluido']
-    };
+    // Extrair cilindrada e modelo do termo
+    const cilindradaMatch = termoLower.match(/\b(125|150|160|250|300|400|500|600|1000)\b/);
+    const cilindrada = cilindradaMatch ? cilindradaMatch[1] : null;
     
-    // Encontrar qual categoria o termo pertence
-    let categoriaPrioritaria = null;
-    for (const [cat, palavras] of Object.entries(keywords)) {
-      if (palavras.some(p => termoLower.includes(p))) {
-        categoriaPrioritaria = cat;
-        break;
-      }
-    }
+    const modeloMatch = termoLower.match(/\b(cb|xre|broz|fan|titan|twister|fazer|factor|ybr|intruder)\b/);
+    const modelo = modeloMatch ? modeloMatch[1] : null;
+    
+    console.log(`📊 Extraído: modelo=${modelo}, cilindrada=${cilindrada}`);
     
     // Buscar produto mais relevante
     let melhorMatch = null;
@@ -320,59 +312,52 @@ app.get('/api/peca/preco', async (req, res) => {
       const motoLower = (produto.moto || '').toLowerCase();
       const categoriaLower = (produto.categoria || '').toLowerCase();
       
-      // PESO ESPECIAL: match exato no nome (prioridade máxima)
-      if (nomeLower === termoLower) {
-        score = 200;
-      }
-      // Match no nome contém o termo completo
-      else if (nomeLower.includes(termoLower)) {
-        score = 150;
-      }
-      // Match de palavras individuais no nome
-      else {
-        const termoPalavras = termoLower.split(' ');
-        const nomePalavras = nomeLower.split(' ');
-        let matchCount = 0;
-        for (const tp of termoPalavras) {
-          if (tp.length < 3) continue;
-          for (const np of nomePalavras) {
-            if (np.includes(tp) || tp.includes(np)) {
-              matchCount++;
-              break;
-            }
-          }
-        }
-        score = matchCount * 30;
+      // PRIORIDADE MÁXIMA: match no modelo da moto (ex: CB 300)
+      if (modelo && motoLower.includes(modelo)) {
+        score += 100;
+        console.log(`   +100 por modelo "${modelo}" em "${produto.moto}"`);
       }
       
-      // Bônus por categoria (se o termo sugere uma categoria específica)
-      if (categoriaPrioritaria && categoriaLower.includes(categoriaPrioritaria)) {
-        score += 40;
+      // PRIORIDADE ALTA: match na cilindrada
+      if (cilindrada && motoLower.includes(cilindrada)) {
+        score += 80;
+        console.log(`   +80 por cilindrada "${cilindrada}" em "${produto.moto}"`);
       }
       
-      // Bônus por match na moto
-      if (motoLower.includes(termoLower)) {
+      // Match no nome do produto
+      if (nomeLower.includes(termoLower)) {
+        score += 60;
+      }
+      
+      // Match parcial no nome (palavras individuais)
+      const termoPalavras = termoLower.split(' ');
+      let matchCount = 0;
+      for (const tp of termoPalavras) {
+        if (tp.length < 3) continue;
+        if (nomeLower.includes(tp)) matchCount++;
+        if (motoLower.includes(tp)) matchCount++;
+      }
+      score += matchCount * 20;
+      
+      // Bônus por ser da categoria Motor
+      if (categoriaLower.includes('motor') || nomeLower.includes('motor')) {
         score += 30;
       }
       
-      // Pequeno bônus por ter estoque (mas não priorizar demais)
+      // Bônus pequeno por ter estoque
       if (produto.estoque > 0 && score > 0) {
         score += 5;
       }
       
-      // Evita produtos com valor zero
-      if (produto.valor <= 0) {
-        score = 0;
-      }
-      
-      if (score > maiorScore && score > 20) {
+      if (score > maiorScore && score > 10) {
         maiorScore = score;
         melhorMatch = produto;
+        console.log(`   ✅ Novo melhor: "${produto.nome}" (score: ${score})`);
       }
     }
     
     if (melhorMatch && melhorMatch.valor > 0) {
-      console.log(`✅ Busca para "${termo}": encontrado "${melhorMatch.nome}" (score: ${maiorScore})`);
+      console.log(`✅ RESULTADO FINAL: "${melhorMatch.nome}" (score: ${maiorScore})`);
       return res.json({
         sucesso: true,
         nome: melhorMatch.nome,
@@ -381,16 +366,9 @@ app.get('/api/peca/preco', async (req, res) => {
         estoque: melhorMatch.estoque
       });
     } else {
-      // Sugerir produtos similares
-      const sugestoes = produtos
-        .filter(p => p.nome && p.valor > 0)
-        .slice(0, 5)
-        .map(p => `${p.nome} - R$ ${p.valor}`);
-      
       return res.json({
         sucesso: false,
-        mensagem: `"${termo}" não encontrado no estoque`,
-        sugestoes: sugestoes.length > 0 ? sugestoes : undefined
+        mensagem: `"${termo}" não encontrado no estoque`
       });
     }
   } catch (error: any) {
