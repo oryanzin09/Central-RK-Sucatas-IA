@@ -277,7 +277,7 @@ async function startServer() {
   });
 
     // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
- // ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
+// ==================== BUSCA DE PREÇO PARA EXTENSÃO WHATSAPP ====================
 app.get('/api/peca/preco', async (req, res) => {
   try {
     const { termo } = req.query;
@@ -289,90 +289,80 @@ app.get('/api/peca/preco', async (req, res) => {
     const termoOriginal = String(termo);
     const termoLower = termoOriginal.toLowerCase();
     
-    console.log(`🔍 Buscando: "${termoOriginal}"`);
+    console.log(`🔍 Buscando EXATAMENTE: "${termoOriginal}"`);
     
-    // Buscar no estoque
+    // Buscar no estoque (usando cache rápido)
     const allItems = await fetchAllFromNotion(DATABASE_ID);
     const produtos = allItems.map(formatInventoryItem);
     
-    // Função para normalizar termo (remove acentos, espaços extras)
-    const normalizar = (texto: string) => {
-      return texto
-        .toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    };
+    // FILTRO: Excluir produtos que contenham "carcaça" (a menos que o termo seja "carcaça")
+    const excluirPalavras = ['carcaça', 'tampa', 'carenagem', 'farol', 'lanterna'];
+    const deveExcluirCarcaca = !termoLower.includes('carcaça');
     
-    const termoNormalizado = normalizar(termoOriginal);
+    // 1. BUSCA POR NOME EXATO (prioridade máxima)
+    let melhorMatch = null;
+    let maiorScore = 0;
     
-    // 1. BUSCA EXATA (normalizada)
-    let matchExato = produtos.find(p => {
-      const nomeNormalizado = normalizar(p.nome || '');
-      return nomeNormalizado === termoNormalizado;
-    });
-    
-    if (matchExato) {
-      console.log(`✅ Match EXATO: "${matchExato.nome}"`);
-      return res.json({
-        sucesso: true,
-        nome: matchExato.nome,
-        preco: matchExato.valor,
-        categoria: matchExato.categoria,
-        estoque: matchExato.estoque
-      });
+    for (const produto of produtos) {
+      const nomeLower = (produto.nome || '').toLowerCase();
+      
+      // Pular produtos que não são relevantes
+      if (deveExcluirCarcaca && excluirPalavras.some(palavra => nomeLower.includes(palavra))) {
+        continue;
+      }
+      
+      let score = 0;
+      
+      // MATCH EXATO (maior pontuação)
+      if (nomeLower === termoLower) {
+        score = 1000;
+      }
+      // MATCH EXATO com "R" no final (ex: "cb 300" vs "cb 300r")
+      else if (termoLower + 'r' === nomeLower || termoLower === nomeLower.replace(/r$/, '')) {
+        score = 900;
+      }
+      // Nome COMEÇA com o termo
+      else if (nomeLower.startsWith(termoLower)) {
+        score = 800;
+      }
+      // Nome CONTÉM o termo como palavra inteira
+      else if (nomeLower.split(' ').some(palavra => palavra === termoLower)) {
+        score = 700;
+      }
+      // Nome CONTÉM o termo
+      else if (nomeLower.includes(termoLower)) {
+        score = 500;
+      }
+      // Match parcial por palavras
+      else {
+        const termoPalavras = termoLower.split(' ');
+        let matchCount = 0;
+        for (const tp of termoPalavras) {
+          if (tp.length < 3) continue;
+          if (nomeLower.includes(tp)) matchCount++;
+        }
+        score = matchCount * 50;
+      }
+      
+      // Bônus: se for da categoria "Motor"
+      if ((produto.categoria || '').toLowerCase().includes('motor')) {
+        score += 200;
+      }
+      
+      // Bônus: se o nome contém "motor"
+      if (nomeLower.includes('motor')) {
+        score += 100;
+      }
+      
+      if (score > maiorScore && score > 0) {
+        maiorScore = score;
+        melhorMatch = produto;
+        console.log(`   → "${produto.nome}" (score: ${score})`);
+      }
     }
     
-    // 2. BUSCA POR CORRESPONDÊNCIA PARCIAL INTELIGENTE
-    const matches = produtos
-      .filter(p => p.nome && p.valor > 0)
-      .map(p => {
-        const nomeNormalizado = normalizar(p.nome);
-        let score = 0;
-        
-        // Verifica se o termo está contido no nome
-        if (nomeNormalizado.includes(termoNormalizado)) {
-          score += 100;
-        }
-        
-        // Verifica palavras individuais
-        const termoPalavras = termoNormalizado.split(' ');
-        const nomePalavras = nomeNormalizado.split(' ');
-        
-        for (const tp of termoPalavras) {
-          if (tp.length < 2) continue;
-          for (const np of nomePalavras) {
-            if (np.includes(tp) || tp.includes(np)) {
-              score += 30;
-            }
-          }
-        }
-        
-        // CASO ESPECIAL: "cb 300" deve encontrar "cb 300r"
-        if (termoNormalizado.includes('cb 300') && nomeNormalizado.includes('cb 300r')) {
-          score += 80;
-        }
-        
-        // CASO ESPECIAL: "motor" no termo e no nome
-        if (termoNormalizado.includes('motor') && nomeNormalizado.includes('motor')) {
-          score += 50;
-        }
-        
-        // Bônus para match na moto
-        const motoNormalizado = normalizar(p.moto || '');
-        if (motoNormalizado.includes(termoNormalizado) || 
-            (termoNormalizado.includes('cb') && motoNormalizado.includes('cb'))) {
-          score += 40;
-        }
-        
-        return { ...p, score };
-      })
-      .filter(p => p.score > 0)
-      .sort((a, b) => b.score - a.score);
-    
-    if (matches.length > 0) {
-      const melhorMatch = matches[0];
-      console.log(`✅ Match encontrado: "${melhorMatch.nome}" (score: ${melhorMatch.score})`);
+    if (melhorMatch && melhorMatch.valor > 0) {
+      console.log(`✅ RESULTADO EXATO: "${melhorMatch.nome}"`);
       return res.json({
         sucesso: true,
         nome: melhorMatch.nome,
@@ -382,11 +372,10 @@ app.get('/api/peca/preco', async (req, res) => {
       });
     }
     
-    // 3. NENHUM RESULTADO
     console.log(`❌ Nenhum resultado para: "${termoOriginal}"`);
     return res.json({
       sucesso: false,
-      mensagem: `"${termoOriginal}" não encontrado no estoque`,
+      mensagem: `"${termoOriginal}" não encontrado`,
       termo: termoOriginal
     });
     
